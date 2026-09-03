@@ -31,9 +31,8 @@ state are persisted in a local **SQLite** database.
   description.
 - Support a **"projects" view**: sessions are grouped by their working directory,
   and `/sessions` can be filtered by path.
-- Keep behavior faithful to the original: same tool set, same prompt-composition
-  rules, same snapshot content shape (so snapshots stay interop-able with
-  `clown-code`).
+- Keep behavior faithful to the original: the same tool set and the same
+  prompt-composition rules.
 
 ## 2. Non-Goals
 
@@ -64,8 +63,8 @@ state are persisted in a local **SQLite** database.
 The `Worker` / `WorkerMsg` / pipe machinery in `src/model.zig` is **removed**.
 Its observable contract — "run the agent loop, emit snapshots, report errors" —
 is preserved as an async loop plus event emitter per session. The manual
-`session-*.json` file save/load is **replaced** by the SQLite store (snapshot
-content is kept in the same JSON shape for compatibility).
+`session-*.json` file save/load is **replaced** by the SQLite store, which is
+the sole system of record.
 
 ---
 
@@ -144,8 +143,8 @@ the event loop** and **do not let two runs of the same session interleave**.
 
 ### 5.1 Snapshot (conversation content)
 
-Kept in the same shape as Clown-Code's `Snapshot` so it stays interop-able with
-`clown-code` `session-*.json` files.
+The per-session conversation content, persisted as JSON in the `snapshot` column.
+It is an internal format and may evolve freely as the tool grows.
 
 ```js
 // TodoItem
@@ -268,8 +267,7 @@ endpoint and the static web UI (§7.8). Errors use `4xx`/`5xx` with
 ```json
 {
   "cwd": "/abs/path/to/project",
-  "model": "default",
-  "import": "/path/to/session-2026-08-25 16:29:14 UTC.json"
+  "model": "default"
 }
 ```
 
@@ -277,12 +275,8 @@ endpoint and the static web UI (§7.8). Errors use `4xx`/`5xx` with
   normalized to an **absolute** path (resolved against the server process cwd if
   relative) and stored in that form.
 - `model` — LLM model name, default from config (`default`).
-- `import` (optional) — path to a legacy `clown-code` `session-*.json` file. If
-  provided, its `{ messages, todos, total_tokens }` seed the new session. This
-  is the only remaining bridge to the old file format (see §10.3).
 - `201` on success, returning the created session (meta + snapshot).
-- `400` if `cwd` is missing; `404` if `import` file not found; `500` if the
-  `cwd` path is not a directory.
+- `400` if `cwd` is missing; `500` if the `cwd` path is not a directory.
 
 `GET /sessions/:id` response:
 
@@ -385,6 +379,11 @@ Event types (SSE `event:` field):
 - The stream supports an optional `?since=<seq>` query (monotonic per-session
   sequence number) to replay missed events after a reconnect. Each event carries
   an incremental `id:` (the seq) for `Last-Event-ID` resume.
+- A **fresh** connection (no `?since` and no `Last-Event-ID`) does **not**
+  replay the backlog — it streams live events only. A client loads the current
+  snapshot from `GET /sessions/:id` and uses the (bounded) ring buffer purely to
+  catch up after a brief disconnect; replaying the whole history on first connect
+  would just make it re-render / flicker through every past transition.
 - The connection stays open until the client disconnects or the session is
   destroyed (server sends a final `status: stopped` + close).
 - Heartbeat: an SSE comment line (`: keep-alive`) every 15s to keep proxies open.
@@ -398,7 +397,7 @@ Event types (SSE `event:` field):
 | HTTP | `code`            | Meaning |
 |------|-------------------|---------|
 | `400`| `bad_request`     | Malformed body / missing `cwd` / empty `cwd` filter |
-| `404`| `not_found`       | Unknown session id, unknown `import` file, unknown model |
+| `404`| `not_found`       | Unknown session id, unknown model |
 | `409`| `session_busy`    | Run-starting call while `running` is true |
 | `500`| `internal`        | Unhandled server error (incl. DB errors) |
 | `502`| `llm_unavailable` | The LLM endpoint is unreachable / returns an error |
@@ -426,18 +425,18 @@ The core loop, once `send` is called, is:
 ```
 running = true; emit status=running; persist(status)
 loop:
-    turn = await agent.next()        # one LLM chat completion over current messages + tools
-    if !turn: break
-    for tc in turn.tool_calls:
-        result = await tools[tc.function.name](tc.function.arguments, sessionCtx)
-        emit tool result message
-    messages += assistant turn (+ tool results)
-    total_tokens = usage from LLM response
-    emit snapshot; persist(snapshot, last_activity)
+    turn = await agent.next()        # one LLM chat completion; appends the assistant msg
+    emit snapshot; persist(snapshot, last_activity)   # persist + stream the assistant turn (incl. tool calls) BEFORE running them
+    if !turn.tool_calls: break
+    for tc in turn.tool_calls:       # cooperative: check the abort signal between calls
+        await tools[tc.function.name](tc.function.arguments, sessionCtx)   # appends a role=tool result
+    emit snapshot; persist(snapshot, last_activity)   # persist + stream the tool results
 emit status=idle, done; persist(status)
 ```
 
-- `agent.next()` is one call to the LLM with `messages` + tool definitions.
+- `agent.next()` is one call to the LLM with `messages` + tool definitions. It
+  appends the assistant message (with any `tool_calls`) before returning, so the
+  turn is already in history by the time we persist.
 - `acceptAll` = execute every requested tool, append `role=tool` results, and
   loop again so the model can react.
 - The loop ends when the model returns a turn with **no** tool calls.
@@ -445,8 +444,11 @@ emit status=idle, done; persist(status)
   cleanly, emits `status=stopped`, and persists.
 - Token accounting uses the `usage` field from the LLM response
   (analog of `agent.total_tokens`).
-- **Persistence** after each turn keeps the DB current even if the process dies
-  mid-run (a partial turn is recoverable as far as the last persisted turn).
+- **Persist + emit the assistant turn before executing its tool calls.** The
+  turn is streamed and written to the DB as soon as `next()` returns, *then* the
+  tools run. This makes the model's intent durable and visible to the client
+  before any (possibly long or destructive) side effect, and keeps the DB current
+  if the process dies mid-run (recoverable as far as the last persisted state).
 
 ### Cancellation (replacing `SIGKILL`)
 
@@ -507,20 +509,6 @@ Current working directory: <realpath of cwd>
 On startup, `db.js` runs idempotent DDL (`CREATE TABLE IF NOT EXISTS`,
 `CREATE INDEX IF NOT EXISTS`). A tiny `user_version` pragma tracks the schema
 version for future migrations.
-
-### 10.3 Legacy `session-*.json` compatibility
-
-The persisted `snapshot` column uses the **exact same JSON shape** as
-`clown-code`'s `session-*.json` (`{ messages, todos, total_tokens }`).
-
-- **Import**: `POST /sessions { "import": "<path>" }` seeds a new session from a
-  legacy file (the only supported bridge *in* the old format).
-- **Export**: the `snapshot` field returned by `GET /sessions/:id` is directly
-  writable to a `session-*.json` file by a client to open in `clown-code`. No
-  dedicated export endpoint is required.
-
-There is **no** per-session `session-*.json` written into the project `cwd`;
-the SQLite DB is the sole system of record.
 
 ---
 
@@ -587,7 +575,8 @@ clown-circus/
 ├─ SPEC.md                  # this file
 ├─ README.md
 ├─ WEB_UI.md                # web UI description (features, constraints, growth)
-├─ package.json             # "type": "module"; scripts: start
+├─ package.json             # "type": "module"; scripts: start, typecheck
+├─ tsconfig.json            # tsc config: checkJs/allowJs/noEmit, strict:false, types:[node] (type-check only)
 ├─ .gitignore
 ├─ webui/
 │  ├─ index.html            # web UI shell served at / (Tailwind CDN + import map + #root)
@@ -632,13 +621,25 @@ subdirectories.
 - **`node:crypto.randomUUID`** for session ids.
 - Minimal dependencies: just `express`. Everything else (SQLite, crypto, http,
   child_process) is built into Node.
+- **TypeScript (dev-only, check-only)**: `typescript`, `@types/node`, `preact`
+  and `htm` are dev dependencies used *solely* to type-check the plain-JS
+  codebase — they never emit and are not part of the runtime or build. (The
+  `preact`/`htm` packages are installed only for their type declarations; the
+  web UI still loads those libraries from the CDN import map at runtime.) Run
+  with `npm run typecheck` (i.e. `tsc --noEmit`), configured in `tsconfig.json`:
+  `checkJs` + `allowJs` + `noEmit` with `strict: false`, plus `types: ["node"]`
+  (the native `tsc` does not auto-include `@types` the way the JS compiler does).
+  The **server** (`src/`) is type-clean. The **web UI** (`webui/`) has only 2
+  errors left — `Event` vs `MessageEvent` in the SSE handler — which are
+  **intentionally not fixed yet**.
 
 ---
 
 ## 15. Code Style
 
 House style for the codebase — modern, idiomatic, **terse** JavaScript. These
-are conventions, not lint-enforced.
+are conventions, not lint-enforced. Keep the code clean under `npm run typecheck`
+(`tsc --noEmit`, see §14) even though it is not lint-gated.
 
 - **Modules**: ESM `import`/`export` only. No `require`/`module.exports`.
 - **Exports**: one named export per module, imported by name. No `export default`
@@ -715,7 +716,7 @@ function readFile(io, ctx, args) {
 - Multi-process / concurrent-writer access to the same DB file (single writer).
 - Session TTL / garbage collection (sessions persist in the DB until deleted).
 - Writing per-session `session-*.json` files into project dirs (SQLite is the
-  sole store; the old format is import/export only).
+  sole system of record).
 - Changes to the LLM provider protocol beyond OpenAI-compatible chat.
 - The two-phase **auto**-compact (still *planned* in the source): only the
   **manual** compact endpoint (§7.5) is in scope for v1.
@@ -733,9 +734,8 @@ function readFile(io, ctx, args) {
 4. Remaining tools (`write_file`, `edit_file`, `load_skill`) + path sandbox.
 5. Controls: `stop`, `undo`, `retry`, `clear`, `clear-tools`, `compact`,
    `init`.
-6. Legacy `import` on create; verify snapshot interop with `clown-code`.
-7. `README.md`.
-8. Minimal web UI at `/` (static Preact + htm page; see WEB_UI.md).
+6. `README.md`.
+7. Minimal web UI at `/` (static Preact + htm page; see WEB_UI.md).
 
 ---
 

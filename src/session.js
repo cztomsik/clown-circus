@@ -211,20 +211,25 @@ export class Session {
 
   // --- Operations (port of Clown methods) -----------------------------------
 
+  // Append a user message and push a snapshot so the live transcript shows it
+  // immediately (before the loop's first LLM turn) — same pattern as undo/clear.
+  appendUser(text) {
+    this.messages.push({ role: 'user', content: text });
+    this.touch();
+    this.emit('snapshot', this.snapshot());
+    this.persist();
+  }
+
   // Append a user message and start the loop (fire-and-forget; the caller gets 202).
   send(text) {
     this.assertIdle();
-    this.messages.push({ role: 'user', content: text });
-    this.touch();
-    this.persist();
+    this.appendUser(text);
     void runLoop(this);
   }
 
   // Append a user message and await the loop to finish (used by compact).
   async run(text) {
-    this.messages.push({ role: 'user', content: text });
-    this.touch();
-    this.persist();
+    this.appendUser(text);
     await runLoop(this);
   }
 

@@ -55,7 +55,7 @@ export const buildApp = ({ manager, config, llm }) => {
     }
     if (!st.isDirectory()) throw new HttpError(500, 'internal', `cwd is not a directory: ${abs}`);
 
-    const s = manager.create({ cwd: abs, model: body.model, import: body.import });
+    const s = manager.create({ cwd: abs, model: body.model });
     res.status(201).json(s.detail());
   });
 
@@ -129,8 +129,15 @@ export const buildApp = ({ manager, config, llm }) => {
 
     if (req.query.ping === 'true' || req.query.ping === '1') sseFrame(res, { seq: 0, event: 'pong', data: {} });
 
-    const since = Number(req.query.since ?? req.headers['last-event-id'] ?? 0) || 0;
-    for (const rec of s.eventsSince(since)) sseFrame(res, rec);
+    // Replay only on resume (reconnect carries ?since / Last-Event-ID). A fresh
+    // connection already has full state from GET /sessions/:id, so replaying the
+    // ring buffer would resend the whole run history and make the UI re-render /
+    // flicker its status through every past transition.
+    const sinceRaw = req.query.since ?? req.headers['last-event-id'];
+    if (sinceRaw !== undefined && sinceRaw !== '') {
+      const since = Number(sinceRaw) || 0;
+      for (const rec of s.eventsSince(since)) sseFrame(res, rec);
+    }
 
     const onEvent = (rec) => sseFrame(res, rec);
     const onEnd = () => res.end();

@@ -44,6 +44,7 @@ export const openDb = (dbFile) => {
 
   const get = (id) => db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) ?? null;
 
+  /** @param {{ cwd?: string }} o */
   const list = ({ cwd } = {}) => {
     const sql = cwd
       ? 'SELECT * FROM sessions WHERE cwd = ? ORDER BY last_activity DESC'

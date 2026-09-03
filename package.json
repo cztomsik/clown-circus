@@ -8,12 +8,19 @@
     "clown-circus": "src/main.js"
   },
   "scripts": {
-    "start": "node src/main.js"
+    "start": "node src/main.js",
+    "typecheck": "tsc --noEmit"
   },
   "engines": {
     "node": ">=24"
   },
   "dependencies": {
     "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "htm": "^3.1.1",
+    "preact": "^10.29.8",
+    "typescript": "^7.0.2"
   }
 }

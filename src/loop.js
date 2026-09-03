@@ -14,7 +14,11 @@ export const runLoop = async (session) => {
         break;
       }
       const toolCalls = await session.next(); // one LLM turn; appends assistant msg
-      if (!toolCalls) break;
+      // Persist + emit the assistant turn (incl. its tool calls) BEFORE executing
+      // them: the intent must be durable and visible to the client first.
+      session.emit('snapshot', session.snapshot());
+      session.persist();
+      if (!toolCalls) break; // final turn: no tool batch
       if (session.signal?.aborted) {
         status = 'stopped';
         break;

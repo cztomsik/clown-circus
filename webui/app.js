@@ -1,6 +1,9 @@
-import { h, render, Fragment } from 'preact';
+import { h, render } from 'preact';
 import { useState, useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 import htm from 'htm';
+import { baseName, prettyArgs } from './util.js';
+import { InputBar } from './InputBar.js';
+import { Sidebar } from './Sidebar.js';
 
 const html = htm.bind(h);
 
@@ -17,57 +20,56 @@ const api = async (path, opts = {}) => {
 const post = (path, body) => api(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
 
 // ── pure helpers ─────────────────────────────────────────────────────
-const baseName = (cwd) => cwd.split('/').filter(Boolean).at(-1) || cwd;
-const timeAgo = (iso) => {
-  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 60) return `${Math.floor(s)}s ago`;
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
-};
-const prettyArgs = (a) => { try { return JSON.stringify(JSON.parse(a)); } catch { return a ?? ''; } };
+// md breakpoint: at/above it the sidebar sits in the flex flow; below it,
+// it is an overlay drawer (auto-collapsed by default on mobile).
+const isWide = () => window.matchMedia('(min-width: 768px)').matches;
 
-// ── status colour maps ───────────────────────────────────────────────
-const dotColor = { running: 'bg-accent animate-pulse', idle: 'bg-ok', error: 'bg-err', stopped: 'bg-dim' };
+// ── status colour map (badge) ─────────────────────────────────────────
 const badgeColor = { running: 'text-accent', idle: 'text-ok', error: 'text-err', stopped: 'text-dim' };
 
 // ── shared class strings ─────────────────────────────────────────────
 const BTN = 'text-ink bg-panel border border-line rounded py-[3px] px-2.5 text-xs cursor-pointer hover:border-accent';
-const SEND_BTN = 'text-ink bg-panel border border-line rounded py-1.5 px-2 cursor-pointer hover:border-accent disabled:opacity-40 disabled:cursor-default disabled:hover:border-line';
 const PRE = 'm-0 py-2 px-2.5 whitespace-pre-wrap break-words';
 
 // ── leaf components ──────────────────────────────────────────────────
 const Pre = ({ text, cls = PRE }) => html`<pre class=${cls}>${text ?? ''}</pre>`;
 
-const Header = ({ cfg }) => html`
-  <header class="flex items-baseline gap-3 px-3.5 py-2.5 border-b border-line">
-    <h1 class="text-[15px] m-0 text-accent">clown-circus</h1>
-    <div class="text-dim text-xs">${cfg}</div>
+const Header = ({ cfg, theme, sideOpen, onSideToggle, onThemeToggle }) => html`
+  <header class="flex items-center gap-2.5 px-3.5 py-2.5 border-b border-line">
+    <button title="toggle sidebar" aria-label="toggle sidebar" aria-pressed=${sideOpen}
+            class=${`${BTN} flex-none ${sideOpen ? 'border-accent' : ''}`}
+            onclick=${onSideToggle}>☰</button>
+    <h1 class="text-[15px] m-0 text-accent flex-none">clown-circus</h1>
+    <div class="text-dim text-xs min-w-0 flex-1 truncate">${cfg}</div>
+    <button title="toggle theme" class=${`${BTN} flex-none`} onclick=${onThemeToggle}>${theme === 'dark' ? '→ light' : '→ dark'}</button>
   </header>`;
 
+// Roles are distinguished by colour / weight / tint instead of boxed cards:
+// user = accent amber on a faint amber wash, assistant = plain ink (tool
+// calls as dim `» name(args)` lines), system/tool = collapsed dim details
+// with a thin left rule.
 const Message = ({ m }) => {
   if (m.role === 'system') {
     return html`
-      <details class="border border-line rounded-md">
-        <summary class="py-1 px-2.5 text-dim text-[11px] cursor-pointer">system</summary>
-        <${Pre} text=${m.content} cls="m-0 py-2 px-2.5 whitespace-pre-wrap break-words text-dim border-t border-line max-h-[300px] overflow-y-auto" />
+      <details class="border-l-2 border-line pl-2.5">
+        <summary class="py-0.5 text-dim/70 text-xs italic cursor-pointer select-none">system</summary>
+        <${Pre} text=${m.content} cls="m-0 pt-1.5 pb-1 text-dim text-xs italic whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto" />
       </details>`;
   }
   if (m.role === 'tool') {
     const first = (m.content ?? '').split('\n')[0].slice(0, 120);
     return html`
-      <details class="border border-dashed border-line rounded-md">
-        <summary class="py-1 px-2.5 text-dim text-xs cursor-pointer">tool result — ${first}</summary>
-        <${Pre} text=${m.content} cls="m-0 py-2 px-2.5 whitespace-pre-wrap break-words text-dim border-t border-dashed border-line" />
+      <details class="border-l-2 border-line bg-panel/70 rounded-r-md">
+        <summary class="py-1 px-2.5 text-dim text-xs cursor-pointer select-none">tool result — ${first}</summary>
+        <${Pre} text=${m.content} cls="m-0 pt-0.5 pb-1.5 px-2.5 text-dim text-xs whitespace-pre-wrap break-words" />
       </details>`;
   }
   const isUser = m.role === 'user';
   return html`
-    <div class="border border-line rounded-md bg-panel">
-      <div class="py-1 px-2.5 border-b border-line text-[11px] uppercase tracking-wide ${isUser ? 'text-accent' : 'text-dim'}">${m.role}</div>
+    <div class=${`font-mono ${isUser ? 'border-l-2 border-accent bg-accent/10 rounded-r-md pl-3 pr-2 py-1.5' : ''}`}>
+      ${m.content ? html`<${Pre} text=${m.content} cls=${isUser ? 'm-0 font-medium text-accent whitespace-pre-wrap break-words' : PRE} />` : null}
       ${(m.tool_calls ?? []).map((tc) => html`
-        <span class="inline-block mt-1.5 mr-1.5 ml-2.5 py-0.5 px-2 bg-chip border border-line rounded-full text-xs">${tc.function.name}(${prettyArgs(tc.function.arguments)})</span>`)}
-      ${m.content ? html`<${Pre} text=${m.content} />` : null}
+        <div class="text-dim text-xs mb-1 break-words">» ${tc.function.name}(${prettyArgs(tc.function.arguments)})</div>`)}
     </div>`;
 };
 
@@ -111,76 +113,6 @@ const Toolbar = ({ view, onAction, onDel }) => html`
     <button title="delete this session" class=${BTN} onclick=${onDel}>delete</button>
   </div>`;
 
-const InputBar = ({ running, value, onInput, onKey, onSend, onStop }) => html`
-  <div class="flex gap-2 px-3 py-2.5 border-t border-line">
-    <textarea value=${value} oninput=${onInput} onkeydown=${onKey} disabled=${running}
-              placeholder="message (Enter to send, Shift+Enter for newline)"
-              class="flex-1 resize-y min-h-[44px] max-h-[200px] text-ink bg-panel border border-line rounded py-1.5 px-2 focus:outline-none focus:border-accent"></textarea>
-    <div class="flex flex-col gap-1.5">
-      <button disabled=${running} class=${SEND_BTN} onclick=${onSend}>send</button>
-      ${running ? html`<button class=${SEND_BTN} onclick=${onStop}>stop</button>` : null}
-    </div>
-  </div>`;
-
-// ── session list (grouped by project) ────────────────────────────────
-const SessionItem = ({ s, active, onSelect }) => html`
-  <li class=${active
-    ? 'py-2 pl-[7px] pr-2.5 border-b border-line cursor-pointer flex flex-col gap-0.5 bg-panel border-l-[3px] border-l-accent'
-    : 'py-2 px-2.5 border-b border-line cursor-pointer flex flex-col gap-0.5 hover:bg-panel'}
-      onclick=${() => onSelect(s.id)}>
-    <span class="flex items-center gap-1.5">
-      <span class="w-2 h-2 rounded-full flex-none ${dotColor[s.status] ?? 'bg-ok'}"></span>
-      <span>${baseName(s.cwd)}</span>
-    </span>
-    <span class="text-dim text-[11px]">${s.status} · ${timeAgo(s.last_activity)} · ${s.message_count} msgs · ${s.total_tokens} tok</span>
-  </li>`;
-
-const SessionList = ({ sessions, current, onSelect }) => {
-  // Group by cwd (project), preserving server sort order (most recent first).
-  const groups = new Map();
-  for (const s of sessions) {
-    if (!groups.has(s.cwd)) groups.set(s.cwd, []);
-    groups.get(s.cwd).push(s);
-  }
-  return html`
-    <ul class="list-none m-0 p-0 overflow-y-auto flex-1">
-      ${[...groups].map(([cwd, ss]) => html`
-        <${Fragment} key=${cwd}>
-          <li class="px-2.5 pt-3 pb-1 text-dim text-[10px] uppercase tracking-wider select-none">${baseName(cwd)} (${ss.length})</li>
-          ${ss.map((s) => html`<${SessionItem} key=${s.id} s=${s} active=${s.id === current} onSelect=${onSelect} />`)}
-        </${Fragment}>
-      `)}
-    </ul>`;
-};
-
-const Sidebar = ({ models, defaultModel, sessions, current, onNew, onSelect }) => {
-  const [cwd, setCwd] = useState('');
-  const [model, setModel] = useState('');
-  const submit = async (e) => {
-    e.preventDefault();
-    const c = cwd.trim();
-    if (!c) return;
-    setCwd('');
-    await onNew(c, model.trim());
-  };
-  return html`
-    <aside class="w-[280px] min-w-[220px] border-r border-line flex flex-col">
-      <form class="flex flex-col gap-1.5 p-2.5 border-b border-line" onsubmit=${submit}>
-        <input value=${cwd} oninput=${(e) => setCwd(e.target.value)} placeholder="/path/to/cwd" required autocomplete="off"
-               class="text-ink bg-panel border border-line rounded py-1.5 px-2 focus:outline-none focus:border-accent" />
-        <select value=${model} onchange=${(e) => setModel(e.target.value)}
-                class="text-ink bg-panel border border-line rounded py-1.5 px-2 focus:outline-none focus:border-accent w-full">
-          <option value="">default (${defaultModel ?? '?'})</option>
-          ${models.map((m) => html`<option key=${m} value=${m}>${m}</option>`)}
-        </select>
-        <button type="submit"
-                class="text-ink bg-panel border border-line rounded py-1.5 px-2 cursor-pointer hover:border-accent
-                       disabled:opacity-40 disabled:cursor-default disabled:hover:border-line">new session</button>
-      </form>
-      <${SessionList} sessions=${sessions} current=${current} onSelect=${onSelect} />
-    </aside>`;
-};
-
 const Main = (p) => !p.view
   ? html`
       <main class="flex-1 flex flex-col min-w-0">
@@ -192,7 +124,7 @@ const Main = (p) => !p.view
         <${ErrorBox} message=${p.flash ?? p.view.last_error} />
         <${Todos} todos=${p.view.todos} />
         <${Messages} messages=${p.view.messages} />
-        <${InputBar} running=${p.view.status === 'running'} value=${p.input}
+        <${InputBar} running=${p.view.status === 'running'} current=${p.view.id} value=${p.input}
                       onInput=${(e) => p.setInput(e.target.value)} onKey=${p.onKey} onSend=${p.onSend} onStop=${p.onStop} />
       </main>`;
 
@@ -205,8 +137,16 @@ const App = () => {
   const [current, setCurrent] = useState(null);
   const [view, setView] = useState(null);
   const [input, setInput] = useState('');
+  const [newCwd, setNewCwd] = useState('');
   const [flash, setFlash] = useState(null);
   const flashTimer = useRef(null);
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem('clown-circus-theme') === 'light' ? 'light' : 'dark'; }
+    catch { return 'dark'; }
+  });
+
+  // Sidebar: open by default on desktop, auto-collapsed on narrow viewports.
+  const [sideOpen, setSideOpen] = useState(isWide);
 
   const flashMsg = (msg) => {
     setFlash(msg);
@@ -241,6 +181,21 @@ const App = () => {
     return () => { clearInterval(timer); clearTimeout(flashTimer.current); };
   }, []);
 
+  // theme: reflect to <html data-theme> and persist so it survives reloads.
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem('clown-circus-theme', theme); } catch {}
+  }, [theme]);
+
+  // Keep the drawer from covering the whole viewport when the window shrinks
+  // below the md breakpoint (resize / rotate to portrait).
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)');
+    const onChange = (e) => { if (!e.matches) setSideOpen(false); };
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
   // live updates: one EventSource per selected session (auto-reconnects with Last-Event-ID).
   useEffect(() => {
     if (!current) return;
@@ -256,9 +211,10 @@ const App = () => {
     });
     es.addEventListener('done', (e) => setView((v) => v ? { ...v, tokens: JSON.parse(e.data).total_tokens } : v));
     es.addEventListener('error', (e) => {
-      if (e.data) {
+      const me = /** @type {MessageEvent} */ (e);
+      if (me.data) {
         setView((v) => v ? { ...v, status: 'error' } : v);
-        flashMsg(JSON.parse(e.data).message);
+        flashMsg(JSON.parse(me.data).message);
         refreshSessions();
       }
     });
@@ -267,6 +223,7 @@ const App = () => {
   }, [current]);
 
   const select = async (id) => {
+    if (!isWide()) setSideOpen(false); // on mobile, a tap on a session reveals the chat
     setCurrent(id);
     refreshSessions();
     try {
@@ -275,6 +232,7 @@ const App = () => {
         id: d.id ?? id, cwd: d.cwd, model: d.model, status: d.status, last_error: d.last_error,
         messages: d.snapshot.messages, todos: d.snapshot.todos, tokens: d.snapshot.total_tokens,
       });
+      setNewCwd(d.cwd);
     } catch (err) {
       flashMsg(err.message);
       setCurrent(null);
@@ -296,7 +254,9 @@ const App = () => {
       if (name === 'undo' || name === 'clear' || name === 'clear-tools') {
         // synchronous history edits: re-fetch the detail and re-render.
         const r = await post(`/sessions/${current}/${name}`);
-        if (name === 'undo' && r?.undone) flashMsg(`undone: ${r.undone.slice(0, 120)}`);
+        // Undo restores the popped user message into the composer so it can be
+        // edited and re-sent.
+        if (name === 'undo' && r?.undone) setInput(r.undone);
         const d = await api(`/sessions/${current}`);
         setView((v) => v ? {
           ...v, status: d.status, last_error: d.last_error,
@@ -312,7 +272,10 @@ const App = () => {
 
   const send = async () => {
     const text = input.trim();
-    if (!text || !current) return;
+    // Enter does nothing while a run is in flight (the composer stays editable
+    // so you can type ahead, but it won't fire a second message); the typed text
+    // is preserved and can be sent once the session is idle.
+    if (!text || !current || view?.status === 'running') return;
     setInput('');
     try {
       await post(`/sessions/${current}/messages`, { message: text });
@@ -324,6 +287,8 @@ const App = () => {
   const stop = async () => {
     try { await post(`/sessions/${current}/stop`); } catch (err) { flashMsg(err.message); }
   };
+
+  const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
 
   const del = async () => {
     if (!confirm(`delete session ${baseName(view?.cwd ?? '')}?`)) return;
@@ -337,10 +302,19 @@ const App = () => {
 
   return html`
     <div class="h-dvh flex flex-col">
-      <${Header} cfg=${cfg} />
+      <${Header} cfg=${cfg} theme=${theme} sideOpen=${sideOpen}
+                 onSideToggle=${() => setSideOpen((o) => !o)} onThemeToggle=${toggleTheme} />
       <div class="flex-1 flex min-h-0">
-        <${Sidebar} models=${models} defaultModel=${defaultModel} sessions=${sessions} current=${current}
-                  onNew=${onNew} onSelect=${select} />
+        ${sideOpen ? html`
+          <!-- mobile (<md): fixed overlay drawer + dimmed backdrop;
+               desktop (>=md): display:contents wrapper, so the <aside>
+               joins the parent flex row as the in-flow column -->
+          <div class="fixed inset-0 z-40 flex md:contents">
+            <${Sidebar} cls="w-[280px] max-w-[85vw] md:max-w-none min-w-[220px] border-r border-line flex flex-col bg-bg shadow-xl md:shadow-none"
+                       models=${models} defaultModel=${defaultModel} sessions=${sessions} current=${current}
+                       onNew=${onNew} onSelect=${select} newCwd=${newCwd} setNewCwd=${setNewCwd} />
+            <div class="flex-1 bg-black/50 md:hidden" onclick=${() => setSideOpen(false)}></div>
+          </div>` : null}
         <${Main} view=${view} flash=${flash} input=${input} setInput=${setInput}
                  onAction=${handleAction} onSend=${send} onStop=${stop} onDel=${del} onKey=${onKey} />
       </div>

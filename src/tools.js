@@ -62,20 +62,39 @@ const editFile = async (ctx, args) => {
   return 'File edited successfully';
 };
 
+// Grace period after the direct child exits before forcing a finalize. Covers
+// the case where `close` is delayed by a grandchild that inherited our stdio.
+const DRAIN_MS = 300;
+
 const runCommand = (ctx, args) =>
   new Promise((res) => {
     const cwd = args.cwd ? resolveSafe(ctx.cwd, args.cwd) : ctx.cwd;
-    const child = spawn('sh', ['-c', args.command], { cwd });
+    // `stdin: 'ignore'` so commands that read stdin (prompts, `cat`, npm
+    // questions) get EOF immediately instead of hanging on input that never
+    // arrives. We only ever capture stdout/stderr.
+    const child = spawn('sh', ['-c', args.command], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
     let err = '';
+    let code = 0;
     let done = false;
-    const finish = (s) => {
-      if (!done) {
-        done = true;
-        res(s);
-      }
-    };
+    let drainTimer;
     const onAbort = () => child.kill('SIGKILL');
+    const cleanup = () => {
+      clearTimeout(drainTimer);
+      ctx.signal?.removeEventListener('abort', onAbort);
+      child.stdout.destroy();
+      child.stderr.destroy();
+    };
+    const finish = (s) => {
+      if (done) return;
+      done = true;
+      cleanup();
+      res(s);
+    };
+    const render = () =>
+      code !== 0 ? `Command failed with exit code ${code}\nStdout:\n${out}\nStderr:\n${err}`
+      : err.length ? `${out}\n\nStderr:\n${err}`
+      : out;
     if (ctx.signal) {
       if (ctx.signal.aborted) onAbort();
       else ctx.signal.addEventListener('abort', onAbort, { once: true });
@@ -83,12 +102,15 @@ const runCommand = (ctx, args) =>
     child.stdout.on('data', (d) => (out.length < MAX ? (out += d) : null));
     child.stderr.on('data', (d) => (err.length < MAX ? (err += d) : null));
     child.on('error', (e) => finish(`Error running command: ${e.message}`));
-    child.on('close', (code) => {
-      ctx.signal?.removeEventListener('abort', onAbort);
-      if (code !== 0) finish(`Command failed with exit code ${code}\nStdout:\n${out}\nStderr:\n${err}`);
-      else if (err.length) finish(`${out}\n\nStderr:\n${err}`);
-      else finish(out);
+    child.on('exit', (c) => {
+      code = c ?? 0;
+      // The command itself is done, but `close` (all stdio closed) may be
+      // deferred indefinitely if it backgrounded a grandchild that inherited
+      // the pipes. Finalize on `close` (exact drain) or after a short grace
+      // period to flush trailing output, whichever comes first.
+      drainTimer = setTimeout(() => finish(render()), DRAIN_MS);
     });
+    child.on('close', () => finish(render()));
   });
 
 const updateTodos = (ctx, args) => {

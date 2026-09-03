@@ -10,12 +10,16 @@ primary interface — the UI is just one client of it.
 ## What it is
 
 - **`webui/index.html`** — a thin page shell, served at `GET /` via
-  `express.static` in `src/app.js`. The `<head>` holds the `<style
-  type="text/tailwindcss">` block and the import map; styling is **Tailwind
-  CSS v4** from the Play CDN (`@tailwindcss/browser@4`) with custom design
-  tokens (colours) in an `@theme` block. The `<body>` contains only a single
-  `<div id="root">` mount point plus `<script type="module" src="/app.js">`
-  — no static UI markup (the whole UI is rendered by Preact at runtime).
+  `express.static` in `src/app.js`. The `<head>` holds the import map, a
+  `<style type="text/tailwindcss">` block, and styling is **Tailwind CSS v4**
+  from the Play CDN (`@tailwindcss/browser@4`) with the colour palette as
+  `--color-*` tokens in an `@theme` block (the default **dark** theme). It also
+  holds a plain `<style>` block with the **light** palette (overriding the same
+  tokens under `:root[data-theme="light"]`) and a tiny inline `<script>` that
+  re-applies the saved theme before first paint (no flash on reload). The
+  `<body>` contains only a single `<div id="root">` mount point plus
+  `<script type="module" src="/app.js">` — no static UI markup (the whole UI is
+  rendered by Preact at runtime).
 - **Import map** — `index.html` declares a `<script type="importmap">` in the
   `<head>` (before any module script) that maps `preact`, `preact/`, and
   `htm` to pinned **esm.sh** CDN URLs (`preact@10.29.8`, `htm@3.1.1`). This
@@ -29,9 +33,20 @@ primary interface — the UI is just one client of it.
   (`const html = htm.bind(h)`); a single `App` component owns all state and
   mounts into `#root` via Preact's `render`. Presentational components:
   `Header`, `Sidebar` (with `SessionList`/`SessionItem`), `Main`, `Toolbar`,
-  `Todos`, `Messages`/`Message`, `InputBar`. API calls, the `EventSource`
+  `Todos`, `Messages`/`Message`. The composer lives in its own module
+  (`InputBar.js`, below). API calls, the `EventSource`
   (SSE), the 10s session poll, and the transient error flash live in
   `useState`/`useEffect`/`useRef` (`preact/hooks`) inside `App`.
+- **`webui/InputBar.js`** — the composer, extracted into its own module and
+  re-imported by `app.js` (`import { InputBar } from './InputBar.js'`). Owns its
+  `useRef`/`useLayoutEffect` autofocus and its `SEND_BTN` class string; recreates
+  the `htm`→`h` `html` binding locally (no build step, so each module is
+  self-contained). A plain ES module served by `express.static`.
+- **`webui/util.js`** — a small module of pure, dependency-free helpers
+  (`baseName`, `timeAgo`, `prettyArgs`), exported by name and pulled in by
+  `app.js` with `import { … } from './util.js'`. Kept separate so `app.js`
+  holds only the Preact components, hooks, and wiring. A plain ES module served
+  by `express.static` like `app.js` — still no build step.
 - No build step, no extra npm dependency (consistent with SPEC §14). The
   whole UI is plain static files in `webui/`; the only runtime UI libraries
   are **Preact + htm** (import-map → esm.sh) plus Tailwind (CDN) — nothing
@@ -48,11 +63,36 @@ primary interface — the UI is just one client of it.
   last-activity, message/token counts). Refreshed on SSE `status` events and
   every 10s. New-session form (`cwd` required, **model picker** — a
   `<select>` populated from `GET /models` with the default model pre-labelled)
-  → `POST /sessions`.
+  → `POST /sessions`. The `cwd` field is **pre-set to the selected session's
+  cwd** whenever a session is chosen (state lifted into `App`, written in
+  `select()`), so spinning up another session for the same project is one
+  click; the field is cleared after a successful create and remains editable.
+- **Header** — a `☰` sidebar-toggle button (leftmost), the `clown-circus`
+  brand, the live config summary (`base_url · default model · db file`), and
+  the theme toggle. The config summary is `flex-1 min-w-0 truncate`, so on
+  narrow viewports it truncates to one line instead of pushing the buttons
+  off-screen.
+- **Sidebar toggle (responsive)** — the `☰` button shows/hides the sidebar.
+  The initial state follows the viewport: **open** at ≥ 768px, **collapsed**
+  below it (auto-collapsed on mobile). At ≥ 768px the sidebar is an in-flow
+  flex column (hiding it widens the main pane); below 768px it renders as a
+  fixed full-height overlay drawer (`w-[280px]`, `max-w-[85vw]`, opaque
+  `bg-bg` + shadow) over a dimmed backdrop that also closes it on tap.
+  Preact renders the single `Sidebar` inside a wrapper
+  `div.fixed.inset-0.z-40.flex.md\:contents` — the `md:contents`
+  (`display: contents`) makes the wrapper disappear at the desktop
+  breakpoint, so the `<aside>` joins the parent flex row. A `matchMedia`
+  listener auto-closes the drawer when the viewport shrinks below 768px
+  (resize / rotation), and selecting a session on a narrow viewport closes
+  the drawer, so one tap on a session lands you in the chat.
 - **Session view** — full detail from `GET /sessions/:id`. Messages rendered
-  from the snapshot: system prompt collapsed, tool results collapsed (first
-  line as the summary), assistant `tool_calls` shown as chips
-  (`name(args)`). Todos panel rendered from the snapshot's `todos`.
+  from the snapshot as a flat transcript — no boxed cards or role headers;
+  roles are distinguished by colour / weight / background: **user** = accent
+  colour, medium weight, faint accent wash with a thin accent left rule;
+  **assistant** = plain ink, with `tool_calls` shown as dim `» name(args)`
+  lines; **system** = collapsed dim italic details (the prompt);
+  **tool** results = collapsed dim details on a faint panel wash, first line
+  as the summary. Todos panel rendered from the snapshot's `todos`.
 - **Live updates** — browser `EventSource` on `GET /sessions/:id/events`:
   - `snapshot` → re-render messages, todos, token count
   - `todo` → re-render todos
@@ -61,18 +101,36 @@ primary interface — the UI is just one client of it.
   - `done` → update token count
   - `EventSource` auto-reconnects and sends `Last-Event-ID`, so the server's
     replay ring (SPEC §7.6) covers brief disconnects.
-- **Composer** — textarea, Enter to send, Shift+Enter for newline; disabled
-  while the session is running (single-flight, matches `409 session_busy`).
+- **Composer** — textarea, Enter to send, Shift+Enter for newline. While the
+  session is running the box **looks disabled** (faded, `opacity-50`) but stays
+  **enabled and editable**, so you keep focus and can type ahead; Enter is a
+  no-op until the session is idle (single-flight, so it never fires a second
+  message — matching the server's `409 session_busy`). The send button remains
+  genuinely `disabled` while running. It is **autofocused** whenever it mounts,
+  whenever the active session changes, and whenever its value is set
+  programmatically (e.g. undo restoring a message) (a ref + `useLayoutEffect`
+  in `InputBar`), so you can type the moment a session opens. It **auto-grows** to fit its text via
+  `field-sizing: content` (no JS auto-resize), starting at `min-h-[44px]` and
+  capped at `max-h-[33dvh]` (~1/3 of the viewport) — past that it scrolls
+  internally (`overflow-y-auto`).
 - **Controls** — toolbar with three logical groups (separated by thin
   vertical rules):
   - **Agent actions**: `retry`, `init` — fire-and-forget (202),
     start the loop.
   - **History editing**: `compact`, `undo`, `clear-tools`, `clear` —
     `compact` starts the loop; the rest are synchronous and re-render the
-    snapshot after the call.
+    snapshot after the call. `undo` restores the popped user message into the
+    composer (from the response's `undone` field) and returns focus to it, so
+    you can edit and re-send.
   - **Destructive**: `delete` (with `confirm()`).
   Plus the composer: send (`POST …/messages`) and `stop`.
   All endpoints are from SPEC §7.5.
+- **Theme toggle** — a button in the `Header` (top-right) switches the
+  `--color-*` palette between the default dark and the light theme by setting
+  `data-theme` on `<html>`; the current state shows as `→ light` / `→ dark`.
+  The choice is persisted in `localStorage` under `clown-circus-theme`, and a
+  tiny inline `<script>` in `index.html` re-applies it before first paint so
+  reloads open in the right theme.
 
 ## Constraints / invariants
 
@@ -100,14 +158,17 @@ primary interface — the UI is just one client of it.
   lacks.
 - **Routing**: `express.static` is registered before the JSON 404 fallback;
   unknown paths must still return the JSON `404 not_found` error shape.
-- **Styling**: dark, monospace, terminal-ish — it should feel like a client of
-  the CLI-era tool, not a SaaS dashboard. Implemented with Tailwind v4
-  utility classes; the colour palette is defined once in the `@theme` block
+- **Styling**: monospace, terminal-ish — it should feel like a client of the
+  CLI-era tool, not a SaaS dashboard. Implemented with Tailwind v4 utility
+  classes; the colour palette is the `--color-*` tokens
   (`--color-bg`, `--color-panel`, `--color-line`, `--color-ink`, `--color-dim`,
-  `--color-accent`, `--color-err`, `--color-ok`, `--color-chip`).
+  `--color-accent`, `--color-err`, `--color-ok`), defined once as the default
+  dark theme in the `@theme` block with the light theme overriding the same
+  tokens under `:root[data-theme="light"]` (see **Theme toggle**). Every
+  utility references `var(--color-*)`, so flipping the attribute recolours the
+  whole UI, including `/opacity` tints.
 
 ## Current gaps (intentional — candidates for expansion)
 
-- No snapshot import/export from the UI (SPEC §10.3).
 - No markdown/code rendering of assistant content (plain `<pre>`).
 - No multi-session side-by-side view; one session at a time.

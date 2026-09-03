@@ -1,0 +1,10 @@
+{
+  "include": ["src/**/*", "webui/**/*"],
+  "compilerOptions": {
+    "strict": false,
+    "checkJs": true,
+    "allowJs": true,
+    "noEmit": true,
+    "types": ["node"]
+  }
+}

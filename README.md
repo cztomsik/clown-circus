@@ -85,15 +85,14 @@ Errors: `{ "error": { "code", "message" } }`.
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/sessions` | List as `SessionMeta[]`. Optional `?cwd=<path>` (exact match). |
-| `POST` | `/sessions` | Create. Body: `{ cwd, model?, import? }` → `201` |
+| `POST` | `/sessions` | Create. Body: `{ cwd, model? }` → `201` |
 | `GET` | `/sessions/:id` | Full session: `SessionMeta` + `snapshot` |
 | `DELETE` | `/sessions/:id` | Stop and delete (memory + DB) → `204` |
 
-`POST /sessions` body — `cwd` is required (resolved to an absolute path); `import` optionally
-seeds the session from a legacy `clown-code` `session-*.json` file:
+`POST /sessions` body — `cwd` is required (resolved to an absolute path); `model` is optional:
 
 ```json
-{ "cwd": "/abs/path", "model": "default", "import": "/path/to/session-....json" }
+{ "cwd": "/abs/path", "model": "default" }
 ```
 
 `SessionMeta`:
@@ -153,9 +152,8 @@ system of record: state is upserted on every transition (create, message, tool r
 change, error, delete). On startup all sessions are loaded into memory; any session persisted
 as `running`/`stopped` (killed mid-run) is reset to `idle`.
 
-The `snapshot` column stores `{ messages, todos, total_tokens }` — the **same JSON shape** as
-`clown-code`'s `session-*.json`, so `GET /sessions/:id` output can be written straight to a
-file and opened in `clown-code`, and `POST /sessions { import }` reads one back.
+The `snapshot` column stores `{ messages, todos, total_tokens }` — the internal
+conversation format, persisted per session. It may evolve freely as the tool grows.
 
 ---
 

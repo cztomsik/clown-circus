@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import { Session } from './session.js';
 import { HttpError } from './errors.js';
 
@@ -41,32 +40,12 @@ export class SessionManager {
     }
   }
 
-  create({ cwd, model, import: importPath }) {
+  create({ cwd, model }) {
     if (this.config.maxSessions && this.sessions.size >= this.config.maxSessions)
       throw new HttpError(400, 'bad_request', `max sessions (${this.config.maxSessions}) reached`);
 
-    let snap = { messages: [], todos: [], total_tokens: 0 };
-    if (importPath) {
-      let raw;
-      try {
-        raw = readFileSync(importPath, 'utf8');
-      } catch {
-        throw new HttpError(404, 'not_found', `import file not found: ${importPath}`);
-      }
-      let parsed;
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        throw new HttpError(400, 'bad_request', 'import file is not valid JSON');
-      }
-      snap = {
-        messages: Array.isArray(parsed.messages) ? parsed.messages : [],
-        todos: Array.isArray(parsed.todos) ? parsed.todos : [],
-        total_tokens: parsed.total_tokens ?? 0,
-      };
-    }
-
     const now = new Date().toISOString();
+    const snap = { messages: [], todos: [], total_tokens: 0 };
     const row = {
       id: randomUUID(),
       cwd,
@@ -84,6 +63,7 @@ export class SessionManager {
     return s;
   }
 
+  /** @param {{ cwd?: string }} o */
   list({ cwd } = {}) {
     return [...this.sessions.values()]
       .filter((s) => !cwd || s.cwd === cwd)
