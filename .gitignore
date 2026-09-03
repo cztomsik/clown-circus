@@ -1,0 +1,7 @@
+node_modules/
+*.log
+*.clowndb
+*.clowndb-journal
+*.clowndb-wal
+*.clowndb-shm
+.DS_Store

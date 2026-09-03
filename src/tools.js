@@ -1,0 +1,133 @@
+import { readFile as fsReadFile, writeFile as fsWriteFile, mkdir } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { dirname, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
+
+const MAX = 2 * 1024 * 1024; // 2MB cap, as in the source
+const BUILTIN_INIT = readFileSync(fileURLToPath(new URL('./skills/init.md', import.meta.url)), 'utf8');
+
+const tool = (name, description, parameters, run) => ({ name, description, parameters, run });
+
+// JSON-schema shorthands (emit the same `parameters` as a literal object schema).
+const S = (vals) => ({ type: 'string', ...(vals ? { enum: vals } : {}) });
+const B = () => ({ type: 'boolean' });
+const A = (items) => ({ type: 'array', items });
+const obj = (properties, required) => ({ type: 'object', properties, required });
+
+// Resolve a (possibly relative) path against the sandbox root and reject
+// anything that escapes it. Closes the source's `TODO: Check for path traversal`.
+const resolveSafe = (root, p) => {
+  const abs = resolve(root, p);
+  const rootAbs = resolve(root);
+  const ok = abs === rootAbs || abs.startsWith(rootAbs.endsWith(sep) ? rootAbs : rootAbs + sep);
+  if (!ok) throw new Error(`Path escapes sandbox: ${p}`);
+  return abs;
+};
+
+const isUtf8 = (buf) => buf.equals(Buffer.from(buf.toString('utf8'), 'utf8'));
+
+// --- Core tools -------------------------------------------------------------
+
+const readFile = async (ctx, args) => {
+  const buf = await fsReadFile(resolveSafe(ctx.cwd, args.path));
+  if (buf.length > MAX) throw new Error('File too large');
+  if (!isUtf8(buf)) throw new Error('Invalid UTF-8');
+  const text = buf.toString('utf8');
+  return args.raw ? text : text.split('\n').map((l, i) => `${i + 1}:${l}`).join('\n');
+};
+
+const writeFile = async (ctx, args) => {
+  const p = resolveSafe(ctx.cwd, args.path);
+  await mkdir(dirname(p), { recursive: true });
+  await fsWriteFile(p, args.content);
+  return 'File written successfully';
+};
+
+const editFile = async (ctx, args) => {
+  const p = resolveSafe(ctx.cwd, args.path);
+  const content = (await fsReadFile(p)).toString('utf8');
+  let next;
+  if (args.replace_all) {
+    if (!args.old_content) throw new Error('old_content must be non-empty');
+    next = content.split(args.old_content).join(args.new_content);
+  } else {
+    const pos = content.indexOf(args.old_content);
+    if (pos === -1) throw new Error('Content not found');
+    if (content.indexOf(args.old_content, pos + args.old_content.length) !== -1)
+      throw new Error('Ambiguous match (appears more than once); set replace_all=true');
+    next = content.slice(0, pos) + args.new_content + content.slice(pos + args.old_content.length);
+  }
+  await fsWriteFile(p, next);
+  return 'File edited successfully';
+};
+
+const runCommand = (ctx, args) =>
+  new Promise((res) => {
+    const cwd = args.cwd ? resolveSafe(ctx.cwd, args.cwd) : ctx.cwd;
+    const child = spawn('sh', ['-c', args.command], { cwd });
+    let out = '';
+    let err = '';
+    let done = false;
+    const finish = (s) => {
+      if (!done) {
+        done = true;
+        res(s);
+      }
+    };
+    const onAbort = () => child.kill('SIGKILL');
+    if (ctx.signal) {
+      if (ctx.signal.aborted) onAbort();
+      else ctx.signal.addEventListener('abort', onAbort, { once: true });
+    }
+    child.stdout.on('data', (d) => (out.length < MAX ? (out += d) : null));
+    child.stderr.on('data', (d) => (err.length < MAX ? (err += d) : null));
+    child.on('error', (e) => finish(`Error running command: ${e.message}`));
+    child.on('close', (code) => {
+      ctx.signal?.removeEventListener('abort', onAbort);
+      if (code !== 0) finish(`Command failed with exit code ${code}\nStdout:\n${out}\nStderr:\n${err}`);
+      else if (err.length) finish(`${out}\n\nStderr:\n${err}`);
+      else finish(out);
+    });
+  });
+
+const updateTodos = (ctx, args) => {
+  const list = ctx.todos.map((t) => ({ ...t }));
+  for (const ch of args.upsert) {
+    const it = list.find((t) => t.name === ch.name);
+    if (it) Object.assign(it, ch);
+    else list.push({ name: ch.name, status: ch.status ?? 'pending' });
+  }
+  ctx.setTodos(list);
+  return list;
+};
+
+const loadSkill = async (ctx, args) => {
+  if (args.skill_name === 'init') return BUILTIN_INIT;
+  return (await fsReadFile(resolveSafe(ctx.cwd, `skills/${args.skill_name}.md`))).toString('utf8');
+};
+
+// --- Registration -----------------------------------------------------------
+
+export const buildTools = () =>
+  new Map([
+    tool('update_todos', 'Create/update todo item(s)',
+      obj({ upsert: A(obj({ name: S(), status: S() }, ['name'])) }, ['upsert']), updateTodos),
+    tool('read_file', 'Read the contents of a file',
+      obj({ path: S(), raw: B() }, ['path']), readFile),
+    tool('write_file', 'Write content to a file, creating directories if needed',
+      obj({ path: S(), content: S() }, ['path', 'content']), writeFile),
+    tool('edit_file', 'Edit a file by replacing specific content. Set replace_all=true to replace all occurrences',
+      obj({ path: S(), old_content: S(), new_content: S(), replace_all: B() }, ['path', 'old_content', 'new_content']), editFile),
+    tool('run_command', 'Execute a shell command and return its output',
+      obj({ command: S(), cwd: S() }, ['command']), runCommand),
+    tool('load_skill', 'Load a set of specialized instructions (a skill) into the current context to improve performance on a specific task.',
+      obj({ skill_name: S() }, ['skill_name']), loadSkill),
+  ].map((t) => [t.name, t]));
+
+// OpenAI `tools` array for the LLM, derived from a registry.
+export const toolSchemas = (registry) =>
+  [...registry.values()].map((t) => ({
+    type: 'function',
+    function: { name: t.name, description: t.description, parameters: t.parameters },
+  }));

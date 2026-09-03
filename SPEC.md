@@ -1,0 +1,749 @@
+# Clown-Circus — Specification
+
+A **headless, multi-session** port of [`clown-code`](../clown-code/) exposed as an
+**Express-based HTTP server**. Instead of a single terminal TUI bound to one
+conversation, Clown-Circus manages any number of independent agent **sessions**,
+each with its own working directory, conversation state, and running agent loop,
+all driven over REST + Server-Sent Events. All sessions and their conversation
+state are persisted in a local **SQLite** database.
+
+- **Source of truth for behavior**: `../clown-code/` (Zig + tokamak TUI).
+- **Target runtime**: the currently installed **Node.js 24.x** (`v24.14.1`),
+  plain JavaScript (ESM). No build step.
+- **Storage**: the builtin **`node:sqlite`** module (no external DB server).
+- **No TUI, no terminal, no fork/pipe.** Everything that was a keypress or TUI
+  command becomes an HTTP endpoint.
+
+---
+
+## 1. Goals
+
+- Port the **agent core** of Clown-Code (system-prompt composition, agentic
+  tool loop, tools, compaction, retry/undo) to JavaScript.
+- Run **many sessions concurrently** in a single long-lived server process.
+- **Persist every session** (metadata + full conversation snapshot) in a local
+  SQLite database using Node's builtin `node:sqlite`, so state survives restarts.
+- Provide a **headless REST + SSE API** that a client (web UI, CLI, CI, other
+  services) can drive entirely over HTTP.
+- Provide a **web UI** served at `/` so the server is usable out of the box in
+  a browser. It is minimal for now (a thin Preact + htm page, no build step)
+  and expected to grow over time — see [WEB_UI.md](WEB_UI.md) for the full
+  description.
+- Support a **"projects" view**: sessions are grouped by their working directory,
+  and `/sessions` can be filtered by path.
+- Keep behavior faithful to the original: same tool set, same prompt-composition
+  rules, same snapshot content shape (so snapshots stay interop-able with
+  `clown-code`).
+
+## 2. Non-Goals
+
+- No terminal client.
+- No authentication/authorization, rate limiting, or multi-tenancy hardening
+  beyond binding to localhost by default (see §16).
+- No change to the model provider contract: it still targets an OpenAI-compatible
+  `/v1/chat/completions` endpoint (llama.cpp by default).
+- No external database server — storage is embedded SQLite only.
+- No distributed server / horizontal scaling.
+
+---
+
+## 3. Relationship to Clown-Code
+
+| Concern                | Clown-Code (source)                     | Clown-Circus (this port)                          |
+|------------------------|------------------------------------------|---------------------------------------------------|
+| Frontend               | tokamak TUI (`src/tui.zig`)              | Web UI served at `/` (Tailwind v4, project-grouped sidebar, model picker, full controls — see WEB_UI.md); headless API stays primary |
+| Process model          | fork-based worker + pipe                 | In-process async loop, one active run per session  |
+| Sessions               | Exactly one, bound to the process        | Many, each a `Session` object in a registry        |
+| Commands (`/stop` etc.)| TUI slash-commands                       | REST endpoints                                     |
+| Streaming to user      | TUI re-render each tick                  | SSE event stream per session                       |
+| Persistence            | `session-*.json` in cwd (manual `/save`) | SQLite DB (`~/.clowndb`), one row per session, always written |
+| CWD                    | Server process cwd                       | Per-session `cwd` (stored per row)                 |
+| Tools                  | `src/tools.zig`                          | `src/tools.js` (behavior preserved)                |
+| System prompt          | `PREFIX.md` + `AGENTS.md`/`CLOWN.md`     | Same (loaded per session cwd)                      |
+
+The `Worker` / `WorkerMsg` / pipe machinery in `src/model.zig` is **removed**.
+Its observable contract — "run the agent loop, emit snapshots, report errors" —
+is preserved as an async loop plus event emitter per session. The manual
+`session-*.json` file save/load is **replaced** by the SQLite store (snapshot
+content is kept in the same JSON shape for compatibility).
+
+---
+
+## 4. Architecture Overview
+
+```
+                         ┌──────────────────────────────────────────────┐
+                         │              Express app (app.js)             │
+                         │                                              │
+   HTTP clients ───────▶ │  REST routes  ──▶  SessionManager             │
+   (REST + SSE)          │                    │                          │
+                         │                    ├─ map<id, Session>        │
+                         │                    │   (in-memory, hot state) │
+                         │                    └──▶ SQLite (~/.clowndb)   │
+                         │                         system of record      │
+                         │  ┌───────────────────────────────────────┐     │
+                         │  │  Session (one per conversation)       │     │
+                         │  │   - id, cwd, model, status            │     │
+                         │  │   - messages[], todos[], tokens       │     │
+                         │  │   - agent loop (async)                │     │
+                         │  │   - EventEmitter (SSE source)         │     │
+                         │  └───────────────────────────────────────┘     │
+                         │                    │                          │
+                         └────────────────────┼──────────────────────────┘
+                                              │ tool calls (sandboxed to cwd)
+                                              ▼
+                                   Filesystem + shell (per-session cwd)
+                                              │
+                                              ▼
+                          LLM: OpenAI-compatible /v1/chat/completions
+                          (llama.cpp, default http://127.0.0.1:8080)
+```
+
+Components (each is a flat file under `src/`):
+
+- **`db.js`** — thin wrapper over `node:sqlite`. Owns the connection, runs the
+  schema migration, and exposes query helpers (`upsertSession`, `getSession`,
+  `listSessions`, `listProjects`, `deleteSession`, `allSessions`).
+- **`manager.js` (SessionManager)** — the multi-session registry. Loads all
+  sessions from SQLite into memory at startup, and coordinates create/list/
+  retrieve/destroy + persist-on-change. Owns IDs and lifecycle.
+- **`session.js` (Session)** — the port of the `Clown` struct (`src/model.zig`).
+  Owns the message list, todos, token counter, the agentic loop, and an event
+  emitter. Replaces the fork/pipe worker with an in-process async loop guarded
+  by a single-flight flag so only one run executes at a time.
+- **`loop.js`** — the agent loop (port of `workerInner`), shared by sessions.
+- **`tools.js`** — the port of `src/tools.zig`. Each tool is a named function
+  with a JSON-schema description (surfaced to the model) and typed args.
+- **`llm.js`** — a thin OpenAI-compatible chat client (replaces `tk.ai.Client`),
+  used by the agent loop.
+- **`prompt.js`** — composes the system prompt (replaces `loadSystemPrompt`).
+
+### Concurrency model (replacing the fork/pipe worker)
+
+Clown-Code forks a child because the TUI must stay responsive while the blocking
+agent loop runs. In a Node server the equivalent constraint is: **do not block
+the event loop** and **do not let two runs of the same session interleave**.
+
+- The agent loop is a plain `async` function: `send(prompt)` → append user
+  message → run loop (`while (turn = await next()) { await acceptAll(turn) }`).
+- Each `Session` has `running: boolean`. `send`/`retry`/`compact`
+  reject (HTTP 409) if `running` is already true unless the caller issues
+  `stop` first. This is the direct analogue of "worker != null → busy".
+- `stop` sets a cooperative cancellation token (an `AbortController`) checked
+  between turns (replacing `SIGKILL` of the fork). Long-running tool calls
+  (e.g. `run_command`) are aborted via the shared `AbortSignal`.
+- Sessions are independent; a slow session never blocks others.
+- **SQLite writes are synchronous** (`node:sqlite` `DatabaseSync`) and small
+  (one row upsert per state change), so they do not meaningfully block the
+  event loop. Writes happen on the main thread; the DB is single-writer by
+  design (one process owns the file).
+
+---
+
+## 5. Data Model
+
+### 5.1 Snapshot (conversation content)
+
+Kept in the same shape as Clown-Code's `Snapshot` so it stays interop-able with
+`clown-code` `session-*.json` files.
+
+```js
+// TodoItem
+// { name: string, status: string }   // "pending" | "in_progress" | "completed" (free text allowed)
+
+// Message
+// {
+//   role: "system" | "user" | "assistant" | "tool",
+//   content: string,
+//   tool_calls?: [ { id, type: "function", function: { name, arguments } } ], // assistant
+//   tool_call_id?: string,   // tool-result messages reference a call
+//   name?: string            // tool name for role=tool
+// }
+
+// Snapshot  (stored as a JSON string in the `snapshot` column)
+// { messages: Message[], todos: TodoItem[], total_tokens: number }
+```
+
+### 5.2 SQLite schema
+
+A single database **file**: `~/.clowndb` by default (a file, not a directory).
+Overridable via `--db-file`/`DB_FILE`. Created/migrated on startup
+(`CREATE TABLE IF NOT EXISTS` ...).
+
+```sql
+CREATE TABLE IF NOT EXISTS sessions (
+  id            TEXT PRIMARY KEY,               -- UUIDv4
+  cwd           TEXT NOT NULL,                  -- absolute working directory
+  model         TEXT NOT NULL DEFAULT 'default',
+  status        TEXT NOT NULL DEFAULT 'idle',   -- idle | running | error | stopped
+  created_at    TEXT NOT NULL,                  -- ISO 8601
+  last_activity TEXT NOT NULL,                  -- ISO 8601
+  last_error    TEXT,                           -- nullable
+  snapshot      TEXT NOT NULL                   -- JSON: { messages, todos, total_tokens }
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_cwd ON sessions (cwd);
+```
+
+### 5.3 Runtime model
+
+A `Session` object (in memory) = the DB row's fields + the parsed `snapshot` +
+runtime state (`running`, `abortController`, `EventEmitter`, LLM client).
+
+A **`SessionMeta`** is what the API exposes for listing (derived from the row +
+snapshot; the raw `messages` are not included in list responses):
+
+```js
+// SessionMeta
+// {
+//   id, cwd, model, status, created_at, last_activity, last_error?,
+//   message_count,   // = snapshot.messages.length
+//   todo_count,      // = snapshot.todos.length
+//   total_tokens     // = snapshot.total_tokens
+// }
+```
+
+---
+
+## 6. Session Lifecycle
+
+1. **Created** via `POST /sessions` with a `cwd` (required path) and optional
+   `model`. A row is inserted into SQLite and the session is loaded into memory.
+   Status `idle`.
+2. **Running** when an agentic loop is active (after a message/retry/compact).
+   Every state change is upserted to SQLite.
+3. **Idle** again when the loop finishes.
+4. **Error** if the loop throws; `last_error` is set and persisted. The session
+   remains reusable — a new message starts a fresh run.
+5. **Destroyed** via `DELETE /sessions/:id` (aborts any running loop, removes
+   the row from SQLite, drops from memory).
+
+**Persistence is continuous**: the DB is the system of record, so state is
+written on every transition (create, message, tool result, status change, error,
+delete) — not just on an explicit save. This is the natural consequence of
+SQLite being the store (it is not an optional "auto-save" feature).
+
+**Restart semantics**: at startup the `SessionManager` loads all rows into
+memory. A session whose persisted `status` is `running`/`stopped` (i.e. it was
+mid-run when the process died) is reset to `idle`, because an in-flight loop
+cannot survive a restart.
+
+### ID scheme
+
+UUIDv4 (`crypto.randomUUID()`), generated by the server. Stable and unique in
+the DB. Clients persist the `id` to address a session across requests/restarts.
+
+---
+
+## 7. HTTP API
+
+Base path: `/`. All bodies are JSON. All responses are JSON except the SSE
+endpoint and the static web UI (§7.8). Errors use `4xx`/`5xx` with
+`{ "error": { "code", "message" } }`.
+
+### 7.1 Server / models
+
+| Method | Path            | Description |
+|--------|-----------------|-------------|
+| `GET`  | `/health`       | Liveness probe → `{ "ok": true, "sessions": <n> }` |
+| `GET`  | `/models`       | Proxy `GET /v1/models` to the LLM (analog of `/models` command) |
+| `GET`  | `/config`       | Read-only effective server config (base_url, db_file, defaults) |
+
+### 7.2 Sessions
+
+| Method | Path                 | Description |
+|--------|----------------------|-------------|
+| `GET`  | `/sessions`          | List sessions as `SessionMeta[]`. Optional `?cwd=<path>` to filter by working directory (exact match). |
+| `POST` | `/sessions`          | Create a session |
+| `GET`  | `/sessions/:id`      | Full session: `SessionMeta` + current `snapshot` |
+| `DELETE`| `/sessions/:id`     | Stop and delete the session (from memory and DB) |
+
+`GET /sessions`:
+- Returns all sessions (or those matching `?cwd=`).
+- `?cwd` is an exact, case-sensitive match on the stored absolute `cwd`.
+- `400` if `cwd` is supplied but empty.
+
+`POST /sessions` body (`cwd` required, the rest optional):
+
+```json
+{
+  "cwd": "/abs/path/to/project",
+  "model": "default",
+  "import": "/path/to/session-2026-08-25 16:29:14 UTC.json"
+}
+```
+
+- `cwd` is a filesystem path used as the session's working directory. It is
+  normalized to an **absolute** path (resolved against the server process cwd if
+  relative) and stored in that form.
+- `model` — LLM model name, default from config (`default`).
+- `import` (optional) — path to a legacy `clown-code` `session-*.json` file. If
+  provided, its `{ messages, todos, total_tokens }` seed the new session. This
+  is the only remaining bridge to the old file format (see §10.3).
+- `201` on success, returning the created session (meta + snapshot).
+- `400` if `cwd` is missing; `404` if `import` file not found; `500` if the
+  `cwd` path is not a directory.
+
+`GET /sessions/:id` response:
+
+```json
+{
+  "id": "...",
+  "cwd": "/abs/path",
+  "model": "default",
+  "status": "idle",
+  "created_at": "2026-09-02T12:00:00.000Z",
+  "last_activity": "2026-09-02T12:05:00.000Z",
+  "message_count": 42,
+  "todo_count": 3,
+  "total_tokens": 18334,
+  "last_error": null,
+  "snapshot": { "messages": [], "todos": [], "total_tokens": 18334 }
+}
+```
+
+### 7.3 Projects
+
+| Method | Path         | Description |
+|--------|--------------|-------------|
+| `GET`  | `/projects`  | "Projects" view: unique working directories across all sessions |
+
+A project is simply a distinct `cwd`. This is derived directly from the DB:
+`SELECT cwd, COUNT(*) AS sessions FROM sessions GROUP BY cwd ORDER BY cwd`.
+
+Response:
+
+```json
+[
+  { "cwd": "/Users/cztomsik/Desktop/clown-circus", "sessions": 3 },
+  { "cwd": "/Users/cztomsik/projects/other",       "sessions": 1 }
+]
+```
+
+Clients use this to build a project sidebar; selecting one is equivalent to
+`GET /sessions?cwd=<that path>`.
+
+### 7.4 Sending messages
+
+| Method | Path                            | Description |
+|--------|---------------------------------|-------------|
+| `POST` | `/sessions/:id/messages`        | Append a user message and start the agent loop |
+
+Body: `{ "message": "help me fix the tests" }`.
+
+- `202 Accepted` immediately: `{ "id", "status": "running" }`. The run is
+  asynchronous; progress is delivered over the SSE stream (§8) and reflected in
+  `GET /sessions/:id`.
+- `409 Conflict` if the session is already `running` (client should `stop` first
+  or wait).
+- `404` if the session does not exist.
+
+### 7.5 Session controls (port of the TUI slash-commands)
+
+All of these operate on a single session and map 1:1 to the original commands in
+`src/tui.zig` `handleCommand`.
+
+| Method | Path                       | Original cmd   | Behavior |
+|--------|----------------------------|----------------|----------|
+| `POST` | `/sessions/:id/stop`       | `/stop`        | Cooperatively abort the running loop. `200` `{ "status": "stopped" }`. No-op (still `200`) if idle. |
+| `POST` | `/sessions/:id/undo`       | `/undo`        | Pop the last message from history. Returns the popped message text (if any) in `{ "undone": "..." }`. |
+| `POST` | `/sessions/:id/retry`      | `/retry`       | Strip trailing assistant/tool messages (keep last user message) and re-run. `202` when it starts a run, `409` if busy. |
+| `POST` | `/sessions/:id/clear`      | `/clear`       | Stop + clear history (keep system message) + clear todos. `200`. |
+| `POST` | `/sessions/:id/clear-tools`| `/clear-tools` | Stop + drop all `role=tool` messages, keep system/user/assistant. `200`. |
+| `POST` | `/sessions/:id/compact`    | `/compact`     | Run the two-phase summarize-then-replace compaction (as in the source). `202` (starts a run). |
+| `POST` | `/sessions/:id/init`       | `/init`        | Convenience: send the prompt that triggers the built-in `init` skill ("Could you /init this project?"). `202`. |
+
+Rules common to the run-starting controls (`retry`, `compact`,
+`init`, `messages`): reject with `409` if `running` is already true. `stop` is
+the only control allowed while running.
+
+`undo`/`clear`/`clear-tools` are synchronous state edits; if a run is in
+progress they implicitly `stop` first (matching the original, which calls
+`self.stop()` before mutating).
+
+### 7.6 Events (SSE)
+
+| Method | Path                          | Description |
+|--------|-------------------------------|-------------|
+| `GET`  | `/sessions/:id/events`        | Server-Sent Events stream of session activity |
+
+This is the headless replacement for the TUI re-render loop. Clients connect
+with `Accept: text/event-stream` (e.g. a browser `EventSource`) and receive
+incremental updates in real time.
+
+Event types (SSE `event:` field):
+
+| Event      | Data (JSON)                              | Emitted when |
+|------------|------------------------------------------|--------------|
+| `snapshot` | `Snapshot`                               | After each agentic turn / tool batch (replaces the per-tick snapshot the TUI consumed) |
+| `todo`     | `TodoItem[]`                             | Whenever the todo list changes |
+| `status`   | `{ "status": "running"\|"idle"\|"error"\|"stopped" }` | On state transitions |
+| `error`    | `{ "message": "..." }`                   | On a loop error |
+| `done`     | `{ "total_tokens": n }`                  | When a run completes |
+| `pong`     | `{}`                                     | In response to a client `ping` (keepalive) |
+
+- The stream supports an optional `?since=<seq>` query (monotonic per-session
+  sequence number) to replay missed events after a reconnect. Each event carries
+  an incremental `id:` (the seq) for `Last-Event-ID` resume.
+- The connection stays open until the client disconnects or the session is
+  destroyed (server sends a final `status: stopped` + close).
+- Heartbeat: an SSE comment line (`: keep-alive`) every 15s to keep proxies open.
+
+> **Rationale**: a single SSE stream per session keeps clients simple and matches
+> the "server pushes rendered state" model of the TUI. WebSockets are a
+> non-goal; SSE is sufficient for one-way server→client streaming.
+
+### 7.7 Errors
+
+| HTTP | `code`            | Meaning |
+|------|-------------------|---------|
+| `400`| `bad_request`     | Malformed body / missing `cwd` / empty `cwd` filter |
+| `404`| `not_found`       | Unknown session id, unknown `import` file, unknown model |
+| `409`| `session_busy`    | Run-starting call while `running` is true |
+| `500`| `internal`        | Unhandled server error (incl. DB errors) |
+| `502`| `llm_unavailable` | The LLM endpoint is unreachable / returns an error |
+| `504`| `llm_timeout`     | The LLM request exceeded the configured timeout |
+
+### 7.8 Web UI
+
+A web UI is served at `GET /` from `webui/` (via `express.static`): a thin
+`index.html` shell (Tailwind v4 Play CDN, an import map for Preact/htm, and a
+single `#root` mount) plus `app.js`, the whole UI as a **Preact + htm** ES
+module. It is a **pure client** of the API in this section — it adds no server
+logic, routes, or dependencies. No build step: the only runtime libraries
+(Tailwind, Preact, htm) are loaded from CDNs.
+
+The authoritative description of the UI — features, constraints/invariants,
+and the current gaps it is expected to grow into — lives in
+[WEB_UI.md](WEB_UI.md).
+
+---
+
+## 8. Agent Loop (port of `workerInner`)
+
+The core loop, once `send` is called, is:
+
+```
+running = true; emit status=running; persist(status)
+loop:
+    turn = await agent.next()        # one LLM chat completion over current messages + tools
+    if !turn: break
+    for tc in turn.tool_calls:
+        result = await tools[tc.function.name](tc.function.arguments, sessionCtx)
+        emit tool result message
+    messages += assistant turn (+ tool results)
+    total_tokens = usage from LLM response
+    emit snapshot; persist(snapshot, last_activity)
+emit status=idle, done; persist(status)
+```
+
+- `agent.next()` is one call to the LLM with `messages` + tool definitions.
+- `acceptAll` = execute every requested tool, append `role=tool` results, and
+  loop again so the model can react.
+- The loop ends when the model returns a turn with **no** tool calls.
+- Each iteration checks the session's `AbortController`; if aborted, it stops
+  cleanly, emits `status=stopped`, and persists.
+- Token accounting uses the `usage` field from the LLM response
+  (analog of `agent.total_tokens`).
+- **Persistence** after each turn keeps the DB current even if the process dies
+  mid-run (a partial turn is recoverable as far as the last persisted turn).
+
+### Cancellation (replacing `SIGKILL`)
+
+`stop` calls `session.abortController.abort()`. The loop:
+1. Cancels any in-flight LLM `fetch` (via the shared `AbortSignal`).
+2. Aborts any in-flight `run_command` child process.
+3. Checks the signal at the top of each turn and between tool calls.
+
+Because the loop is cooperative, a tool call that ignores the signal is the only
+thing that can delay a stop. This is a deliberate, safer trade-off versus the
+source's process kill.
+
+---
+
+## 9. System Prompt (port of `loadSystemPrompt`)
+
+Composed **per session, from the session's `cwd`**, at session creation and
+re-composed on `clear`-style resets:
+
+```
+<PREFIX.md>                       (from ./src/PREFIX.md, copied from the source)
+
+<AGENTS.md>                       (from cwd, up to 1MB) if present,
+  else <CLOWN.md>                 (from cwd, up to 1MB) if present,
+  else (omitted)
+
+Current date: <YYYY-MM-DD>
+Current working directory: <realpath of cwd>
+```
+
+- The exact fallback chain `AGENTS.md → CLOWN.md → (none)` is preserved.
+- The system message is `messages[0]` and is the only message retained by
+  `clear`.
+- `PREFIX.md` content is copied from the source verbatim (same guidelines), with
+  the tool list updated to match the ported tools.
+
+---
+
+## 10. Persistence (SQLite)
+
+### 10.1 Storage
+
+- **Location**: a single database **file**, `~/.clowndb` by default (a file,
+  not a directory). Overridable via `--db-file`/`DB_FILE`.
+- **Engine**: Node's builtin `node:sqlite` (`node:sqlite` `DatabaseSync`). No
+  external server, no npm dependency.
+- **Journal mode**: use the default rollback journal (do **not** enable WAL).
+  WAL would create `-wal`/`-shm` sidecar files next to the DB; staying on the
+  default keeps the database a single self-contained file, which is the whole
+  point of `~/.clowndb`. (The transient `-journal` file only exists mid-write
+  and is removed on commit.)
+- **Writes**: synchronous, one row upsert per state change. The DB is owned by
+  exactly one server process (single-writer assumption), so WAL's read
+  concurrency benefit is not needed here.
+
+### 10.2 Migration
+
+On startup, `db.js` runs idempotent DDL (`CREATE TABLE IF NOT EXISTS`,
+`CREATE INDEX IF NOT EXISTS`). A tiny `user_version` pragma tracks the schema
+version for future migrations.
+
+### 10.3 Legacy `session-*.json` compatibility
+
+The persisted `snapshot` column uses the **exact same JSON shape** as
+`clown-code`'s `session-*.json` (`{ messages, todos, total_tokens }`).
+
+- **Import**: `POST /sessions { "import": "<path>" }` seeds a new session from a
+  legacy file (the only supported bridge *in* the old format).
+- **Export**: the `snapshot` field returned by `GET /sessions/:id` is directly
+  writable to a `session-*.json` file by a client to open in `clown-code`. No
+  dedicated export endpoint is required.
+
+There is **no** per-session `session-*.json` written into the project `cwd`;
+the SQLite DB is the sole system of record.
+
+---
+
+## 11. Configuration
+
+Via CLI flags and/or environment variables, resolved at startup into a
+`Config` object exposed read-only at `GET /config`.
+
+| Flag / Env                 | Env fallback     | Default                  | Meaning |
+|----------------------------|------------------|--------------------------|---------|
+| `--port` / `PORT`          | `PORT`           | `8790`                   | HTTP listen port |
+| `--host` / `HOST`          | `HOST`           | `127.0.0.1`              | Bind address (localhost default for safety) |
+| `--db-file` / `DB_FILE`    | `DB_FILE`        | `~/.clowndb`             | Path to the SQLite database file |
+| `--base-url` / `CLOWN_API` | `CLOWN_API`      | `http://127.0.0.1:8080`  | LLM OpenAI-compatible base URL (kept from source) |
+| `--model` / `DEFAULT_MODEL`| `DEFAULT_MODEL`  | `default`                | Default LLM model for new sessions |
+| `--timeout` / `CLOWN_TIMEOUT_MS` | `CLOWN_TIMEOUT_MS` | `900000` (15 min)      | Per-LLM-request timeout (matches source's `15*60`) |
+| `--max-sessions`           | `MAX_SESSIONS`   | `0` (unlimited)          | Optional cap on concurrent sessions |
+
+- The parent directory of the DB file is created (with parents) if missing.
+- LLM auth (`Authorization` header) is passed through from an optional
+  `CLOWN_API_KEY` env var, sent with every LLM request.
+
+---
+
+## 12. Tools (port of `src/tools.zig`)
+
+Each tool is registered with a **snake_case name** (matching the source's tool
+naming convention), a one-line description, a JSON-Schema for args, and an
+implementation. All tools are **sandboxed to the session's `cwd`**: relative
+paths resolve against `cwd`, and a path-traversal guard prevents escaping it
+(closes the `TODO: Check for path traversal` noted in the source's
+`load_skill`).
+
+| Tool            | Args                                            | Ported from | Notes |
+|-----------------|--------------------------------------------------|-------------|-------|
+| `read_file`     | `path`, `raw?: bool`                             | `readFile`  | Line-number prefix `N:content` unless `raw`. 2MB limit. UTF-8 validated. |
+| `write_file`    | `path`, `content`                                | `writeFile` | Creates parent dirs. |
+| `edit_file`     | `path`, `old_content`, `new_content`, `replace_all?: bool` | `editFile` | Exact-match replace; errors on 0 or >1 matches unless `replace_all`. Exact-string semantics kept (the source evaluated line-range/sed edits and rejected them). |
+| `run_command`   | `command`, `cwd?: string`                        | `runCommand`| Runs `sh -c`; captures stdout+stderr (2MB limits); abortable on stop. |
+| `update_todos`  | `upsert: TodoItem[]`                             | `updateTodos`| Upsert by `name`; updates session todo list; emits `todo` event. |
+| `load_skill`    | `skill_name`                                     | `loadSkill` | Built-in `init` first, else `skills/<name>.md` in cwd (path-validated). |
+
+Tool result values are returned to the model as text (strings / structured
+values serialized to JSON), matching the source's `tk.ai.fmt()` behaviour.
+
+### Tool context
+
+Each tool invocation receives a `ToolContext`:
+
+```js
+// {
+//   cwd: string,           // session cwd (sandbox root)
+//   signal: AbortSignal,   // for run_command
+//   emit(event, data),     // e.g. emit("todo", todos)
+// }
+```
+
+---
+
+## 13. Directory Layout (target)
+
+```
+clown-circus/
+├─ SPEC.md                  # this file
+├─ README.md
+├─ WEB_UI.md                # web UI description (features, constraints, growth)
+├─ package.json             # "type": "module"; scripts: start
+├─ .gitignore
+├─ webui/
+│  ├─ index.html            # web UI shell served at / (Tailwind CDN + import map + #root)
+│  └─ app.js                # the web UI: Preact + htm ES module
+└─ src/
+   ├─ main.js               # bootstrap: parse config, open DB, build app, listen
+   ├─ config.js             # Config resolution (flags + env)
+   ├─ app.js                # express app factory (all routes wired here)
+   ├─ db.js                 # node:sqlite wrapper: connection, migration, queries
+   ├─ manager.js            # SessionManager registry (loads from DB, persists changes)
+   ├─ session.js            # Session (port of model.zig Clown)
+   ├─ loop.js               # agent loop (port of workerInner)
+   ├─ llm.js                # OpenAI-compatible chat client
+   ├─ prompt.js             # system-prompt composition (port of loadSystemPrompt)
+   ├─ tools.js              # all tools + registerAllTools (port of tools.zig)
+   ├─ PREFIX.md             # base system prompt (copied from source)
+   └─ skills/
+      └─ init.md            # built-in init skill (copied from source)
+```
+
+The tree is deliberately flat: one file per concern, no per-feature
+subdirectories. `webui/` (the static UI) and `src/skills/` are the only
+subdirectories.
+
+---
+
+## 14. Technology Choices
+
+- **Node.js 24.x** (the currently installed runtime, `v24.14.1`). Plain
+  **JavaScript (ESM, `type: "module"`)**, no TypeScript, no build step. Run
+  directly with `node src/main.js`.
+- **`node:sqlite`** (builtin) for storage. Available without a flag in Node 24;
+  it currently emits an `ExperimentalWarning` — harmless, and we pin to the
+  installed major (24) so behavior is stable for our purposes.
+- **Express 5** for the HTTP layer (per requirement).
+- **`node:fs/promises`**, **`node:child_process`** (`spawn` with `AbortSignal`)
+  for tools. No shell injection — `run_command` uses `sh -c` explicitly, same as
+  the source.
+- **Native `fetch`** for LLM calls (OpenAI-compatible), with `AbortSignal` for
+  timeout + stop.
+- **SSE** via a minimal helper over the Express response (no heavy deps).
+- **`node:crypto.randomUUID`** for session ids.
+- Minimal dependencies: just `express`. Everything else (SQLite, crypto, http,
+  child_process) is built into Node.
+
+---
+
+## 15. Code Style
+
+House style for the codebase — modern, idiomatic, **terse** JavaScript. These
+are conventions, not lint-enforced.
+
+- **Modules**: ESM `import`/`export` only. No `require`/`module.exports`.
+- **Exports**: one named export per module, imported by name. No `export default`
+  for our own modules (a default import is only for CJS externals like `express`).
+- **Async**: `async`/`await` throughout. No manual `.then()` chains.
+- **Functions**: arrow functions assigned to `const`, not `function` declarations.
+- **DRY**: when a block repeats in 2+ places, lift it into a named helper rather
+  than copy-pasting the block.
+- **Bindings**: `const` by default, `let` only when reassigned, never `var`.
+- **Terse**: minimal ceremony. Prefer early returns, spread, optional chaining,
+  and template literals over verbose constructs. No abstractions that add no
+  behavior.
+
+Prefer:
+
+```js
+const readFile = async (io, ctx, args) => {
+  const text = await fs.readFile(resolve(ctx.cwd, args.path), 'utf8');
+  return args.raw ? text : text.split('\n').map((l, i) => `${i + 1}:${l}`).join('\n');
+};
+```
+
+Not:
+
+```js
+function readFile(io, ctx, args) {
+  return fs.readFile(resolve(ctx.cwd, args.path), 'utf8').then((text) => {
+    if (args.raw) return text;
+    let out = '';
+    const lines = text.split('\n');
+    for (let i = 0; i < lines.length; i++) out += i + 1 + ':' + lines[i] + '\n';
+    return out;
+  });
+}
+```
+
+---
+
+## 16. Security & Safety
+
+- Bind to `127.0.0.1` by default; the server is not assumed to be public.
+- **Path sandbox**: every file tool resolves its target against the session
+  `cwd` and rejects any path whose resolved form escapes the sandbox. This is a
+  hard requirement (fixes the source's `TODO`).
+- `run_command` runs with the session `cwd` as the working directory; no
+  privilege escalation.
+- **DB isolation**: the SQLite file defaults to `~/.clowndb` (user-scoped).
+  No cross-user access by default; `0600` on the file is recommended.
+- No auth by design (single-user, local tool) — same posture as Clown-Code.
+- LLM key never logged; request bodies are not logged by default.
+
+---
+
+## 17. Error Handling & Logging
+
+- All async routes wrapped in an Express error middleware that maps thrown
+  errors to the §7.7 table (LLM errors → 502/504; unknown id → 404; busy → 409;
+  DB errors → 500).
+- Per-session errors are captured in `SessionMeta.last_error` (persisted to the
+  DB), emitted as an `error` SSE event, and the session returns to `idle` so it
+  stays reusable.
+- Structured logging (timestamp, session id, event) to stdout. A `--verbose`
+  flag mirrors the source's debug logging (`src/log.zig`).
+- The `node:sqlite` `ExperimentalWarning` is expected and not treated as an
+  error.
+
+---
+
+## 18. Out of Scope (explicit)
+
+- A terminal client, or any non-HTTP control surface.
+- Authentication, multi-user tenancy, TLS termination (use a reverse proxy).
+- External database server or any non-SQLite storage.
+- Multi-process / concurrent-writer access to the same DB file (single writer).
+- Session TTL / garbage collection (sessions persist in the DB until deleted).
+- Writing per-session `session-*.json` files into project dirs (SQLite is the
+  sole store; the old format is import/export only).
+- Changes to the LLM provider protocol beyond OpenAI-compatible chat.
+- The two-phase **auto**-compact (still *planned* in the source): only the
+  **manual** compact endpoint (§7.5) is in scope for v1.
+
+---
+
+## 19. Milestones (suggested build order)
+
+1. Scaffold ESM/Express; config; `db.js` (open + migrate); `/health`, `/config`,
+   `/models`.
+2. `SessionManager` + `Session` shell (load-from-DB at startup, persist on
+   change); `GET/POST/DELETE /sessions` with `?cwd` filter; `GET /projects`.
+3. LLM client + agent loop + `read_file`/`run_command`/`update_todos`;
+   `POST /messages`; SSE `events`.
+4. Remaining tools (`write_file`, `edit_file`, `load_skill`) + path sandbox.
+5. Controls: `stop`, `undo`, `retry`, `clear`, `clear-tools`, `compact`,
+   `init`.
+6. Legacy `import` on create; verify snapshot interop with `clown-code`.
+7. `README.md`.
+8. Minimal web UI at `/` (static Preact + htm page; see WEB_UI.md).
+
+---
+
+## 20. Open Questions
+
+- **`cwd` matching**: exact match on the stored absolute path. Should
+  `?cwd` support prefix/subtree matching (e.g. all sessions under a dir)?
+  Current: exact match only.
+
+(Resolved during review: a session persisted as `running`/`stopped` on restart
+is reset to `idle` — no "interrupted" flag. Streaming is SSE, not WebSocket.)

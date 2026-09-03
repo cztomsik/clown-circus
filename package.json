@@ -1,0 +1,19 @@
+{
+  "name": "clown-circus",
+  "version": "0.1.0",
+  "description": "Headless, multi-session Express port of clown-code",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "clown-circus": "src/main.js"
+  },
+  "scripts": {
+    "start": "node src/main.js"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
+  }
+}
