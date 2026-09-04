@@ -21,7 +21,7 @@ export const Todos = ({ todos }) => {
         ${open ? html`
           <ul class="list-none m-0 p-1.5 text-xs max-h-64 overflow-y-auto">
             ${todos.map((t, i) => html`
-              <li key=${i} class=${t.status === 'completed' ? 'text-dim line-through' : t.status === 'in_progress' ? 'text-accent' : ''}>[${t.status}] ${t.name}</li>`)}
+              <li key=${i} class=${t.status === 'completed' ? 'text-dim line-through' : t.status === 'in_progress' ? 'text-accent' : ''}>${t.status === 'in_progress' ? '> ' : ''}${t.name}</li>`)}
           </ul>` : null}
       </div>
     </div>`;
