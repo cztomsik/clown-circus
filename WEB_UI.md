@@ -105,6 +105,15 @@ primary interface — the UI is just one client of it.
   cwd** whenever a session is chosen (state lifted into `App`, written in
   `select()`), so spinning up another session for the same project is one
   click; the field is cleared after a successful create and remains editable.
+
+  **Archived sessions** — the list is fetched as `GET /sessions?archived=all`
+  and split client-side, so the "show archived" toggle (a checkbox under the
+  new-session form, off by default) is instant and the 10s poll stays
+  toggle-agnostic. When off, archived sessions simply don't render. When on,
+  they appear in a flat, dimmed **"archived"** section at the bottom of the
+  list (server sort order kept), each item dimmed with a small `archived`
+  tag. Archived sessions are fully selectable — opening one works exactly
+  like any other session.
 - **Header (unified top bar)** — one row that merges what used to be a
   separate global header and a per-session toolbar. Left to right: a `☰`
   sidebar-toggle button, the `clown-circus` brand (hidden below `sm` to save
@@ -113,8 +122,11 @@ primary interface — the UI is just one client of it.
   (`base_url · default model · db file`, when none is), then the **model
   `<select>`**, then the theme toggle. When a session is open, a `⋮` button
   (between the summary and the model select) opens a dropdown of the session
-  **actions** (`retry`, `init`, `compact`, `undo`, `clear-tools`, `clear`, and
-  `delete` last, separated by a rule). The summary is `flex-1 min-w-0 truncate`,
+  **actions** (`retry`, `init`, `compact`, `undo`, `clear-tools`, `clear`,
+  `archive` — which flips to `unarchive` when the open session is archived —
+  and `delete` last, separated by a rule). Archiving hides the session from
+  the default sidebar list (see **Sidebar**); the toggle is reflected in the
+  open session's state immediately. The summary is `flex-1 min-w-0 truncate`,
   so on narrow viewports it truncates to one line instead of pushing the
   buttons off-screen. The menu closes on outside-tap (a full-viewport backdrop),
   on Escape, or when the selected session changes.

@@ -34,6 +34,7 @@ export class Session {
     this.createdAt = row.created_at ?? new Date().toISOString();
     this.lastActivity = row.last_activity ?? this.createdAt;
     this.lastError = row.last_error ?? null;
+    this.archived = !!row.archived;
 
     this.db = db;
     this.llm = llm;
@@ -78,6 +79,7 @@ export class Session {
       todo_count: this.todos.length,
       total_tokens: this.totalTokens,
       last_error: this.lastError,
+      archived: this.archived,
     };
   }
 
@@ -95,6 +97,7 @@ export class Session {
       last_activity: this.lastActivity,
       last_error: this.lastError,
       snapshot: JSON.stringify(this.snapshot()),
+      archived: this.archived,
     };
   }
 
@@ -347,6 +350,16 @@ export class Session {
   // next LLM call — no stop/restart required.
   setModel(model) {
     this.model = model;
+    this.touch();
+    this.persist();
+  }
+
+  // Flag the session as archived (or not). Like the model switch, this is a
+  // metadata-only edit: allowed while running, it never touches the
+  // conversation. Archived sessions persist but are hidden from the default
+  // `GET /sessions` list.
+  setArchived(archived) {
+    this.archived = !!archived;
     this.touch();
     this.persist();
   }

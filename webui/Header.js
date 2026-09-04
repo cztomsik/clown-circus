@@ -6,6 +6,7 @@ const badgeColor = { running: 'text-accent', idle: 'text-ok', error: 'text-err',
 // The session actions that used to fill a dedicated toolbar row, now folded
 // into a ⋮ dropdown so the top bar stays a single, compact row (mobile-friendly
 // and no horizontal overflow). `delete` is kept last, separated by a rule.
+// `archive` flips its label/key with the session's state (archive ↔ unarchive).
 const ACTIONS = [
   { key: 'retry', label: 'retry', title: 'strip trailing assistant/tool messages and re-run' },
   { key: 'init', label: 'init', title: 'run the /init skill on this project' },
@@ -13,6 +14,9 @@ const ACTIONS = [
   { key: 'undo', label: 'undo', title: 'pop the last message' },
   { key: 'clear-tools', label: 'clear-tools', title: 'remove all tool results from history' },
   { key: 'clear', label: 'clear', title: 'reset history to the system prompt' },
+  { key: 'archive',
+    label: (archived) => (archived ? 'unarchive' : 'archive'),
+    title: (archived) => (archived ? 'restore to the default session list' : 'hide from the default session list (kept for later)') },
 ];
 
 // Unified top bar: sidebar toggle, brand, then the session status + live
@@ -34,6 +38,14 @@ export const Header = ({ cfg, theme, sideOpen, onSideToggle, onThemeToggle, view
   }, [menuOpen]);
 
   const run = (key) => { setMenuOpen(false); onAction(key); };
+
+  // Resolve the label/title functions (archive flips with the session state)
+  // and pick the endpoint key to call.
+  const resolved = ACTIONS.map((a) => ({
+    key: a.key === 'archive' ? (view?.archived ? 'unarchive' : 'archive') : a.key,
+    label: typeof a.label === 'function' ? a.label(!!view?.archived) : a.label,
+    title: typeof a.title === 'function' ? a.title(!!view?.archived) : a.title,
+  }));
 
   return html`
     <header class="relative flex items-center gap-2 px-3 py-2 border-b border-line">
@@ -62,7 +74,7 @@ export const Header = ({ cfg, theme, sideOpen, onSideToggle, onThemeToggle, view
       ${menuOpen && view ? html`
         <div class="fixed inset-0 z-40" onclick=${() => setMenuOpen(false)}></div>
         <div class="absolute right-2 top-full z-50 mt-1 min-w-[180px] flex flex-col bg-panel border border-line rounded shadow-xl py-1">
-          ${ACTIONS.map((a) => html`
+          ${resolved.map((a) => html`
             <button key=${a.key} title=${a.title}
                     class="text-left text-ink text-xs py-1.5 px-3.5 cursor-pointer hover:bg-bg"
                     onclick=${() => run(a.key)}>${a.label}</button>`)}

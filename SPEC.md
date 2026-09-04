@@ -197,11 +197,19 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at    TEXT NOT NULL,                  -- ISO 8601
   last_activity TEXT NOT NULL,                  -- ISO 8601
   last_error    TEXT,                           -- nullable
-  snapshot      TEXT NOT NULL                   -- JSON: { messages, todos, total_tokens }
+  snapshot      TEXT NOT NULL,                  -- JSON: { messages, todos, total_tokens }
+  archived      INTEGER NOT NULL DEFAULT 0      -- 0/1; hidden from the default list
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_cwd ON sessions (cwd);
 ```
+
+> `archived` (schema v2) is a plain boolean flag: archived sessions persist in
+> the DB and stay in the in-memory registry, but are excluded from the default
+> `GET /sessions` list and the `/projects` counts (§7.2, §7.3). Adding the
+> column to a v1 database is the v2 migration (`ALTER TABLE ... ADD COLUMN`,
+> §10.2). No index: low-cardinality flag on a small local table, and the
+> manager filters in memory anyway.
 
 ### 5.3 Runtime model
 
@@ -217,7 +225,8 @@ snapshot; the raw `messages` are not included in list responses):
 //   id, cwd, model, status, created_at, last_activity, last_error?,
 //   message_count,   // = snapshot.messages.length
 //   todo_count,      // = snapshot.todos.length
-//   total_tokens     // = snapshot.total_tokens
+//   total_tokens,    // = snapshot.total_tokens
+//   archived         // boolean; false by default
 // }
 ```
 
@@ -235,6 +244,14 @@ snapshot; the raw `messages` are not included in list responses):
    remains reusable — a new message starts a fresh run.
 5. **Destroyed** via `DELETE /sessions/:id` (aborts any running loop, removes
    the row from SQLite, drops from memory).
+
+**Archived** is an orthogonal flag, not a status: `POST /sessions/:id/archive`
+(hide) / `POST /sessions/:id/unarchive` (restore), §7.5. It is a
+metadata-only edit — allowed while running (no `409`), it never touches the
+conversation — and it survives restarts like every other field. Archived
+sessions are excluded from the default `GET /sessions` list and `/projects`
+counts, but remain fully addressable by id (detail, controls, SSE) and
+deletable.
 
 **Persistence is continuous**: the DB is the system of record, so state is
 written on every transition (create, message, tool result, status change, error,
@@ -271,14 +288,19 @@ endpoint and the static web UI (§7.8). Errors use `4xx`/`5xx` with
 
 | Method | Path                 | Description |
 |--------|----------------------|-------------|
-| `GET`  | `/sessions`          | List sessions as `SessionMeta[]`. Optional `?cwd=<path>` to filter by working directory (exact match). |
+| `GET`  | `/sessions`          | List sessions as `SessionMeta[]`. Optional `?cwd=<path>` to filter by working directory (exact match), and `?archived=` (see below). |
 | `POST` | `/sessions`          | Create a session |
 | `GET`  | `/sessions/:id`      | Full session: `SessionMeta` + current `snapshot` |
 | `DELETE`| `/sessions/:id`     | Stop and delete the session (from memory and DB) |
 
 `GET /sessions`:
-- Returns all sessions (or those matching `?cwd=`).
+- Returns non-archived sessions by default (those matching `?cwd=` if given).
 - `?cwd` is an exact, case-sensitive match on the stored absolute `cwd`.
+- `?archived` is a tri-state filter:
+  - absent (or `"false"`) → **non-archived only** (the default)
+  - `"true"` → archived only
+  - `"all"` → everything
+  - any other value → `400 bad_request`
 - `400` if `cwd` is supplied but empty.
 
 `POST /sessions` body (`cwd` required, the rest optional):
@@ -312,6 +334,7 @@ endpoint and the static web UI (§7.8). Errors use `4xx`/`5xx` with
   "todo_count": 3,
   "total_tokens": 18334,
   "last_error": null,
+  "archived": false,
   "snapshot": { "messages": [], "todos": [], "total_tokens": 18334 }
 }
 ```
@@ -322,8 +345,10 @@ endpoint and the static web UI (§7.8). Errors use `4xx`/`5xx` with
 |--------|--------------|-------------|
 | `GET`  | `/projects`  | "Projects" view: unique working directories across all sessions |
 
-A project is simply a distinct `cwd`. This is derived directly from the DB:
-`SELECT cwd, COUNT(*) AS sessions FROM sessions GROUP BY cwd ORDER BY cwd`.
+A project is simply a distinct `cwd`. This is derived directly from the DB
+(non-archived sessions only, so a project whose sessions are all archived does
+not surface): `SELECT cwd, COUNT(*) AS sessions FROM sessions GROUP BY cwd
+ORDER BY cwd`.
 
 Response:
 
@@ -372,11 +397,15 @@ All of these operate on a single session and map 1:1 to the original commands in
 | `POST` | `/sessions/:id/compact`    | `/compact`     | Run the two-phase summarize-then-replace compaction (as in the source). `202` (starts a run). |
 | `POST` | `/sessions/:id/init`       | `/init`        | Convenience: send the prompt that triggers the built-in `init` skill ("Could you /init this project?"). `202`. |
 | `POST` | `/sessions/:id/model`      | —              | Switch the session's model. Body `{ "model": "..." }`. `200` `{ "id", "model" }`; `400` if `model` is missing or empty. Allowed while running — the loop reads the session model on every turn, so it takes effect from the next LLM call. |
+| `POST` | `/sessions/:id/archive`    | —              | Mark the session as archived: kept in the DB but hidden from the default `GET /sessions` list and `/projects` counts. No body. `200` `{ "id", "archived": true }`. |
+| `POST` | `/sessions/:id/unarchive`  | —              | Restore an archived session to the default list. No body. `200` `{ "id", "archived": false }`. |
 
 Rules common to the run-starting controls (`retry`, `compact`,
 `init`, `messages`): reject with `409` if `running` is already true. Only
-`stop` and the `model` switch are allowed while running; the model switch takes
-effect from the next LLM turn (no stop/restart required).
+`stop`, the `model` switch, and the `archive`/`unarchive` flags are allowed
+while running; the model switch takes effect from the next LLM turn (no
+stop/restart required), and the archive flags are metadata-only edits that
+never touch the conversation.
 
 `undo`/`clear`/`clear-tools` are synchronous state edits; if a run is in
 progress they implicitly `stop` first (matching the original, which calls
@@ -549,8 +578,15 @@ Current working directory: <realpath of cwd>
 ### 10.2 Migration
 
 On startup, `db.js` runs idempotent DDL (`CREATE TABLE IF NOT EXISTS`,
-`CREATE INDEX IF NOT EXISTS`). A tiny `user_version` pragma tracks the schema
-version for future migrations.
+`CREATE INDEX IF NOT EXISTS`) against the *current* schema, then applies
+versioned migrations gated on the `user_version` pragma. Fresh DBs are born
+matching the current version (the DDL already carries every column) and only
+get the version bump.
+
+| Version | Change |
+|---------|--------|
+| 1 | Initial schema |
+| 2 | `ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0` (§5.2) |
 
 ---
 

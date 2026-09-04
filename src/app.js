@@ -40,9 +40,19 @@ export const buildApp = ({ manager, config, llm }) => {
 
   // --- 7.2 Sessions ---------------------------------------------------------
   app.get('/sessions', (req, res) => {
-    const { cwd } = req.query;
+    const { cwd, archived } = req.query;
     if (cwd !== undefined && cwd === '') throw new HttpError(400, 'bad_request', 'cwd filter must not be empty');
-    res.json(manager.list(cwd ? { cwd } : {}));
+    // Tri-state: absent/"false" → non-archived only (default), "true" →
+    // archived only, "all" → everything.
+    let a;
+    if (archived === undefined || archived === 'false') a = false;
+    else if (archived === 'true') a = true;
+    else if (archived === 'all') a = 'all';
+    else throw new HttpError(400, 'bad_request', 'archived filter must be "true", "false" or "all"');
+    const o = {};
+    if (cwd) o.cwd = cwd;
+    if (a) o.archived = a;
+    res.json(manager.list(o));
   });
 
   app.post('/sessions', (req, res) => {
@@ -120,6 +130,18 @@ export const buildApp = ({ manager, config, llm }) => {
   app.post('/sessions/:id/init', session((s, res) => {
     s.init();
     res.status(202).json(started(s));
+  }));
+
+  // Archive / unarchive: a metadata-only flag (allowed while running).
+  // Archived sessions persist but are hidden from the default GET /sessions.
+  app.post('/sessions/:id/archive', session((s, res) => {
+    s.setArchived(true);
+    res.json({ id: s.id, archived: true });
+  }));
+
+  app.post('/sessions/:id/unarchive', session((s, res) => {
+    s.setArchived(false);
+    res.json({ id: s.id, archived: false });
   }));
 
   // Set the session's model. Allowed while running (takes effect next turn).

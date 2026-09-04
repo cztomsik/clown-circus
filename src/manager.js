@@ -55,6 +55,7 @@ export class SessionManager {
       last_activity: now,
       last_error: null,
       snapshot: JSON.stringify(snap),
+      archived: false,
     };
     const s = new Session({ row, ...this._opts() });
     s.persist();
@@ -63,17 +64,27 @@ export class SessionManager {
     return s;
   }
 
-  /** @param {{ cwd?: string }} o */
-  list({ cwd } = {}) {
+  // `archived` is a tri-state filter, mirroring `GET /sessions?archived=`:
+  // undefined/false → non-archived only (the default), true → archived only,
+  // 'all' → everything.
+  /** @param {{ cwd?: string, archived?: boolean | 'all' }} o */
+  list({ cwd, archived } = {}) {
+    const keep = (s) =>
+      (archived === 'all' ? true : archived ? s.archived : !s.archived);
     return [...this.sessions.values()]
-      .filter((s) => !cwd || s.cwd === cwd)
+      .filter((s) => (!cwd || s.cwd === cwd) && keep(s))
       .sort((a, b) => (a.lastActivity < b.lastActivity ? 1 : -1))
       .map((s) => s.meta());
   }
 
+  // Projects derived from non-archived sessions only — a project whose
+  // sessions are all archived would otherwise list with zero visible sessions.
   projects() {
     const m = new Map();
-    for (const s of this.sessions.values()) m.set(s.cwd, (m.get(s.cwd) ?? 0) + 1);
+    for (const s of this.sessions.values()) {
+      if (s.archived) continue;
+      m.set(s.cwd, (m.get(s.cwd) ?? 0) + 1);
+    }
     return [...m.entries()]
       .map(([cwd, sessions]) => ({ cwd, sessions }))
       .sort((a, b) => (a.cwd < b.cwd ? -1 : 1));

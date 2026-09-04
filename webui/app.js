@@ -38,6 +38,9 @@ const App = () => {
 
   // Sidebar: open by default on desktop, auto-collapsed on narrow viewports.
   const [sideOpen, setSideOpen] = useState(isWide);
+  // Archived sessions are fetched but hidden by default; the sidebar toggle
+  // flips this (client-side split, so the 10s poll stays toggle-agnostic).
+  const [showArchived, setShowArchived] = useState(false);
 
   const flashMsg = (msg) => {
     setFlash(msg);
@@ -47,7 +50,7 @@ const App = () => {
 
   const refreshSessions = async () => {
     let list;
-    try { list = await api('/sessions'); } catch { return; }
+    try { list = await api('/sessions?archived=all'); } catch { return; }
     setSessions(list);
   };
 
@@ -149,6 +152,7 @@ const App = () => {
       setView({
         id: d.id ?? id, cwd: d.cwd, model: d.model, status: d.status, last_error: d.last_error,
         messages: d.snapshot.messages, todos: d.snapshot.todos, tokens: d.snapshot.total_tokens,
+        archived: d.archived,
       });
       setNewCwd(d.cwd);
       setModel(d.model === defaultModel ? '' : d.model); // sync the select to the session
@@ -197,6 +201,11 @@ const App = () => {
           ...v, status: d.status, last_error: d.last_error,
           messages: d.snapshot.messages, todos: d.snapshot.todos, tokens: d.snapshot.total_tokens,
         } : v);
+      } else if (name === 'archive' || name === 'unarchive') {
+        // metadata-only flag: reflect it in the open view, refresh the list.
+        const r = await post(`/sessions/${current}/${name}`);
+        setView((v) => (v ? { ...v, archived: r.archived } : v));
+        refreshSessions();
       } else {
         // agent actions (retry/init/compact): fire-and-forget; SSE streams the rest.
         await post(`/sessions/${current}/${name}`);
@@ -301,7 +310,8 @@ const App = () => {
           <div class="fixed inset-0 z-40 flex md:contents">
             <${Sidebar} cls="w-[280px] max-w-[85vw] md:max-w-none min-w-[220px] border-r border-line flex flex-col bg-bg shadow-xl md:shadow-none"
                        sessions=${sessions} current=${current}
-                       onNew=${onNew} onSelect=${select} newCwd=${newCwd} setNewCwd=${setNewCwd} />
+                       onNew=${onNew} onSelect=${select} newCwd=${newCwd} setNewCwd=${setNewCwd}
+                       showArchived=${showArchived} onToggleArchived=${() => setShowArchived((v) => !v)} />
             <div class="flex-1 bg-black/50 md:hidden" onclick=${() => setSideOpen(false)}></div>
           </div>` : null}
         <${Main} view=${view} flash=${flash} input=${input} setInput=${setInput}
