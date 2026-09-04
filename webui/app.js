@@ -12,6 +12,9 @@ import { Main } from './Main.js';
 // overlay drawer (auto-collapsed by default on mobile).
 const isWide = () => window.matchMedia('(min-width: 768px)').matches;
 
+// localStorage key for a session's composer draft.
+const inputKey = (id) => `clown-circus-input-${id}`;
+
 // ── root component (owns all state + side effects) ───────────────────
 const App = () => {
   const [cfg, setCfg] = useState('loading…');
@@ -84,6 +87,29 @@ const App = () => {
     document.documentElement.dataset.theme = theme;
     try { localStorage.setItem('clown-circus-theme', theme); } catch {}
   }, [theme]);
+
+  // Per-session composer draft: restore it when the session changes, and
+  // persist it on every change, keyed by session id so switching back and
+  // forth keeps each session's half-typed message.
+  useEffect(() => {
+    if (!current) return;
+    let saved = '';
+    try { saved = localStorage.getItem(inputKey(current)) ?? ''; } catch {}
+    setInput(saved);
+  }, [current]);
+
+  // Deliberately keyed on `input` only (not `current`): on a session switch the
+  // render carries the new `current` but the *old* `input`, so depending on
+  // `current` here would write the previous session's text into the new key
+  // before the restore above has loaded it. By then `current` is already fresh
+  // in the closure, so the write always lands on the right session.
+  useEffect(() => {
+    if (!current) return;
+    try {
+      if (input) localStorage.setItem(inputKey(current), input);
+      else localStorage.removeItem(inputKey(current));
+    } catch {}
+  }, [input]);
 
   // Keep the drawer from covering the whole viewport when the window shrinks
   // below the md breakpoint (resize / rotate to portrait).
@@ -230,6 +256,7 @@ const App = () => {
     if (!confirm(`delete session ${baseName(view?.cwd ?? '')}?`)) return;
     try {
       await api(`/sessions/${current}`, { method: 'DELETE' });
+      try { localStorage.removeItem(inputKey(current)); } catch {}
       setCurrent(null);
       setView(null);
       await refreshSessions();
