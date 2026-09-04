@@ -652,11 +652,12 @@ subdirectories.
 - **`node:fs/promises`**, **`node:child_process`** (`spawn` with `AbortSignal`)
   for tools. No shell injection — `run_command` uses `sh -c` explicitly, same as
   the source.
-- **`node:http`/`node:https`** for LLM calls (OpenAI-compatible), with an
-  `AbortController` for timeout + stop. Deliberately **not** global `fetch`:
-  undici's built-in 300s headers/body timeout cannot be overridden via `fetch`
-  init options (they are silently dropped) and would kill slow non-streaming
-  turns with an opaque `"fetch failed"` error.
+- **Native `fetch`** for LLM calls (OpenAI-compatible), with `AbortSignal` for
+  timeout + stop. Startup patches the built-in global dispatcher
+  (`globalThis[Symbol.for('undici.globalDispatcher.1')]`, no dependency) to set
+  `headersTimeout`/`bodyTimeout` to `0`: undici bakes in a 300s headers/body
+  timeout that cannot be overridden via `fetch` init options and would kill
+  slow non-streaming turns with an opaque `"fetch failed"` error.
 - **SSE** via a minimal helper over the Express response (no heavy deps).
 - **`node:crypto.randomUUID`** for session ids.
 - Minimal dependencies: just `express`. Everything else (SQLite, crypto, http,

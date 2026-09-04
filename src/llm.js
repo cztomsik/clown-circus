@@ -1,15 +1,33 @@
 // Thin OpenAI-compatible chat client (replaces tk.ai.Client).
 // base_url is joined as `${baseUrl}/v1/...`. Auth via optional Bearer key.
 //
-// Deliberately uses node:http directly, NOT global fetch: undici (the engine
-// behind fetch) bakes in a 300s headers/body timeout that cannot be overridden
-// via fetch's init options (they are silently dropped) and that kills slow,
-// non-streaming completions with an opaque "fetch failed". Here only our own
-// timeoutMs (-> LlmError 'timeout') or a user stop (-> 'aborted') can end a
-// request, and real socket errors report their actual message/code.
+// Node's global fetch (undici) bakes in a 300s headers/body timeout that
+// cannot be overridden via fetch init options; it would kill slow,
+// non-streaming completions with an opaque "fetch failed". We patch the
+// built-in global dispatcher instead of driving node:http by hand: only our
+// own timeoutMs (-> LlmError 'timeout') or a user stop (-> 'aborted') can end
+// a request.
 
-import { request as httpRequest } from 'node:http';
-import { request as httpsRequest } from 'node:https';
+// Disables undici's 300s headers/body timeouts on the builtin global
+// dispatcher, so only our own AbortController (timeout + stop) can end a
+// request. The dispatcher is lazily created by the first fetch — `data:`
+// URLs materialize it synchronously without touching the network.
+let patchedDispatcher = false;
+const patchGlobalDispatcher = () => {
+  if (patchedDispatcher) return;
+  patchedDispatcher = true;
+  fetch('data:text/plain,').catch(() => {});
+  const d = globalThis[Symbol.for('undici.globalDispatcher.1')];
+  const kOptions = d && Object.getOwnPropertySymbols(d).find(
+    (s) => d[s] && typeof d[s] === 'object' && 'maxOrigins' in d[s],
+  );
+  if (!kOptions) {
+    console.warn('[llm] could not find the fetch dispatcher options; undici defaults (300s headers/body timeout) remain active');
+    return;
+  }
+  d[kOptions].headersTimeout = 0; // 0 = disabled; applied to clients created afterwards
+  d[kOptions].bodyTimeout = 0;
+};
 
 export class LlmError extends Error {
   constructor(kind, message) {
@@ -19,16 +37,7 @@ export class LlmError extends Error {
 }
 
 export const createLlm = (config) => {
-  const doRequest = config.baseUrl.startsWith('https://') ? httpsRequest : httpRequest;
-
-  const target = (path) => {
-    const url = new URL(config.baseUrl + path);
-    return {
-      hostname: url.hostname,
-      port: url.port || (url.protocol === 'https:' ? 443 : 80),
-      path: url.pathname + url.search,
-    };
-  };
+  patchGlobalDispatcher();
 
   const headers = () => {
     const h = { 'content-type': 'application/json' };
@@ -36,75 +45,60 @@ export const createLlm = (config) => {
     return h;
   };
 
-  // One JSON request. Resolves with the parsed body; rejects with LlmError only.
-  const request = (method, path, body, timeoutMs, signal) =>
-    new Promise((resolve, reject) => {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort('timeout'), timeoutMs);
-      const onAbort = () => ctrl.abort('stop');
-      signal?.addEventListener('abort', onAbort, { once: true });
-      let settled = false;
-      const finish = (fn, v) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        signal?.removeEventListener('abort', onAbort);
-        fn(v);
-      };
-      const fail = (err) => finish(reject, err);
-
-      // Classify a failure: our own timeout/stop first, then the raw error.
-      const liveError = (err) => {
-        if (ctrl.signal.reason === 'timeout')
-          return new LlmError('timeout', `LLM request timed out after ${Math.round(timeoutMs / 1000)}s`);
-        if (ctrl.signal.reason === 'stop') return new LlmError('aborted');
-        return new LlmError('unavailable', err?.code ? `${err.message} (${err.code})` : err?.message ?? String(err));
-      };
-
-      if (signal?.aborted) return fail(new LlmError('aborted'));
-
-      const req = doRequest({ ...target(path), method, headers: headers() }, (res) => {
-        const chunks = [];
-        res.on('data', (c) => chunks.push(c));
-        res.on('end', () => {
-          const text = Buffer.concat(chunks).toString('utf8');
-          if (res.statusCode < 200 || res.statusCode >= 300) {
-            fail(new LlmError('http', `LLM responded ${res.statusCode}: ${text.slice(0, 500)}`));
-          } else {
-            try {
-              finish(resolve, JSON.parse(text));
-            } catch (err) {
-              fail(new LlmError('http', `LLM returned invalid JSON: ${err.message}`));
-            }
-          }
-        });
-        res.on('error', (err) => fail(liveError(err)));
-      });
-      ctrl.signal.addEventListener('abort', () => req.destroy(), { once: true });
-      req.on('error', (err) => fail(liveError(err)));
-      req.on('close', () => {
-        if (ctrl.signal.aborted) fail(liveError(new Error('aborted')));
-        else fail(new LlmError('unavailable', 'connection to LLM server closed'));
-      });
-      if (body !== undefined) req.write(JSON.stringify(body));
-      req.end();
-    });
-
   // One chat completion. Returns { message, usage }.
   // `signal` is the session's stop signal; aborting it raises LlmError('aborted')
   // (a clean stop, not an error). Timeouts/network/HTTP errors raise LlmError.
   const chat = async ({ model, messages, tools, maxCompletionTokens, timeoutMs, signal }) => {
+    if (signal?.aborted) throw new LlmError('aborted');
+    const ctrl = new AbortController();
+    const onStop = () => ctrl.abort('stop');
+    signal?.addEventListener('abort', onStop);
+    const timer = setTimeout(() => ctrl.abort('timeout'), timeoutMs);
+
     const body = { model, messages, max_completion_tokens: maxCompletionTokens };
     if (tools?.length) body.tools = tools;
-    const data = await request('POST', '/v1/chat/completions', body, timeoutMs, signal);
+
+    let res;
+    try {
+      res = await fetch(`${config.baseUrl}/v1/chat/completions`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify(body),
+        signal: ctrl.signal,
+      });
+    } catch (err) {
+      if (ctrl.signal.aborted) throw new LlmError(ctrl.signal.reason === 'timeout' ? 'timeout' : 'aborted');
+      // undici wraps socket errors in a TypeError; surface the real one.
+      throw new LlmError('unavailable', err.cause?.message ?? err.message);
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onStop);
+    }
+
+    if (!res.ok) throw new LlmError('http', `LLM responded ${res.status}: ${(await res.text()).slice(0, 500)}`);
+
+    let data;
+    try {
+      data = await res.json();
+    } catch (err) {
+      throw new LlmError('http', `LLM returned invalid JSON: ${err.message}`);
+    }
     const choice = data.choices?.[0];
     if (!choice) throw new LlmError('http', 'LLM returned no choices');
     return { message: choice.message, usage: data.usage ?? {} };
   };
 
   const listModels = async (timeoutMs = 10000) => {
-    const data = await request('GET', '/v1/models', undefined, timeoutMs);
-    return data.data ?? [];
+    const ctrl = AbortSignal.timeout(timeoutMs);
+    try {
+      const res = await fetch(`${config.baseUrl}/v1/models`, { headers: headers(), signal: ctrl });
+      if (!res.ok) throw new LlmError('http', `LLM responded ${res.status}`);
+      const data = await res.json();
+      return data.data ?? [];
+    } catch (err) {
+      if (err instanceof LlmError) throw err;
+      throw new LlmError('unavailable', err.cause?.message ?? err.message);
+    }
   };
 
   return { chat, listModels };
