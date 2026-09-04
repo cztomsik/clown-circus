@@ -89,7 +89,7 @@ the sole system of record.
                          │  └───────────────────────────────────────┘     │
                          │                    │                          │
                          └────────────────────┼──────────────────────────┘
-                                              │ tool calls (sandboxed to cwd)
+                                              │ tool calls (run in session cwd)
                                               ▼
                                    Filesystem + shell (per-session cwd)
                                               │
@@ -537,10 +537,10 @@ Via CLI flags and/or environment variables, resolved at startup into a
 
 Each tool is registered with a **snake_case name** (matching the source's tool
 naming convention), a one-line description, a JSON-Schema for args, and an
-implementation. All tools are **sandboxed to the session's `cwd`**: relative
-paths resolve against `cwd`, and a path-traversal guard prevents escaping it
-(closes the `TODO: Check for path traversal` noted in the source's
-`load_skill`).
+implementation. Relative paths resolve against the session's `cwd` (the same
+directory `run_command` runs in). There is **no path sandbox**: the agent may
+read, write, and execute anywhere the server process can reach — matching the
+source, whose only path-traversal note was an unimplemented `TODO`.
 
 | Tool            | Args                                            | Ported from | Notes |
 |-----------------|--------------------------------------------------|-------------|-------|
@@ -560,7 +560,7 @@ Each tool invocation receives a `ToolContext`:
 
 ```js
 // {
-//   cwd: string,           // session cwd (sandbox root)
+//   cwd: string,           // session cwd (working directory for tools)
 //   signal: AbortSignal,   // for run_command
 //   emit(event, data),     // e.g. emit("todo", todos)
 // }
@@ -681,9 +681,11 @@ function readFile(io, ctx, args) {
 ## 16. Security & Safety
 
 - Bind to `127.0.0.1` by default; the server is not assumed to be public.
-- **Path sandbox**: every file tool resolves its target against the session
-  `cwd` and rejects any path whose resolved form escapes the sandbox. This is a
-  hard requirement (fixes the source's `TODO`).
+- **No path sandbox**: file and shell tools resolve relative paths against the
+  session `cwd` and otherwise run with the server process's own permissions, so
+  the agent can reach any path it can address (matching the source, whose
+  path-traversal guard was only an unimplemented `TODO`). The trust boundary is
+  the local user plus the `127.0.0.1` bind.
 - `run_command` runs with the session `cwd` as the working directory; no
   privilege escalation.
 - **DB isolation**: the SQLite file defaults to `~/.clowndb` (user-scoped).
@@ -731,7 +733,7 @@ function readFile(io, ctx, args) {
    change); `GET/POST/DELETE /sessions` with `?cwd` filter; `GET /projects`.
 3. LLM client + agent loop + `read_file`/`run_command`/`update_todos`;
    `POST /messages`; SSE `events`.
-4. Remaining tools (`write_file`, `edit_file`, `load_skill`) + path sandbox.
+4. Remaining tools (`write_file`, `edit_file`, `load_skill`).
 5. Controls: `stop`, `undo`, `retry`, `clear`, `clear-tools`, `compact`,
    `init`.
 6. `README.md`.

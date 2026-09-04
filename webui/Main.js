@@ -1,5 +1,4 @@
 import { html } from './ui.js';
-import { Toolbar } from './Toolbar.js';
 import { Todos } from './Todos.js';
 import { Messages } from './Message.js';
 import { InputBar } from './InputBar.js';
@@ -8,8 +7,9 @@ const ErrorBox = ({ message }) => message
   ? html`<div class="mx-3 mt-2 p-2 px-2.5 border border-err text-err rounded whitespace-pre-wrap">${message}</div>`
   : null;
 
-// Right-hand pane: the toolbar, error/todos, the transcript, and the composer —
-// or a placeholder when no session is selected.
+// Right-hand pane: error banner, todos, the transcript, and the composer — or
+// a placeholder when no session is selected. (The session status + actions now
+// live in the unified top bar, see Header.js.)
 export const Main = (p) => !p.view
   ? html`
       <main class="flex-1 flex flex-col min-w-0">
@@ -17,7 +17,6 @@ export const Main = (p) => !p.view
       </main>`
   : html`
       <main class="flex-1 flex flex-col min-w-0">
-        <${Toolbar} view=${p.view} onAction=${p.onAction} onDel=${p.onDel} />
         <${ErrorBox} message=${p.flash ?? p.view.last_error} />
         <${Todos} todos=${p.view.todos} />
         <${Messages} messages=${p.view.messages} />

@@ -1,6 +1,6 @@
 import { readFile as fsReadFile, writeFile as fsWriteFile, mkdir } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
-import { dirname, resolve, sep } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 
@@ -15,22 +15,12 @@ const B = () => ({ type: 'boolean' });
 const A = (items) => ({ type: 'array', items });
 const obj = (properties, required) => ({ type: 'object', properties, required });
 
-// Resolve a (possibly relative) path against the sandbox root and reject
-// anything that escapes it. Closes the source's `TODO: Check for path traversal`.
-const resolveSafe = (root, p) => {
-  const abs = resolve(root, p);
-  const rootAbs = resolve(root);
-  const ok = abs === rootAbs || abs.startsWith(rootAbs.endsWith(sep) ? rootAbs : rootAbs + sep);
-  if (!ok) throw new Error(`Path escapes sandbox: ${p}`);
-  return abs;
-};
-
 const isUtf8 = (buf) => buf.equals(Buffer.from(buf.toString('utf8'), 'utf8'));
 
 // --- Core tools -------------------------------------------------------------
 
 const readFile = async (ctx, args) => {
-  const buf = await fsReadFile(resolveSafe(ctx.cwd, args.path));
+  const buf = await fsReadFile(resolve(ctx.cwd, args.path));
   if (buf.length > MAX) throw new Error('File too large');
   if (!isUtf8(buf)) throw new Error('Invalid UTF-8');
   const text = buf.toString('utf8');
@@ -38,14 +28,14 @@ const readFile = async (ctx, args) => {
 };
 
 const writeFile = async (ctx, args) => {
-  const p = resolveSafe(ctx.cwd, args.path);
+  const p = resolve(ctx.cwd, args.path);
   await mkdir(dirname(p), { recursive: true });
   await fsWriteFile(p, args.content);
   return 'File written successfully';
 };
 
 const editFile = async (ctx, args) => {
-  const p = resolveSafe(ctx.cwd, args.path);
+  const p = resolve(ctx.cwd, args.path);
   const content = (await fsReadFile(p)).toString('utf8');
   let next;
   if (args.replace_all) {
@@ -68,7 +58,7 @@ const DRAIN_MS = 300;
 
 const runCommand = (ctx, args) =>
   new Promise((res) => {
-    const cwd = args.cwd ? resolveSafe(ctx.cwd, args.cwd) : ctx.cwd;
+    const cwd = args.cwd ? resolve(ctx.cwd, args.cwd) : ctx.cwd;
     // `stdin: 'ignore'` so commands that read stdin (prompts, `cat`, npm
     // questions) get EOF immediately instead of hanging on input that never
     // arrives. We only ever capture stdout/stderr.
@@ -126,7 +116,7 @@ const updateTodos = (ctx, args) => {
 
 const loadSkill = async (ctx, args) => {
   if (args.skill_name === 'init') return BUILTIN_INIT;
-  return (await fsReadFile(resolveSafe(ctx.cwd, `skills/${args.skill_name}.md`))).toString('utf8');
+  return (await fsReadFile(resolve(ctx.cwd, `skills/${args.skill_name}.md`))).toString('utf8');
 };
 
 // --- Registration -----------------------------------------------------------

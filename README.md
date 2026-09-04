@@ -159,8 +159,8 @@ conversation format, persisted per session. It may evolve freely as the tool gro
 
 ## Tools
 
-All tools are **sandboxed to the session's `cwd`**: relative paths resolve against it, and any
-path that escapes the sandbox is rejected.
+Relative paths resolve against the session's `cwd` (the same directory `run_command` runs in).
+There is **no path sandbox**: the agent may read, write, and execute anywhere the server process can reach.
 
 | Tool | Args | Notes |
 |---|---|---|
@@ -195,5 +195,5 @@ src/
 ## Security notes
 
 - Binds to `127.0.0.1` by default; single-user local tool (no auth), same posture as `clown-code`.
-- Hard path sandbox on all file tools (fixes the source's path-traversal `TODO`).
+- No path sandbox: file/shell tools can reach any path the server process can (matches `clown-code`, which only had a `TODO` for path-traversal checks). The trust boundary is the local user plus the `127.0.0.1` bind.
 - The LLM key is never logged; request bodies are not logged.

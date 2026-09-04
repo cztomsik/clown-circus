@@ -49,22 +49,22 @@ primary interface — the UI is just one client of it.
   `EventSource`, fans its events out to a `{snapshot, todo, status, done,
   error}` handler map (each `data` JSON-parsed), swallows connection failures,
   and returns a `close()` used as the effect cleanup.
-- **`webui/Header.js`** — the top bar (sidebar toggle, brand, live config
-  summary, theme toggle).
+- **`webui/Header.js`** — the **unified top bar**: sidebar toggle, brand, the
+  session status badge + live summary (or the live config summary when no
+  session is open), a `⋮` dropdown holding the session actions, and the theme
+  toggle. All of this shares one row, so it stays compact on mobile.
 - **`webui/Sidebar.js`** — `Sidebar` + `SessionList`/`SessionItem`: the
   project-grouped session list and the new-session form (cwd + model
   `<select>`).
-- **`webui/Toolbar.js`** — the session toolbar: status badge + live summary,
-  and the `retry`/`init` / `compact`/`undo`/`clear-tools`/`clear` / `delete`
-  action groups.
 - **`webui/Message.js`** — `Messages` + `Message` (and the `Pre` leaf): the flat
   transcript, roles distinguished by colour/weight/tint.
 - **`webui/Todos.js`** — the live todo panel.
 - **`webui/InputBar.js`** — the composer; owns its `useRef`/`useLayoutEffect`
   autofocus and its `SEND_BTN` class string.
-- **`webui/Main.js`** — the right-hand pane: composes `Toolbar`, `ErrorBox`,
-  `Todos`, `Messages`, and `InputBar` (or a "select a session" placeholder when
-  none is selected).
+- **`webui/Main.js`** — the right-hand pane: composes `ErrorBox`, `Todos`,
+  `Messages`, and `InputBar` (or a "select a session" placeholder when none is
+  selected). The session status/actions no longer live here — they moved into
+  the unified `Header`.
 - **`webui/util.js`** — a small module of pure, dependency-free helpers
   (`baseName`, `parseCommand`, `modelId`, `timeAgo`, `prettyArgs`), exported by
   name and pulled in with `import { … } from './util.js'`. `parseCommand(text)`
@@ -90,11 +90,19 @@ primary interface — the UI is just one client of it.
   cwd** whenever a session is chosen (state lifted into `App`, written in
   `select()`), so spinning up another session for the same project is one
   click; the field is cleared after a successful create and remains editable.
-- **Header** — a `☰` sidebar-toggle button (leftmost), the `clown-circus`
-  brand, the live config summary (`base_url · default model · db file`), and
-  the theme toggle. The config summary is `flex-1 min-w-0 truncate`, so on
-  narrow viewports it truncates to one line instead of pushing the buttons
-  off-screen.
+- **Header (unified top bar)** — one row that merges what used to be a
+  separate global header and a per-session toolbar. Left to right: a `☰`
+  sidebar-toggle button, the `clown-circus` brand (hidden below `sm` to save
+  room), then either the **session** status badge + live summary
+  (`cwd · model · N tok`, when a session is open) or the **config** summary
+  (`base_url · default model · db file`, when none is), then the theme toggle.
+  When a session is open, a `⋮` button (between the summary and the theme
+  toggle) opens a dropdown of the session **actions** (`retry`, `init`,
+  `compact`, `undo`, `clear-tools`, `clear`, and `delete` last, separated by a
+  rule). The summary is `flex-1 min-w-0 truncate`, so on narrow viewports it
+  truncates to one line instead of pushing the buttons off-screen. The menu
+  closes on outside-tap (a full-viewport backdrop), on Escape, or when the
+  selected session changes.
 - **Sidebar toggle (responsive)** — the `☰` button shows/hides the sidebar.
   The initial state follows the viewport: **open** at ≥ 768px, **collapsed**
   below it (auto-collapsed on mobile). At ≥ 768px the sidebar is an in-flow
@@ -154,8 +162,9 @@ primary interface — the UI is just one client of it.
   can be edited and is reported in the error banner. Source commands with no
   headless equivalent — `/exit`/`/quit`, `/save`/`/load`, `/continue`, `/sudo` —
   are intentionally not ported.
-- **Controls** — toolbar with three logical groups (separated by thin
-  vertical rules):
+- **Controls** — the session actions live in the `⋮` dropdown in the unified
+  header (see **Header**), in three logical groups (`delete` last, separated
+  by a thin rule):
   - **Agent actions**: `retry`, `init` — fire-and-forget (202),
     start the loop.
   - **History editing**: `compact`, `undo`, `clear-tools`, `clear` —

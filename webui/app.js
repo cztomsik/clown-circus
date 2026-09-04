@@ -195,7 +195,8 @@ const App = () => {
   return html`
     <div class="h-dvh flex flex-col">
       <${Header} cfg=${cfg} theme=${theme} sideOpen=${sideOpen}
-                 onSideToggle=${() => setSideOpen((o) => !o)} onThemeToggle=${toggleTheme} />
+                 onSideToggle=${() => setSideOpen((o) => !o)} onThemeToggle=${toggleTheme}
+                 view=${view} onAction=${handleAction} onDel=${del} />
       <div class="flex-1 flex min-h-0">
         ${sideOpen ? html`
           <!-- mobile (<md): fixed overlay drawer + dimmed backdrop;
@@ -208,7 +209,7 @@ const App = () => {
             <div class="flex-1 bg-black/50 md:hidden" onclick=${() => setSideOpen(false)}></div>
           </div>` : null}
         <${Main} view=${view} flash=${flash} input=${input} setInput=${setInput}
-                 onAction=${handleAction} onSend=${send} onStop=${stop} onDel=${del} onKey=${onKey} />
+                 onSend=${send} onStop=${stop} onKey=${onKey} />
       </div>
     </div>`;
 };
