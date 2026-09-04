@@ -21,6 +21,15 @@ const parseFlags = (argv) => {
 
 const num = (v, dflt) => (v === undefined || v === '' || v === true ? dflt : Number(v));
 const str = (v, dflt) => (v === undefined || v === true ? dflt : String(v));
+// Bool flag with a `--no-` counterpart. Precedence: --no-X > --X > env > default.
+// A bare `--X` is true, `--X=false` is false; `--no-X` mirrors that.
+const bool = (f, name, env, dflt) => {
+  const pick = (v) => (typeof v === 'string' ? v.toLowerCase() !== 'false' : true);
+  if (f[`no-${name}`] !== undefined) return !pick(f[`no-${name}`]);
+  if (f[name] !== undefined) return pick(f[name]);
+  if (env !== undefined) return env.toLowerCase() !== 'false';
+  return dflt;
+};
 
 // Resolve config from CLI flags with env fallbacks, then defaults.
 export const loadConfig = (argv = process.argv) => {
@@ -39,5 +48,8 @@ export const loadConfig = (argv = process.argv) => {
     timeoutMs: num(f.timeout, env.CLOWN_TIMEOUT_MS ?? 900000),
     maxSessions: num(f['max-sessions'], env.MAX_SESSIONS ?? 0),
     verbose: f.verbose === true || str(f.verbose, '') === 'true',
+    autoTruncate: bool(f, 'trunc', env.CLOWN_TRUNC, true),
+    truncateGap: num(f['truncate-gap'], env.CLOWN_TRUNC_GAP ?? 100000),
+    truncateBytes: num(f['truncate-bytes'], env.CLOWN_TRUNC_BYTES ?? 256),
   };
 };

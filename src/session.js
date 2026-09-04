@@ -14,6 +14,13 @@ const textOf = (content) => {
   return '';
 };
 
+// Index of the last element matching pred, or -1 (Array.prototype.lastIndexOf
+// has no predicate form).
+const lastIndexOf = (arr, pred) => {
+  for (let i = arr.length - 1; i >= 0; i--) if (pred(arr[i])) return i;
+  return -1;
+};
+
 // Session: the port of the `Clown` struct (src/model.zig). Owns the message
 // list, todos, token counter, the agentic loop, an event emitter (SSE source),
 // and persistence. The fork/pipe worker is replaced by an in-process async loop
@@ -38,7 +45,7 @@ export class Session {
     this.messages = Array.isArray(snap.messages) ? snap.messages : [];
     this.todos = Array.isArray(snap.todos) ? snap.todos : [];
     this.totalTokens = snap.total_tokens ?? 0;
-    if (this.messages.length === 0) this.messages = [{ role: 'system', content: buildSystemPrompt(this.cwd) }];
+    if (this.messages.length === 0) this.messages = [{ role: 'system', content: buildSystemPrompt(this.cwd, this.config.autoTruncate) }];
 
     this.running = false;
     this.compacting = false;
@@ -160,12 +167,56 @@ export class Session {
 
   // --- Agent loop pieces (used by loop.js) ----------------------------------
 
+  // Auto-truncation (see AUTO_TRUNCATE.md). Non-destructive to the transcript:
+  // the DB / web UI keep the full content forever; only the copy handed to the
+  // LLM has the *history gap's* (messages before the latest user turn) stale
+  // oversized tool results stubbed to `<truncated N bytes>`. The latest
+  // user-assistant turn (the tail) is never trimmed.
+
+  // End of the gap = start of the latest user turn (the sacrosanct tail).
+  gapEnd() {
+    const i = lastIndexOf(this.messages, (m) => m.role === 'user');
+    return i === -1 ? this.messages.length : i; // single turn -> empty gap
+  }
+
+  // Bytes of the full history gap. The system prompt is excluded — it is
+  // constant context, not history — so the mark is a pure ceiling on how much
+  // history to trim.
+  gapBytes() {
+    const end = this.gapEnd();
+    return this.messages.slice(0, end).reduce((n, m) =>
+      m.role === 'system'
+        ? n
+        : n + Buffer.byteLength(typeof m.content === 'string' ? m.content : String(m.content), 'utf8'), 0);
+  }
+
+  // The transcript as the LLM should see it: when the gap is over the mark,
+  // return a shallow copy with each oversized gap tool result replaced by a
+  // stub. this.messages is never mutated, so persistence + the web UI keep the
+  // full content. Pure and idempotent.
+  truncatedMessages() {
+    if (!this.config.autoTruncate) return this.messages;
+    if (this.gapBytes() <= this.config.truncateGap) return this.messages; // history under the mark
+    const budget = this.config.truncateBytes;
+    const end = this.gapEnd(); // everything from here on is the tail
+    const out = this.messages.slice(); // same refs except the stubbed tool msgs
+    for (let i = 0; i < end; i++) {
+      const m = out[i];
+      if (m.role !== 'tool') continue;
+      const n = Buffer.byteLength(m.content, 'utf8');
+      if (n <= budget) continue; // small enough, leave it
+      out[i] = { ...m, content: `<truncated ${n} bytes>` }; // new object; original untouched
+    }
+    return out;
+  }
+
   async next() {
+    const messages = this.truncatedMessages(); // LLM-bound view (stubbed iff gap over mark)
     let attempts = 2; // auto_retry (1) + 1, as in the source
     while (attempts-- > 0) {
       const { message, usage } = await this.llm.chat({
         model: this.model,
-        messages: this.messages,
+        messages,
         tools: this.toolSchemas,
         maxCompletionTokens: 32 * 1024,
         timeoutMs: this.config.timeoutMs,
@@ -174,7 +225,7 @@ export class Session {
       if (usage.total_tokens) this.totalTokens = usage.total_tokens;
       const empty = (message.content == null || message.content === '') && !message.tool_calls?.length;
       if (empty) continue; // retry on empty choice
-      this.messages.push(message);
+      this.messages.push(message); // record the real response in the full transcript
       return message.tool_calls ?? null;
     }
     throw new Error('LLM returned no usable completion');
@@ -275,7 +326,7 @@ export class Session {
 
   clear() {
     if (this.running) this.stop();
-    this.messages = [{ role: 'system', content: buildSystemPrompt(this.cwd) }];
+    this.messages = [{ role: 'system', content: buildSystemPrompt(this.cwd, this.config.autoTruncate) }];
     this.todos = [];
     this.touch();
     this.emit('todo', this.todos);

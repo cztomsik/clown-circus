@@ -14,8 +14,9 @@ const readContext = (cwd, name) => {
 };
 
 // Compose the system prompt per-session from its cwd (port of loadSystemPrompt).
-// Fallback chain: AGENTS.md -> CLOWN.md -> (none).
-export const buildSystemPrompt = (cwd) => {
+// Fallback chain: AGENTS.md -> CLOWN.md -> (none). When autoTruncate is on, append
+// a note so the model knows stale tool results may be stubbed (see AUTO_TRUNCATE.md).
+export const buildSystemPrompt = (cwd, autoTruncate = false) => {
   const context = readContext(cwd, 'AGENTS.md') ?? readContext(cwd, 'CLOWN.md') ?? '';
   const date = new Date().toISOString().slice(0, 10);
   let real = cwd;
@@ -25,5 +26,8 @@ export const buildSystemPrompt = (cwd) => {
     /* keep cwd */
   }
   const sep = context ? '\n\n' : '';
-  return `${PREFIX}${sep}${context}\n\nCurrent date: ${date}\nCurrent working directory: ${real}\n`;
+  const note = autoTruncate
+    ? '\nNote: older (stale) tool results may be replaced with `<truncated N bytes>` to bound history; re-read the file or re-run the command to recover the full content.\n'
+    : '';
+  return `${PREFIX}${sep}${context}\n\nCurrent date: ${date}\nCurrent working directory: ${real}\n${note}`;
 };

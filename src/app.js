@@ -29,6 +29,9 @@ export const buildApp = ({ manager, config, llm }) => {
       max_sessions: config.maxSessions,
       host: config.host,
       port: config.port,
+      auto_truncate: config.autoTruncate,
+      truncate_gap: config.truncateGap,
+      truncate_bytes: config.truncateBytes,
     }));
 
   app.get('/models', async (req, res) => {
