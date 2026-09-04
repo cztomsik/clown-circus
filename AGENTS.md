@@ -31,7 +31,7 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 | `src/main.js` | Bootstrap: parse config → open DB → build LLM client + tools → create SessionManager → build Express app → listen + SIGINT/SIGTERM shutdown. |
 | `src/config.js` | Resolve config from CLI flags with env fallbacks, then defaults (`port`, `host`, `dbFile`, `baseUrl`, `model`, `timeoutMs`, `maxSessions`, `verbose`, `autoTruncate`, `truncateGap`, `truncateBytes`). |
 | `src/app.js` | Express app factory: all REST routes, the SSE endpoint, 404 fallback, and the error-mapping middleware. |
-| `src/db.js` | Thin `node:sqlite` wrapper: opens/migrates the DB (idempotent DDL + `user_version`) and exposes `upsert/get/list/all/projects/deleteRow`. |
+| `src/db.js` | Thin `node:sqlite` wrapper: opens/migrates the DB (idempotent DDL + `user_version`) and exposes the helpers the manager/session use — `upsert`, `all` (startup load), `deleteRow`, `close`. Listing + project grouping are done in memory by the manager, not in SQL. |
 | `src/manager.js` | `SessionManager` registry: loads all sessions from the DB at startup (resetting `running`/`stopped` → `idle`), owns create/list/get/delete and the in-memory hot state. |
 | `src/session.js` | `Session` — the port of the `Clown` struct (`model.zig`). Owns messages/todos/tokens, the single-flight `running` flag, an `AbortController`, an `EventEmitter` (SSE source) with a bounded seq ring buffer, and all operations (`send/retry/undo/clear/clearTools/compact/stop/destroy`) + persistence. |
 | `src/loop.js` | `runLoop` — the agent loop (port of `workerInner`): `next()` → execute tool calls → emit snapshot → repeat; converts every outcome to a terminal status and never throws. |

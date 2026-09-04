@@ -50,25 +50,11 @@ export const openDb = (dbFile) => {
       )
       .run(r.id, r.cwd, r.model, r.status, r.created_at, r.last_activity, r.last_error ?? null, r.snapshot, r.archived ? 1 : 0);
 
-  const get = (id) => db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) ?? null;
-
-  // NOTE: `list`/`projects` are not used by the SessionManager (it lists from
-  // its in-memory map, which applies the archived filter) — they return rows
-  // including archived ones.
-  /** @param {{ cwd?: string }} o */
-  const list = ({ cwd } = {}) => {
-    const sql = cwd
-      ? 'SELECT * FROM sessions WHERE cwd = ? ORDER BY last_activity DESC'
-      : 'SELECT * FROM sessions ORDER BY last_activity DESC';
-    return cwd ? db.prepare(sql).all(cwd) : db.prepare(sql).all();
-  };
-
+  // The SessionManager lists/projects from its in-memory map (which applies the
+  // archived filter); only `all` (startup load) and `deleteRow` are needed here.
   const all = () => db.prepare('SELECT * FROM sessions').all();
-
-  const projects = () =>
-    db.prepare('SELECT cwd, COUNT(*) AS sessions FROM sessions GROUP BY cwd ORDER BY cwd').all();
 
   const deleteRow = (id) => db.prepare('DELETE FROM sessions WHERE id = ?').run(id);
 
-  return { close: () => db.close(), upsert, get, list, all, projects, deleteRow };
+  return { close: () => db.close(), upsert, all, deleteRow };
 };

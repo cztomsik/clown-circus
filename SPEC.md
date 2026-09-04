@@ -110,8 +110,9 @@ the sole system of record.
 Components (each is a flat file under `src/`):
 
 - **`db.js`** — thin wrapper over `node:sqlite`. Owns the connection, runs the
-  schema migration, and exposes query helpers (`upsertSession`, `getSession`,
-  `listSessions`, `listProjects`, `deleteSession`, `allSessions`).
+  schema migration, and exposes the query helpers the manager/session actually
+  use: `upsert`, `all` (startup load), `deleteRow`, and `close`. Listing and
+  project grouping are done in memory by the `SessionManager`, not in SQL.
 - **`manager.js` (SessionManager)** — the multi-session registry. Loads all
   sessions from SQLite into memory at startup, and coordinates create/list/
   retrieve/destroy + persist-on-change. Owns IDs and lifecycle.
