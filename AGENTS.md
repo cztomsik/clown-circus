@@ -19,7 +19,7 @@
 - **Storage**: builtin **`node:sqlite`** (`DatabaseSync`), single file `~/.clowndb` by default. Emits a harmless `ExperimentalWarning`.
 - **LLM**: OpenAI-compatible `/v1/chat/completions` (llama.cpp by default). Base URL from `--base-url`/`CLOWN_API` (default `http://127.0.0.1:8080`); optional `CLOWN_API_KEY` sent as Bearer.
 - **Spec**: the authoritative spec is [`SPEC.md`](SPEC.md) (~20 sections). **Note**: the projects have since **diverged** — `../clown-code/` is **no longer a reference point**; `SPEC.md` and this repo's code are the source of truth.
-- **Web UI**: a first-class feature, described authoritatively in [`WEB_UI.md`](WEB_UI.md). Two static files served at `/` — a thin `webui/index.html` shell (Tailwind v4 Play CDN, `@theme` tokens) plus `webui/app.js`, the whole UI as a **Preact + htm** ES module (import-map → esm.sh). Pure client of the REST + SSE API: project-grouped session sidebar, model picker (`GET /models`), full control toolbar (retry, init, compact, undo, clear-tools, clear, delete, stop, send), live chat over SSE, todos panel.
+- **Web UI**: a first-class feature, described authoritatively in [`WEB_UI.md`](WEB_UI.md). A set of static files served at `/` — a thin `webui/index.html` shell (Tailwind v4 Play CDN, `@theme` tokens, import-map → esm.sh) plus small **Preact + htm** ES modules: `app.js` is the root component (all state + side effects), with `Header/Sidebar/Main/Message/InputBar/Todos.js` for the components and `api/util/image/ui.js` for the API client, pure helpers, image helpers, and shared htm binding (full list in the Source Structure table). Pure client of the REST + SSE API: project-grouped session sidebar, model picker (`GET /models`), full control toolbar (retry, init, compact, undo, clear-tools, clear, archive, delete, stop, send), live chat over SSE, todos panel.
 - **Auto-truncation**: an on-by-default, server-side pre-process that trims what each LLM request *sees* — in the copy sent to the model, stale oversized tool results become a one-line `<truncated N bytes>` marker (disable with `--no-trunc`). Non-destructive: the stored transcript (DB + web UI) keeps the full content. Net-new to clown-circus; fully described in [`AUTO_TRUNCATE.md`](AUTO_TRUNCATE.md).
 
 ## Source Structure
@@ -42,7 +42,17 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 | `src/PREFIX.md` | Base system prompt with guidelines (copied verbatim from the source). |
 | `src/skills/init.md` | Built-in `/init` skill (copied from the source): explore the project and write an `AGENTS.md`. |
 | `webui/index.html` | Web UI shell served at `/`. Thin page: Tailwind v4 Play CDN + import map (Preact/htm → esm.sh) + a `#root` mount — no static UI markup. |
-| `webui/app.js` | The web UI as a Preact + htm ES module: project-grouped sidebar, model picker, full control toolbar, chat over SSE, todos. No build step. |
+| `webui/app.js` | Root Preact component: owns all state + side effects (config/models fetch, 10s poll, SSE, per-session drafts, actions) and composes the layout. No build step. |
+| `webui/Header.js` | Unified top bar: sidebar toggle, session status, model picker, and the ⋮ actions menu (retry/init/compact/undo/clear-tools/clear/archive/delete). |
+| `webui/Sidebar.js` | Project-grouped session list + new-session form + the "show archived" toggle. |
+| `webui/Main.js` | Right-hand pane composition (error banner, todos, transcript, composer). |
+| `webui/Message.js` | Transcript rendering: user/assistant/tool blocks, collapsible tool-call pairs, reasoning. |
+| `webui/InputBar.js` | Composer: textarea, send/stop, slash commands, image attachments (paste + drag). |
+| `webui/Todos.js` | Floating collapsible todo panel. |
+| `webui/api.js` | REST + SSE client helpers (no Preact/DOM). |
+| `webui/util.js` | Pure helpers (no DOM/Preact): baseName, parseCommand, modelId, timeAgo, prettyArgs. |
+| `webui/image.js` | Client-side image helpers (FileReader read, canvas downscale). |
+| `webui/ui.js` | Shared htm→h binding + Tailwind class tokens. |
 | `WEB_UI.md` | Authoritative description of the web UI: features, constraints/invariants, and current gaps (it is a scoped feature, expected to grow). |
 
 ## Architecture Notes

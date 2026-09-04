@@ -463,10 +463,13 @@ Event types (SSE `event:` field):
 
 A web UI is served at `GET /` from `webui/` (via `express.static`): a thin
 `index.html` shell (Tailwind v4 Play CDN, an import map for Preact/htm, and a
-single `#root` mount) plus `app.js`, the whole UI as a **Preact + htm** ES
-module. It is a **pure client** of the API in this section — it adds no server
-logic, routes, or dependencies. No build step: the only runtime libraries
-(Tailwind, Preact, htm) are loaded from CDNs.
+single `#root` mount) plus a set of small **Preact + htm** ES modules — `app.js`
+holds the root component (all state + side effects), with component modules
+(`Header.js`, `Sidebar.js`, `Main.js`, `Message.js`, `InputBar.js`, `Todos.js`)
+and non-component helpers (`api.js`, `util.js`, `image.js`, `ui.js`; the full
+file list is in §13). It is a **pure client** of the API in this section — it
+adds no server logic, routes, or dependencies. No build step: the only runtime
+libraries (Tailwind, Preact, htm) are loaded from CDNs.
 
 The authoritative description of the UI — features, constraints/invariants,
 and the current gaps it is expected to grow into — lives in
