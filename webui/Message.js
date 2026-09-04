@@ -47,7 +47,7 @@ const ToolPair = ({ tc, result }) => {
   return html`
     <details class="border-l-2 border-line bg-panel/70 rounded-r-md">
       <summary class="py-1 px-2.5 text-dim text-xs cursor-pointer select-none break-words">
-        » ${tc.function.name}(${args})${result ? html` <span class="opacity-60">— ${firstLine(result.content)}</span>` : null}
+        ${tc.function.name}(${args})${result ? html` <span class="opacity-60">— ${firstLine(result.content)}</span>` : null}
       </summary>
       <div class="p-1.5 space-y-1">
         <pre class="m-0 px-2 py-1.5 text-dim text-xs whitespace-pre-wrap break-words rounded bg-line/50">${args}</pre>

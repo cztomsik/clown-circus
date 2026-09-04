@@ -145,8 +145,9 @@ primary interface — the UI is just one client of it.
   from the snapshot as a flat transcript — no boxed cards or role headers;
   roles are distinguished by colour / weight / background: **user** = accent
   colour, medium weight, faint accent wash with a thin accent left rule;
-  **assistant** = plain ink, with `tool_calls` shown as dim `» name(args)`
-  lines; **system** = collapsed dim italic details (the prompt);
+  **assistant** = plain ink, with `tool_calls` shown as collapsible dim
+  `name(args)` lines (native `<details>` disclosure marker);
+  **system** = collapsed dim italic details (the prompt);
   **tool** results = collapsed dim details on a faint panel wash, first line
   as the summary. Todos rendered from the snapshot's `todos` as a
   collapsible floating panel overlaying the transcript (top-right of the
