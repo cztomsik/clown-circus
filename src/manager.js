@@ -64,15 +64,13 @@ export class SessionManager {
     return s;
   }
 
-  // `archived` is a tri-state filter, mirroring `GET /sessions?archived=`:
-  // undefined/false → non-archived only (the default), true → archived only,
-  // 'all' → everything.
-  /** @param {{ cwd?: string, archived?: boolean | 'all' }} o */
-  list({ cwd, archived } = {}) {
-    const keep = (s) =>
-      (archived === 'all' ? true : archived ? s.archived : !s.archived);
+  // `includeArchived` (default false): when true, archived sessions are included
+  // in the result; when false, only non-archived sessions are returned. Mirrors
+  // the `?archived` flag on `GET /sessions`.
+  /** @param {{ cwd?: string, includeArchived?: boolean }} o */
+  list({ cwd, includeArchived = false } = {}) {
     return [...this.sessions.values()]
-      .filter((s) => (!cwd || s.cwd === cwd) && keep(s))
+      .filter((s) => (!cwd || s.cwd === cwd) && (includeArchived || !s.archived))
       .sort((a, b) => (a.lastActivity < b.lastActivity ? 1 : -1))
       .map((s) => s.meta());
   }

@@ -297,11 +297,10 @@ endpoint and the static web UI (§7.8). Errors use `4xx`/`5xx` with
 `GET /sessions`:
 - Returns non-archived sessions by default (those matching `?cwd=` if given).
 - `?cwd` is an exact, case-sensitive match on the stored absolute `cwd`.
-- `?archived` is a tri-state filter:
-  - absent (or `"false"`) → **non-archived only** (the default)
-  - `"true"` → archived only
-  - `"all"` → everything
-  - any other value → `400 bad_request`
+- `?archived` is a boolean flag:
+  - present and `"true"`/`"1"` → **include** archived sessions (the web UI uses
+    this to fetch everything, then splits archived/non-archived client-side)
+  - absent, `"false"`, or `"0"` → **non-archived only** (the default)
 - `400` if `cwd` is supplied but empty.
 
 `POST /sessions` body (`cwd` required, the rest optional):

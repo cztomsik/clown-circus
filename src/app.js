@@ -42,17 +42,11 @@ export const buildApp = ({ manager, config, llm }) => {
   app.get('/sessions', (req, res) => {
     const { cwd, archived } = req.query;
     if (cwd !== undefined && cwd === '') throw new HttpError(400, 'bad_request', 'cwd filter must not be empty');
-    // Tri-state: absent/"false" → non-archived only (default), "true" →
-    // archived only, "all" → everything.
-    let a;
-    if (archived === undefined || archived === 'false') a = false;
-    else if (archived === 'true') a = true;
-    else if (archived === 'all') a = 'all';
-    else throw new HttpError(400, 'bad_request', 'archived filter must be "true", "false" or "all"');
-    const o = {};
-    if (cwd) o.cwd = cwd;
-    if (a) o.archived = a;
-    res.json(manager.list(o));
+    // Boolean flag: ?archived (true/1) → include archived sessions; absent or
+    // "false"/"0" → non-archived only (the default). The web UI fetches with the
+    // flag on and splits archived/non-archived client-side.
+    const includeArchived = archived === 'true' || archived === '1';
+    res.json(manager.list({ cwd, includeArchived }));
   });
 
   app.post('/sessions', (req, res) => {

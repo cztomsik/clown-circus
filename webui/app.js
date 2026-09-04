@@ -50,7 +50,7 @@ const App = () => {
 
   const refreshSessions = async () => {
     let list;
-    try { list = await api('/sessions?archived=all'); } catch { return; }
+    try { list = await api('/sessions?archived=1'); } catch { return; }
     setSessions(list);
   };
 

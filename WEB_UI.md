@@ -106,7 +106,7 @@ primary interface — the UI is just one client of it.
   `select()`), so spinning up another session for the same project is one
   click; the field is cleared after a successful create and remains editable.
 
-  **Archived sessions** — the list is fetched as `GET /sessions?archived=all`
+  **Archived sessions** — the list is fetched as `GET /sessions?archived=1`
   and split client-side, so the "show archived" toggle (a checkbox under the
   new-session form, off by default) is instant and the 10s poll stays
   toggle-agnostic. When off, archived sessions simply don't render. When on,
