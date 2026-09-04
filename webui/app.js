@@ -89,6 +89,12 @@ const App = () => {
     try { localStorage.setItem('clown-circus-theme', theme); } catch {}
   }, [theme]);
 
+  // Reflect the selected session in the tab title; falls back to the app
+  // name when no session is open.
+  useEffect(() => {
+    document.title = view?.cwd ? `${baseName(view.cwd)} · Clown-Circus` : 'Clown-Circus';
+  }, [view?.cwd]);
+
   // Per-session composer draft: restore it when the session changes, and
   // persist it on every change, keyed by session id so switching back and
   // forth keeps each session's half-typed message.
