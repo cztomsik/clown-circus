@@ -1,7 +1,8 @@
 # Clown-Circus — Web UI
 
 The web UI is a **first-class part of Clown-Circus**. It is minimal today (a
-thin shell page plus one Preact module, no build step) and is expected to grow;
+thin shell page plus a small set of Preact ES modules, no build step) and is
+expected to grow;
 this file is the authoritative
 description of what the UI is, what it uses, and the constraints it must keep
 satisfying. The REST + SSE API ([SPEC.md](SPEC.md) §7) remains the complete,
@@ -27,26 +28,48 @@ primary interface — the UI is just one client of it.
   (`import { h } from "preact"`, `import { useState } from "preact/hooks"`,
   `import htm from "htm"`), the same way Tailwind is pulled from a CDN — no
   local copy, no bundling.
-- **`webui/app.js`** — the entire UI as a **Preact** ES module
-  (`type="module"`, loaded via `<script type="module" src="/app.js">`).
-  JSX-style markup is written with **htm** bound to Preact's `h`
-  (`const html = htm.bind(h)`); a single `App` component owns all state and
-  mounts into `#root` via Preact's `render`. Presentational components:
-  `Header`, `Sidebar` (with `SessionList`/`SessionItem`), `Main`, `Toolbar`,
-  `Todos`, `Messages`/`Message`. The composer lives in its own module
-  (`InputBar.js`, below). API calls, the `EventSource`
-  (SSE), the 10s session poll, and the transient error flash live in
-  `useState`/`useEffect`/`useRef` (`preact/hooks`) inside `App`.
-- **`webui/InputBar.js`** — the composer, extracted into its own module and
-  re-imported by `app.js` (`import { InputBar } from './InputBar.js'`). Owns its
-  `useRef`/`useLayoutEffect` autofocus and its `SEND_BTN` class string; recreates
-  the `htm`→`h` `html` binding locally (no build step, so each module is
-  self-contained). A plain ES module served by `express.static`.
+- **`webui/app.js`** — the entry module (loaded via
+  `<script type="module" src="/app.js">`). Holds **only** the stateful `App`
+  root component and its mount: all state and side effects live here as
+  `useState`/`useEffect`/`useRef` (`preact/hooks`) — the config/models boot, the
+  10s session poll, theme, the SSE subscription (via `openSessionEvents`), and
+  the send/stop/undo/delete handlers plus the composer `/cmd` dispatch
+  (`runCommand`) — then it composes the presentational
+  modules below and mounts into `#root` via Preact's `render`. Markup is
+  written with **htm** bound to Preact's `h` through the shared `html`
+  (see `ui.js`).
+- **`webui/ui.js`** — the one shared **`htm`→`h`** binding
+  (`export const html = htm.bind(h)`) plus the shared Tailwind class tokens
+  (`BTN`, `PRE`). Every component module imports `html` (and, where needed,
+  `BTN`/`PRE`) from here, so the 3-line binding prelude lives in exactly one
+  place instead of being repeated per file.
+- **`webui/api.js`** — all client → server traffic, kept apart from the
+  components (no DOM, no Preact, no htm): the JSON `api()`/`post()` REST helpers
+  and `openSessionEvents(id, handlers)`, which opens the per-session SSE
+  `EventSource`, fans its events out to a `{snapshot, todo, status, done,
+  error}` handler map (each `data` JSON-parsed), swallows connection failures,
+  and returns a `close()` used as the effect cleanup.
+- **`webui/Header.js`** — the top bar (sidebar toggle, brand, live config
+  summary, theme toggle).
+- **`webui/Sidebar.js`** — `Sidebar` + `SessionList`/`SessionItem`: the
+  project-grouped session list and the new-session form (cwd + model
+  `<select>`).
+- **`webui/Toolbar.js`** — the session toolbar: status badge + live summary,
+  and the `retry`/`init` / `compact`/`undo`/`clear-tools`/`clear` / `delete`
+  action groups.
+- **`webui/Message.js`** — `Messages` + `Message` (and the `Pre` leaf): the flat
+  transcript, roles distinguished by colour/weight/tint.
+- **`webui/Todos.js`** — the live todo panel.
+- **`webui/InputBar.js`** — the composer; owns its `useRef`/`useLayoutEffect`
+  autofocus and its `SEND_BTN` class string.
+- **`webui/Main.js`** — the right-hand pane: composes `Toolbar`, `ErrorBox`,
+  `Todos`, `Messages`, and `InputBar` (or a "select a session" placeholder when
+  none is selected).
 - **`webui/util.js`** — a small module of pure, dependency-free helpers
-  (`baseName`, `timeAgo`, `prettyArgs`), exported by name and pulled in by
-  `app.js` with `import { … } from './util.js'`. Kept separate so `app.js`
-  holds only the Preact components, hooks, and wiring. A plain ES module served
-  by `express.static` like `app.js` — still no build step.
+  (`baseName`, `parseCommand`, `modelId`, `timeAgo`, `prettyArgs`), exported by
+  name and pulled in with `import { … } from './util.js'`. `parseCommand(text)`
+  parses a composer `/cmd [arg]` line (returns `null` for a plain message), and
+  `modelId(m)` normalises a `/models` entry to a plain id.
 - No build step, no extra npm dependency (consistent with SPEC §14). The
   whole UI is plain static files in `webui/`; the only runtime UI libraries
   are **Preact + htm** (import-map → esm.sh) plus Tailwind (CDN) — nothing
@@ -101,7 +124,9 @@ primary interface — the UI is just one client of it.
   - `done` → update token count
   - `EventSource` auto-reconnects and sends `Last-Event-ID`, so the server's
     replay ring (SPEC §7.6) covers brief disconnects.
-- **Composer** — textarea, Enter to send, Shift+Enter for newline. While the
+- **Composer** — textarea, Enter to send, Shift+Enter for newline; it also
+  accepts `/cmd` slash-commands (see **Commands**). The placeholder hints at
+  this: `message (Enter to send, / for commands)`. While the
   session is running the box **looks disabled** (faded, `opacity-50`) but stays
   **enabled and editable**, so you keep focus and can type ahead; Enter is a
   no-op until the session is idle (single-flight, so it never fires a second
@@ -113,6 +138,22 @@ primary interface — the UI is just one client of it.
   `field-sizing: content` (no JS auto-resize), starting at `min-h-[44px]` and
   capped at `max-h-[33dvh]` (~1/3 of the viewport) — past that it scrolls
   internally (`overflow-y-auto`).
+- **Commands** — typing a `/cmd` line in the composer dispatches a control
+  instead of sending a message (a port of the source TUI's `handleCommand`). On
+  Enter, `send()` runs `parseCommand()` first: if the trimmed text starts with
+  `/`, the command (lowercased, first whitespace-delimited token) is dispatched
+  by `runCommand()`; otherwise it is a normal message. The commands map 1:1 to
+  the §7.5 control endpoints and reuse the existing handlers (no new endpoint):
+  `/stop`, `/retry`, `/init`, `/compact`, `/clear`, `/clear-tools`, `/undo` →
+  the matching `POST /sessions/:id/…` (`/undo` restores the popped message into
+  the composer). A command is parsed **before** the running no-op guard, so
+  `/stop` and the implicit-stop commands (`/undo`, `/clear`, `/clear-tools`)
+  work while a run is in flight; plain messages still no-op while running
+  (type-ahead preserved). The command text is cleared on a recognized command
+  (and re-filled for `/undo`); an unknown `/…` keeps the text in the box so it
+  can be edited and is reported in the error banner. Source commands with no
+  headless equivalent — `/exit`/`/quit`, `/save`/`/load`, `/continue`, `/sudo` —
+  are intentionally not ported.
 - **Controls** — toolbar with three logical groups (separated by thin
   vertical rules):
   - **Agent actions**: `retry`, `init` — fire-and-forget (202),

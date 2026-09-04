@@ -1,132 +1,15 @@
-import { h, render } from 'preact';
-import { useState, useEffect, useLayoutEffect, useRef } from 'preact/hooks';
-import htm from 'htm';
-import { baseName, prettyArgs } from './util.js';
-import { InputBar } from './InputBar.js';
+import { render } from 'preact';
+import { useState, useEffect, useRef } from 'preact/hooks';
+import { html } from './ui.js';
+import { api, post, openSessionEvents } from './api.js';
+import { baseName, parseCommand, modelId } from './util.js';
+import { Header } from './Header.js';
 import { Sidebar } from './Sidebar.js';
+import { Main } from './Main.js';
 
-const html = htm.bind(h);
-
-// ── API helpers ──────────────────────────────────────────────────────
-const api = async (path, opts = {}) => {
-  const r = await fetch(path, { headers: { 'content-type': 'application/json' }, ...opts });
-  if (!r.ok) {
-    let msg = `${r.status} ${r.statusText}`;
-    try { msg = (await r.json()).error?.message ?? msg; } catch {}
-    throw new Error(msg);
-  }
-  return r.status === 204 ? null : r.json();
-};
-const post = (path, body) => api(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
-
-// ── pure helpers ─────────────────────────────────────────────────────
-// md breakpoint: at/above it the sidebar sits in the flex flow; below it,
-// it is an overlay drawer (auto-collapsed by default on mobile).
+// md breakpoint: >= it the sidebar sits in the flex flow; below it, it's an
+// overlay drawer (auto-collapsed by default on mobile).
 const isWide = () => window.matchMedia('(min-width: 768px)').matches;
-
-// ── status colour map (badge) ─────────────────────────────────────────
-const badgeColor = { running: 'text-accent', idle: 'text-ok', error: 'text-err', stopped: 'text-dim' };
-
-// ── shared class strings ─────────────────────────────────────────────
-const BTN = 'text-ink bg-panel border border-line rounded py-[3px] px-2.5 text-xs cursor-pointer hover:border-accent';
-const PRE = 'm-0 py-2 px-2.5 whitespace-pre-wrap break-words';
-
-// ── leaf components ──────────────────────────────────────────────────
-const Pre = ({ text, cls = PRE }) => html`<pre class=${cls}>${text ?? ''}</pre>`;
-
-const Header = ({ cfg, theme, sideOpen, onSideToggle, onThemeToggle }) => html`
-  <header class="flex items-center gap-2.5 px-3.5 py-2.5 border-b border-line">
-    <button title="toggle sidebar" aria-label="toggle sidebar" aria-pressed=${sideOpen}
-            class=${`${BTN} flex-none ${sideOpen ? 'border-accent' : ''}`}
-            onclick=${onSideToggle}>☰</button>
-    <h1 class="text-[15px] m-0 text-accent flex-none">clown-circus</h1>
-    <div class="text-dim text-xs min-w-0 flex-1 truncate">${cfg}</div>
-    <button title="toggle theme" class=${`${BTN} flex-none`} onclick=${onThemeToggle}>${theme === 'dark' ? '→ light' : '→ dark'}</button>
-  </header>`;
-
-// Roles are distinguished by colour / weight / tint instead of boxed cards:
-// user = accent amber on a faint amber wash, assistant = plain ink (tool
-// calls as dim `» name(args)` lines), system/tool = collapsed dim details
-// with a thin left rule.
-const Message = ({ m }) => {
-  if (m.role === 'system') {
-    return html`
-      <details class="border-l-2 border-line pl-2.5">
-        <summary class="py-0.5 text-dim/70 text-xs italic cursor-pointer select-none">system</summary>
-        <${Pre} text=${m.content} cls="m-0 pt-1.5 pb-1 text-dim text-xs italic whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto" />
-      </details>`;
-  }
-  if (m.role === 'tool') {
-    const first = (m.content ?? '').split('\n')[0].slice(0, 120);
-    return html`
-      <details class="border-l-2 border-line bg-panel/70 rounded-r-md">
-        <summary class="py-1 px-2.5 text-dim text-xs cursor-pointer select-none">tool result — ${first}</summary>
-        <${Pre} text=${m.content} cls="m-0 pt-0.5 pb-1.5 px-2.5 text-dim text-xs whitespace-pre-wrap break-words" />
-      </details>`;
-  }
-  const isUser = m.role === 'user';
-  return html`
-    <div class=${`font-mono ${isUser ? 'border-l-2 border-accent bg-accent/10 rounded-r-md pl-3 pr-2 py-1.5' : ''}`}>
-      ${m.content ? html`<${Pre} text=${m.content} cls=${isUser ? 'm-0 font-medium text-accent whitespace-pre-wrap break-words' : PRE} />` : null}
-      ${(m.tool_calls ?? []).map((tc) => html`
-        <div class="text-dim text-xs mb-1 break-words">» ${tc.function.name}(${prettyArgs(tc.function.arguments)})</div>`)}
-    </div>`;
-};
-
-// List of messages; keeps the container scrolled to the newest turn.
-const Messages = ({ messages }) => {
-  const ref = useRef(null);
-  useLayoutEffect(() => { const el = ref.current; if (el) el.scrollTop = el.scrollHeight; }, [messages]);
-  return html`
-    <div ref=${ref} class="flex-1 overflow-y-auto p-3 flex flex-col gap-2.5">
-      ${messages.map((m, i) => html`<${Message} key=${i} m=${m} />`)}
-    </div>`;
-};
-
-const Todos = ({ todos }) => todos?.length
-  ? html`
-      <div class="mx-3 mt-2 p-2 px-2.5 border border-line rounded text-xs">
-        <ul class="list-none m-0 p-0">
-          ${todos.map((t, i) => html`
-            <li key=${i} class=${t.status === 'completed' ? 'text-dim line-through' : t.status === 'in_progress' ? 'text-accent' : ''}>[${t.status}] ${t.name}</li>`)}
-        </ul>
-      </div>`
-  : null;
-
-const ErrorBox = ({ message }) => message
-  ? html`<div class="mx-3 mt-2 p-2 px-2.5 border border-err text-err rounded whitespace-pre-wrap">${message}</div>`
-  : null;
-
-const Toolbar = ({ view, onAction, onDel }) => html`
-  <div class="flex items-center gap-2 px-3 py-2 border-b border-line flex-wrap">
-    <span class="py-0.5 px-2 rounded-full text-xs border border-line ${badgeColor[view.status] ?? 'text-ok'}">${view.status ?? 'idle'}</span>
-    <span class="text-dim text-xs break-all">${view.cwd ?? ''} · ${view.model ?? ''} · ${view.tokens ?? 0} tokens</span>
-    <span class="flex-1"></span>
-    <button title="strip trailing assistant/tool messages and re-run" class=${BTN} onclick=${() => onAction('retry')}>retry</button>
-    <button title="run the /init skill on this project" class=${BTN} onclick=${() => onAction('init')}>init</button>
-    <span class="w-px h-4 bg-line"></span>
-    <button title="summarize and replace the history" class=${BTN} onclick=${() => onAction('compact')}>compact</button>
-    <button title="pop the last message" class=${BTN} onclick=${() => onAction('undo')}>undo</button>
-    <button title="remove all tool results from history" class=${BTN} onclick=${() => onAction('clear-tools')}>clear-tools</button>
-    <button title="reset history to the system prompt" class=${BTN} onclick=${() => onAction('clear')}>clear</button>
-    <span class="w-px h-4 bg-line"></span>
-    <button title="delete this session" class=${BTN} onclick=${onDel}>delete</button>
-  </div>`;
-
-const Main = (p) => !p.view
-  ? html`
-      <main class="flex-1 flex flex-col min-w-0">
-        <div class="flex-1 flex items-center justify-center text-dim">select or create a session</div>
-      </main>`
-  : html`
-      <main class="flex-1 flex flex-col min-w-0">
-        <${Toolbar} view=${p.view} onAction=${p.onAction} onDel=${p.onDel} />
-        <${ErrorBox} message=${p.flash ?? p.view.last_error} />
-        <${Todos} todos=${p.view.todos} />
-        <${Messages} messages=${p.view.messages} />
-        <${InputBar} running=${p.view.status === 'running'} current=${p.view.id} value=${p.input}
-                      onInput=${(e) => p.setInput(e.target.value)} onKey=${p.onKey} onSend=${p.onSend} onStop=${p.onStop} />
-      </main>`;
 
 // ── root component (owns all state + side effects) ───────────────────
 const App = () => {
@@ -173,7 +56,7 @@ const App = () => {
       } catch { setCfg(''); }
       try {
         const { data } = await api('/models');
-        setModels((data ?? []).map((m) => m.id ?? m.name ?? m).filter(Boolean).filter((m) => m !== def));
+        setModels((data ?? []).map(modelId).filter(Boolean).filter((m) => m !== def));
       } catch {}
       await refreshSessions();
     })();
@@ -196,30 +79,17 @@ const App = () => {
     return () => mq.removeEventListener('change', onChange);
   }, []);
 
-  // live updates: one EventSource per selected session (auto-reconnects with Last-Event-ID).
+  // live updates: one EventSource per selected session (auto-reconnects with
+  // Last-Event-ID; the server's replay ring covers brief disconnects).
   useEffect(() => {
     if (!current) return;
-    const es = new EventSource(`/sessions/${current}/events`);
-    es.addEventListener('snapshot', (e) => {
-      const snap = JSON.parse(e.data);
-      setView((v) => v ? { ...v, messages: snap.messages, todos: snap.todos, tokens: snap.total_tokens } : v);
+    return openSessionEvents(current, {
+      snapshot: (snap) => setView((v) => v ? { ...v, messages: snap.messages, todos: snap.todos, tokens: snap.total_tokens } : v),
+      todo: (todos) => setView((v) => v ? { ...v, todos } : v),
+      status: (s) => { setView((v) => v ? { ...v, status: s.status } : v); refreshSessions(); },
+      done: (d) => setView((v) => v ? { ...v, tokens: d.total_tokens } : v),
+      error: (err) => { setView((v) => v ? { ...v, status: 'error' } : v); flashMsg(err.message); refreshSessions(); },
     });
-    es.addEventListener('todo', (e) => setView((v) => v ? { ...v, todos: JSON.parse(e.data) } : v));
-    es.addEventListener('status', (e) => {
-      setView((v) => v ? { ...v, status: JSON.parse(e.data).status } : v);
-      refreshSessions();
-    });
-    es.addEventListener('done', (e) => setView((v) => v ? { ...v, tokens: JSON.parse(e.data).total_tokens } : v));
-    es.addEventListener('error', (e) => {
-      const me = /** @type {MessageEvent} */ (e);
-      if (me.data) {
-        setView((v) => v ? { ...v, status: 'error' } : v);
-        flashMsg(JSON.parse(me.data).message);
-        refreshSessions();
-      }
-    });
-    es.onerror = () => { /* EventSource auto-reconnects with Last-Event-ID */ };
-    return () => es.close();
   }, [current]);
 
   const select = async (id) => {
@@ -270,12 +140,34 @@ const App = () => {
     } catch (err) { flashMsg(err.message); }
   };
 
+  // Composer slash-commands (e.g. /retry), a port of the source TUI's
+  // handleCommand. Parsed before the message path so a command always dispatches
+  // — including /stop and the implicit-stop commands (/undo, /clear,
+  // /clear-tools) that must work while a run is in flight. Each delegates to the
+  // existing handlers, so there is no new endpoint. Unknown commands keep the
+  // text in the box so it can be edited.
+  const runCommand = ({ name }) => {
+    switch (name) {
+      case 'stop': setInput(''); void stop(); return;
+      case 'undo': setInput(''); void handleAction('undo'); return;
+      case 'retry': setInput(''); void handleAction('retry'); return;
+      case 'init': setInput(''); void handleAction('init'); return;
+      case 'compact': setInput(''); void handleAction('compact'); return;
+      case 'clear': setInput(''); void handleAction('clear'); return;
+      case 'clear-tools': setInput(''); void handleAction('clear-tools'); return;
+      default: flashMsg(`unknown command: /${name}`);
+    }
+  };
+
   const send = async () => {
     const text = input.trim();
-    // Enter does nothing while a run is in flight (the composer stays editable
+    if (!text || !current) return;
+    const parsed = parseCommand(text);
+    if (parsed) { runCommand(parsed); return; }
+    // Plain messages no-op while a run is in flight (the composer stays editable
     // so you can type ahead, but it won't fire a second message); the typed text
     // is preserved and can be sent once the session is idle.
-    if (!text || !current || view?.status === 'running') return;
+    if (view?.status === 'running') return;
     setInput('');
     try {
       await post(`/sessions/${current}/messages`, { message: text });

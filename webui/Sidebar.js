@@ -1,9 +1,7 @@
-import { h, Fragment } from 'preact';
+import { Fragment } from 'preact';
 import { useState } from 'preact/hooks';
-import htm from 'htm';
+import { html } from './ui.js';
 import { baseName, timeAgo } from './util.js';
-
-const html = htm.bind(h);
 
 // ── status colour map (dot) ───────────────────────────────────────────
 const dotColor = { running: 'bg-accent animate-pulse', idle: 'bg-ok', error: 'bg-err', stopped: 'bg-dim' };
