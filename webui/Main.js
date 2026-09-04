@@ -9,14 +9,15 @@ const ErrorBox = ({ message }) => message
 
 // Right-hand pane: error banner, todos, the transcript, and the composer — or
 // a placeholder when no session is selected. (The session status + actions now
-// live in the unified top bar, see Header.js.)
+// live in the unified top bar, see Header.js.) `relative` on <main> anchors
+// the floating Todos overlay (top-right, see Todos.js).
 export const Main = (p) => !p.view
   ? html`
-      <main class="flex-1 flex flex-col min-w-0">
+      <main class="relative flex-1 flex flex-col min-w-0">
         <div class="flex-1 flex items-center justify-center text-dim">select or create a session</div>
       </main>`
   : html`
-      <main class="flex-1 flex flex-col min-w-0">
+      <main class="relative flex-1 flex flex-col min-w-0">
         <${ErrorBox} message=${p.flash ?? p.view.last_error} />
         <${Todos} todos=${p.view.todos} />
         <${Messages} messages=${p.view.messages} />

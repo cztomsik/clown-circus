@@ -58,7 +58,12 @@ primary interface — the UI is just one client of it.
   `<select>`).
 - **`webui/Message.js`** — `Messages` + `Message` (and the `Pre` leaf): the flat
   transcript, roles distinguished by colour/weight/tint.
-- **`webui/Todos.js`** — the live todo panel.
+- **`webui/Todos.js`** — the live todo panel: a **collapsible, floating**
+  overlay anchored top-right inside the main pane (`<main>` is `relative`;
+  the panel is `absolute`, semi-transparent `bg-panel/95` + backdrop blur,
+  `z-20`). It renders only while the snapshot has todos; its header row
+  (a `Todos done/total` label + rotating chevron) toggles the list, which
+  scrolls internally when long (`max-h-64`).
 - **`webui/InputBar.js`** — the composer; owns its `useRef`/`useLayoutEffect`
   autofocus and its `SEND_BTN` class string.
 - **`webui/Main.js`** — the right-hand pane: composes `ErrorBox`, `Todos`,
@@ -123,7 +128,9 @@ primary interface — the UI is just one client of it.
   **assistant** = plain ink, with `tool_calls` shown as dim `» name(args)`
   lines; **system** = collapsed dim italic details (the prompt);
   **tool** results = collapsed dim details on a faint panel wash, first line
-  as the summary. Todos panel rendered from the snapshot's `todos`.
+  as the summary. Todos rendered from the snapshot's `todos` as a
+  collapsible floating panel overlaying the transcript (top-right of the
+  main pane; see `webui/Todos.js`).
 - **Live updates** — browser `EventSource` on `GET /sessions/:id/events`:
   - `snapshot` → re-render messages, todos, token count
   - `todo` → re-render todos
