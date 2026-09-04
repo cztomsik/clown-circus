@@ -175,42 +175,28 @@ export class Session {
   // LLM has the *history gap's* (messages before the latest user turn) stale
   // oversized tool results stubbed to `<truncated N bytes>`. The latest
   // user-assistant turn (the tail) is never trimmed.
-
-  // End of the gap = start of the latest user turn (the sacrosanct tail).
-  gapEnd() {
-    const i = lastIndexOf(this.messages, (m) => m.role === 'user');
-    return i === -1 ? this.messages.length : i; // single turn -> empty gap
-  }
-
-  // Bytes of the full history gap. The system prompt is excluded — it is
-  // constant context, not history — so the mark is a pure ceiling on how much
-  // history to trim.
-  gapBytes() {
-    const end = this.gapEnd();
-    return this.messages.slice(0, end).reduce((n, m) =>
-      m.role === 'system'
-        ? n
-        : n + Buffer.byteLength(typeof m.content === 'string' ? m.content : String(m.content), 'utf8'), 0);
-  }
-
-  // The transcript as the LLM should see it: when the gap is over the mark,
-  // return a shallow copy with each oversized gap tool result replaced by a
-  // stub. this.messages is never mutated, so persistence + the web UI keep the
-  // full content. Pure and idempotent.
+  //
+  // One pass over the gap: it totals the gap's bytes (system prompt excluded —
+  // that is constant context, not history, so the mark is a pure ceiling on how
+  // much history to trim) and stubs each oversized tool result in a shallow
+  // copy. If the total is under the mark the copy is thrown away and
+  // this.messages is returned as-is. this.messages is never mutated, so
+  // persistence + the web UI keep the full content. Pure and idempotent.
   truncatedMessages() {
     if (!this.config.autoTruncate) return this.messages;
-    if (this.gapBytes() <= this.config.truncateGap) return this.messages; // history under the mark
+    const li = lastIndexOf(this.messages, (m) => m.role === 'user');
+    const end = li === -1 ? this.messages.length : li; // gap = everything before the latest user turn
     const budget = this.config.truncateBytes;
-    const end = this.gapEnd(); // everything from here on is the tail
-    const out = this.messages.slice(); // same refs except the stubbed tool msgs
+    const out = this.messages.slice(); // same refs except any stubbed tool msgs
+    let total = 0;
     for (let i = 0; i < end; i++) {
       const m = out[i];
-      if (m.role !== 'tool') continue;
-      const n = Buffer.byteLength(m.content, 'utf8');
-      if (n <= budget) continue; // small enough, leave it
-      out[i] = { ...m, content: `<truncated ${n} bytes>` }; // new object; original untouched
+      if (m.role === 'system') continue;
+      const n = Buffer.byteLength(typeof m.content === 'string' ? m.content : String(m.content), 'utf8');
+      total += n;
+      if (m.role === 'tool' && n > budget) out[i] = { ...m, content: `<truncated ${n} bytes>` }; // original untouched
     }
-    return out;
+    return total > this.config.truncateGap ? out : this.messages;
   }
 
   async next() {
