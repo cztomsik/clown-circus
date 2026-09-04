@@ -38,16 +38,19 @@ const buildBlocks = (messages) => {
   return blocks;
 };
 
-// One collapsible call+result pair: the summary is the call line with a dim
-// first-line preview of the result; the body stacks two <pre> blocks — args
+// One collapsible call+result pair. The summary shows only short, bounded
+// previews of the args and the result (each truncated to a first line) so a
+// large edit_file payload can't stretch the collapsed line to a full screen —
+// the full text lives in the body, which stacks two <pre> blocks — args
 // (bg-line tint) and result (bg-bg tint) — so the two read distinctly. A call
 // without a result (e.g. after /clear-tools) shows just the args block.
 const ToolPair = ({ tc, result }) => {
   const args = prettyArgs(tc.function.arguments);
+  const argsPreview = firstLine(args, 80);
   return html`
     <details class="border-l-2 border-line bg-panel/70 rounded-r-md">
       <summary class="py-1 px-2.5 text-dim text-xs cursor-pointer select-none break-words">
-        ${tc.function.name}(${args})${result ? html` <span class="opacity-60">— ${firstLine(result.content)}</span>` : null}
+        ${tc.function.name}(${argsPreview})${result ? html` <span class="opacity-60">— ${firstLine(result.content)}</span>` : null}
       </summary>
       <div class="p-1.5 space-y-1">
         <pre class="m-0 px-2 py-1.5 text-dim text-xs whitespace-pre-wrap break-words rounded bg-line/50">${args}</pre>
