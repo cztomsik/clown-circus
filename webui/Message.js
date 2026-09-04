@@ -57,9 +57,19 @@ const ToolPair = ({ tc, result }) => {
     </details>`;
 };
 
-// Assistant turn: optional text followed by its tool-call pairs.
+// The model's chain-of-thought, when the provider emits `reasoning_content`
+// on an assistant turn. Rendered collapsed + dim/italic so it reads as
+// secondary to the visible response; the label mirrors the field name.
+const Reasoning = ({ text }) => html`
+  <details class="border-l-2 border-line bg-panel/40 rounded-r-md">
+    <summary class="py-1 px-2.5 text-dim/70 text-xs italic cursor-pointer select-none">reasoning</summary>
+    <${Pre} text=${text} cls="m-0 px-2.5 pb-1.5 pt-0.5 text-dim text-xs italic whitespace-pre-wrap break-words" />
+  </details>`;
+
+// Assistant turn: optional reasoning + text, followed by its tool-call pairs.
 const AssistantBlock = ({ m, pairs }) => html`
   <div>
+    ${m.reasoning_content ? html`<${Reasoning} text=${m.reasoning_content} />` : null}
     ${m.content ? html`<${Pre} text=${m.content} />` : null}
     ${pairs.map((p, i) => html`<${ToolPair} key=${p.tc.id ?? i} tc=${p.tc} result=${p.result} />`)}
   </div>`;
@@ -89,6 +99,7 @@ const Message = ({ m }) => {
   const content = m.content;
   return html`
     <div class=${`font-mono ${isUser ? 'border-l-2 border-accent bg-accent/10 rounded-r-md pl-3 pr-2 py-1.5' : ''}`}>
+      ${m.reasoning_content ? html`<${Reasoning} text=${m.reasoning_content} />` : null}
       ${Array.isArray(content)
         ? content.map((part, i) => part.type === 'text'
             ? html`<${Pre} key=${i} text=${part.text} cls=${isUser ? 'm-0 font-medium text-accent whitespace-pre-wrap break-words' : PRE} />`

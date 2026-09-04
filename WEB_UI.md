@@ -146,7 +146,9 @@ primary interface — the UI is just one client of it.
   roles are distinguished by colour / weight / background: **user** = accent
   colour, medium weight, faint accent wash with a thin accent left rule;
   **assistant** = plain ink, with `tool_calls` shown as collapsible dim
-  `name(args)` lines (native `<details>` disclosure marker);
+  `name(args)` lines (native `<details>` disclosure marker); a turn that carries
+  `reasoning_content` (the provider's chain-of-thought) shows it as a collapsed
+  dim italic `reasoning` details above the visible response;
   **system** = collapsed dim italic details (the prompt);
   **tool** results = collapsed dim details on a faint panel wash, first line
   as the summary. Todos rendered from the snapshot's `todos` as a
