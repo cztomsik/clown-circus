@@ -10,7 +10,7 @@ const WEBUI_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'webui');
 // Build the Express app (all routes wired here).
 export const buildApp = ({ manager, config, llm }) => {
   const app = express();
-  app.use(express.json({ limit: '10mb' }));
+  app.use(express.json({ limit: '25mb' }));
   app.disable('x-powered-by');
   app.use(express.static(WEBUI_DIR)); // web UI at / (see WEB_UI.md)
 
@@ -73,8 +73,11 @@ export const buildApp = ({ manager, config, llm }) => {
   app.post('/sessions/:id/messages', (req, res) => {
     const s = manager.require(req.params.id);
     const message = req.body?.message;
-    if (typeof message !== 'string' || message === '')
-      throw new HttpError(400, 'bad_request', 'message is required');
+    const valid =
+      (typeof message === 'string' && message !== '') ||
+      (Array.isArray(message) && message.length > 0);
+    if (!valid)
+      throw new HttpError(400, 'bad_request', 'message must be a non-empty string or a non-empty ContentPart[]');
     s.send(message); // throws 409 if busy
     res.status(202).json({ id: s.id, status: 'running' });
   });

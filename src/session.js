@@ -5,6 +5,15 @@ import { HttpError } from './errors.js';
 
 const MAX_EVENTS = 200; // bounded per-session replay ring for SSE `?since`
 
+// Extract plain text from a message's content (string | ContentPart[]).
+// For arrays, concatenates text parts and drops image_url parts.
+const textOf = (content) => {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content))
+    return content.filter((p) => p.type === 'text').map((p) => p.text ?? '').join('');
+  return '';
+};
+
 // Session: the port of the `Clown` struct (src/model.zig). Owns the message
 // list, todos, token counter, the agentic loop, an event emitter (SSE source),
 // and persistence. The fork/pipe worker is replaced by an in-process async loop
@@ -256,7 +265,7 @@ export class Session {
     this.popTrailing();
     let undone = '';
     if (this.messages.length && this.messages.at(-1).role === 'user') {
-      undone = this.messages.pop().content ?? '';
+      undone = textOf(this.messages.pop().content);
     }
     this.touch();
     this.emit('snapshot', this.snapshot());

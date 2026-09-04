@@ -65,7 +65,9 @@ primary interface — the UI is just one client of it.
   (a `Todos done/total` label + rotating chevron) toggles the list, which
   scrolls internally when long (`max-h-64`).
 - **`webui/InputBar.js`** — the composer; owns its `useRef`/`useLayoutEffect`
-  autofocus and its `SEND_BTN` class string.
+  autofocus and its `SEND_BTN` class string. Handles the image attachment
+  affordance (file picker, paste, drag-drop, thumbnail strip) gated on the
+  current model's vision capability.
 - **`webui/Main.js`** — the right-hand pane: composes `ErrorBox`, `Todos`,
   `Messages`, and `InputBar` (or a "select a session" placeholder when none is
   selected). The session status/actions no longer live here — they moved into
@@ -75,6 +77,12 @@ primary interface — the UI is just one client of it.
   name and pulled in with `import { … } from './util.js'`. `parseCommand(text)`
   parses a composer `/cmd [arg]` line (returns `null` for a plain message), and
   `modelId(m)` normalises a `/models` entry to a plain id.
+- **`webui/image.js`** — client-side image helpers for the composer's
+  attachment feature: `fileToDataURL(file)` (FileReader → base64 data-URL),
+  `capImageDataURLSize(dataUrl)` (downscale via canvas if the image exceeds a
+  4 MP cap, re-encode as PNG; passthrough if already small), and `IMAGE_MIMES`
+  (the accepted raster MIME types). Pure DOM, no Preact — kept separate from
+  the no-DOM `util.js`.
 - No build step, no extra npm dependency (consistent with SPEC §14). The
   whole UI is plain static files in `webui/`; the only runtime UI libraries
   are **Preact + htm** (import-map → esm.sh) plus Tailwind (CDN) — nothing
@@ -153,6 +161,22 @@ primary interface — the UI is just one client of it.
   `field-sizing: content` (no JS auto-resize), starting at `min-h-[44px]` and
   capped at `max-h-[33dvh]` (~1/3 of the viewport) — past that it scrolls
   internally (`overflow-y-auto`).
+- **Image attachments (vision input)** — the composer accepts images via three
+  input methods: a **📎 file-picker button** (hidden `<input type="file"
+  accept="image/*" multiple>`), **paste** (Ctrl/Cmd+V pulls image files from
+  `clipboardData`), and **drag-drop** (drop image files onto the composer).
+  Each image is read client-side via `FileReader` → base64 data-URL, then
+  downscaled (canvas) if it exceeds the 4 MP cap before being sent. A
+  **thumbnail strip** above the textarea shows attached images with a per-image
+  remove (×) button. On send, images are sent as OpenAI `ContentPart[]`
+  (`{type:"image_url", image_url:{url:"data:…"}}`) alongside the text part.
+  **Vision gating**: on boot, the UI builds a `visionModels` set from
+  `GET /models` (`architecture.input_modalities` includes `"image"`). The entire
+  image affordance (picker, paste handler, drop zone, thumbnail strip) is hidden
+  when the current session's model is known to be non-vision. Models not present
+  in the `/models` list are treated optimistically as vision-capable. The
+  transcript renders `image_url` parts as inline `<img>` thumbnails in user
+  messages.
 - **Commands** — typing a `/cmd` line in the composer dispatches a control
   instead of sending a message (a port of the source TUI's `handleCommand`). On
   Enter, `send()` runs `parseCommand()` first: if the trimmed text starts with
@@ -229,3 +253,8 @@ primary interface — the UI is just one client of it.
 
 - No markdown/code rendering of assistant content (plain `<pre>`).
 - No multi-session side-by-side view; one session at a time.
+- Image `undo` restores text only (images dropped from the composer); v1
+  limitation.
+- EXIF orientation is not applied to uploaded JPEGs (needs in-browser
+  header-parsing; stretch goal).
+- GIF attachments capture only the first frame (canvas limitation).

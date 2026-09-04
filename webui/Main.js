@@ -22,5 +22,7 @@ export const Main = (p) => !p.view
         <${Todos} todos=${p.view.todos} />
         <${Messages} messages=${p.view.messages} />
         <${InputBar} running=${p.view.status === 'running'} current=${p.view.id} value=${p.input}
-                      onInput=${(e) => p.setInput(e.target.value)} onKey=${p.onKey} onSend=${p.onSend} onStop=${p.onStop} />
+                      onInput=${(e) => p.setInput(e.target.value)} onKey=${p.onKey} onSend=${p.onSend} onStop=${p.onStop}
+                      attachments=${p.attachments} onAddFiles=${p.onAddFiles} onRemoveAttachment=${p.onRemoveAttachment}
+                      visionCapable=${p.visionCapable} />
       </main>`;

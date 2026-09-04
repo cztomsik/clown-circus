@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'preact/hooks';
 import { html } from './ui.js';
 import { api, post, openSessionEvents } from './api.js';
 import { baseName, parseCommand, modelId } from './util.js';
+import { fileToDataURL, capImageDataURLSize, IMAGE_MIMES } from './image.js';
 import { Header } from './Header.js';
 import { Sidebar } from './Sidebar.js';
 import { Main } from './Main.js';
@@ -20,9 +21,12 @@ const App = () => {
   const [current, setCurrent] = useState(null);
   const [view, setView] = useState(null);
   const [input, setInput] = useState('');
+  const [attachments, setAttachments] = useState([]);
   const [newCwd, setNewCwd] = useState('');
   const [flash, setFlash] = useState(null);
   const flashTimer = useRef(null);
+  const [visionModels, setVisionModels] = useState(new Set());
+  const [knownModelIds, setKnownModelIds] = useState(new Set());
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem('clown-circus-theme') === 'light' ? 'light' : 'dark'; }
     catch { return 'dark'; }
@@ -56,7 +60,18 @@ const App = () => {
       } catch { setCfg(''); }
       try {
         const { data } = await api('/models');
-        setModels((data ?? []).map(modelId).filter(Boolean).filter((m) => m !== def));
+        const list = data ?? [];
+        setModels(list.map(modelId).filter(Boolean).filter((m) => m !== def));
+        const known = new Set();
+        const vision = new Set();
+        for (const m of list) {
+          const id = modelId(m);
+          if (!id) continue;
+          known.add(id);
+          if (m?.architecture?.input_modalities?.includes('image')) vision.add(id);
+        }
+        setKnownModelIds(known);
+        setVisionModels(vision);
       } catch {}
       await refreshSessions();
     })();
@@ -159,19 +174,48 @@ const App = () => {
     }
   };
 
+  // --- Attachments (image upload) -------------------------------------------
+
+  const addFiles = async (files) => {
+    const valid = Array.from(files).filter((f) => IMAGE_MIMES.includes(f.type));
+    if (!valid.length) return;
+    const items = await Promise.all(valid.map(async (f) => ({
+      id: crypto.randomUUID(),
+      name: f.name,
+      dataUrl: await fileToDataURL(f),
+    })));
+    setAttachments((prev) => [...prev, ...items]);
+  };
+
+  const removeAttachment = (id) => setAttachments((prev) => prev.filter((a) => a.id !== id));
+  const clearAttachments = () => setAttachments([]);
+
+  const isVisionCapable = (modelId) => !knownModelIds.has(modelId) || visionModels.has(modelId);
+
   const send = async () => {
     const text = input.trim();
-    if (!text || !current) return;
+    if ((!text && !attachments.length) || !current) return;
     const parsed = parseCommand(text);
     if (parsed) { runCommand(parsed); return; }
-    // Plain messages no-op while a run is in flight (the composer stays editable
-    // so you can type ahead, but it won't fire a second message); the typed text
-    // is preserved and can be sent once the session is idle.
     if (view?.status === 'running') return;
+    const savedAttachments = attachments;
     setInput('');
+    clearAttachments();
     try {
-      await post(`/sessions/${current}/messages`, { message: text });
-    } catch (err) { flashMsg(err.message); setInput(text); }
+      let message;
+      if (savedAttachments.length) {
+        const parts = [];
+        if (text) parts.push({ type: 'text', text });
+        for (const a of savedAttachments) {
+          const capped = await capImageDataURLSize(a.dataUrl);
+          parts.push({ type: 'image_url', image_url: { url: capped } });
+        }
+        message = parts;
+      } else {
+        message = text;
+      }
+      await post(`/sessions/${current}/messages`, { message });
+    } catch (err) { flashMsg(err.message); setInput(text); setAttachments(savedAttachments); }
   };
 
   const onKey = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } };
@@ -209,6 +253,8 @@ const App = () => {
             <div class="flex-1 bg-black/50 md:hidden" onclick=${() => setSideOpen(false)}></div>
           </div>` : null}
         <${Main} view=${view} flash=${flash} input=${input} setInput=${setInput}
+                 attachments=${attachments} onAddFiles=${addFiles} onRemoveAttachment=${removeAttachment}
+                 visionCapable=${isVisionCapable(view?.model)}
                  onSend=${send} onStop=${stop} onKey=${onKey} />
       </div>
     </div>`;

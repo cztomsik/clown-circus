@@ -150,10 +150,14 @@ It is an internal format and may evolve freely as the tool grows.
 // TodoItem
 // { name: string, status: string }   // "pending" | "in_progress" | "completed" (free text allowed)
 
+// ContentPart (OpenAI shape; used for multimodal messages)
+// { type: "text", text: string }
+// { type: "image_url", image_url: { url: string } }   // data-URL (base64)
+
 // Message
 // {
 //   role: "system" | "user" | "assistant" | "tool",
-//   content: string,
+//   content: string | ContentPart[],
 //   tool_calls?: [ { id, type: "function", function: { name, arguments } } ], // assistant
 //   tool_call_id?: string,   // tool-result messages reference a call
 //   name?: string            // tool name for role=tool
@@ -162,6 +166,12 @@ It is an internal format and may evolve freely as the tool grows.
 // Snapshot  (stored as a JSON string in the `snapshot` column)
 // { messages: Message[], todos: TodoItem[], total_tokens: number }
 ```
+
+> **Multimodal note**: `content` is a plain `string` for text-only messages
+> (the common case). A user message that carries images is an array of
+> `ContentPart` (OpenAI shape); the array may contain zero or more `image_url`
+> parts plus a `text` part. The snapshot is the system of record and may evolve
+> freely, so no DB migration is required.
 
 ### 5.2 SQLite schema
 
@@ -323,8 +333,13 @@ Clients use this to build a project sidebar; selecting one is equivalent to
 |--------|---------------------------------|-------------|
 | `POST` | `/sessions/:id/messages`        | Append a user message and start the agent loop |
 
-Body: `{ "message": "help me fix the tests" }`.
+Body: `{ "message": "help me fix the tests" }` or
+`{ "message": [{"type":"text","text":"describe this"},{"type":"image_url","image_url":{"url":"data:image/png;base64,…"}}] }`.
 
+- `message` is a **non-empty string** (text-only, the common case) or a
+  **non-empty `ContentPart[]`** (multimodal; OpenAI content-parts shape).
+  Image data is carried as base64 data-URLs inside the JSON body (no multipart
+  upload). The JSON body limit is **25 MB** to accommodate a few capped images.
 - `202 Accepted` immediately: `{ "id", "status": "running" }`. The run is
   asynchronous; progress is delivered over the SSE stream (§8) and reflected in
   `GET /sessions/:id`.
@@ -580,7 +595,17 @@ clown-circus/
 ├─ .gitignore
 ├─ webui/
 │  ├─ index.html            # web UI shell served at / (Tailwind CDN + import map + #root)
-│  └─ app.js                # the web UI: Preact + htm ES module
+│  ├─ app.js                # the web UI: Preact + htm ES module (root component + state)
+│  ├─ ui.js                 # htm→h binding + shared class tokens
+│  ├─ api.js                # REST + SSE client helpers
+│  ├─ util.js               # pure helpers (no DOM)
+│  ├─ image.js              # client-side image helpers (FileReader, canvas)
+│  ├─ Header.js             # unified top bar
+│  ├─ Sidebar.js            # project-grouped session list + new-session form
+│  ├─ Main.js               # right-hand pane composition
+│  ├─ Message.js            # transcript (messages + tool pairs)
+│  ├─ InputBar.js           # composer (textarea + send/stop + image attachments)
+│  └─ Todos.js              # floating todo panel
 └─ src/
    ├─ main.js               # bootstrap: parse config, open DB, build app, listen
    ├─ config.js             # Config resolution (flags + env)

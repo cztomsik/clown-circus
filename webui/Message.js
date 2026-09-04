@@ -86,9 +86,14 @@ const Message = ({ m }) => {
       </details>`;
   }
   const isUser = m.role === 'user';
+  const content = m.content;
   return html`
     <div class=${`font-mono ${isUser ? 'border-l-2 border-accent bg-accent/10 rounded-r-md pl-3 pr-2 py-1.5' : ''}`}>
-      ${m.content ? html`<${Pre} text=${m.content} cls=${isUser ? 'm-0 font-medium text-accent whitespace-pre-wrap break-words' : PRE} />` : null}
+      ${Array.isArray(content)
+        ? content.map((part, i) => part.type === 'text'
+            ? html`<${Pre} key=${i} text=${part.text} cls=${isUser ? 'm-0 font-medium text-accent whitespace-pre-wrap break-words' : PRE} />`
+            : html`<img key=${i} src=${part.image_url?.url} alt="attachment" class="max-h-64 max-w-full rounded border border-line my-1" />`)
+        : content ? html`<${Pre} text=${content} cls=${isUser ? 'm-0 font-medium text-accent whitespace-pre-wrap break-words' : PRE} />` : null}
     </div>`;
 };
 
