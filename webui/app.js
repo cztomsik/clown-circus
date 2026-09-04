@@ -26,6 +26,7 @@ const App = () => {
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState([]);
   const [newCwd, setNewCwd] = useState('');
+  const [model, setModel] = useState(''); // header select: '' = the default model
   const [flash, setFlash] = useState(null);
   const flashTimer = useRef(null);
   const [visionModels, setVisionModels] = useState(new Set());
@@ -144,6 +145,7 @@ const App = () => {
         messages: d.snapshot.messages, todos: d.snapshot.todos, tokens: d.snapshot.total_tokens,
       });
       setNewCwd(d.cwd);
+      setModel(d.model === defaultModel ? '' : d.model); // sync the select to the session
     } catch (err) {
       flashMsg(err.message);
       setCurrent(null);
@@ -151,12 +153,28 @@ const App = () => {
     }
   };
 
-  const onNew = async (cwd, model) => {
+  const onNew = async (cwd) => {
     try {
       const s = await post('/sessions', model ? { cwd, model } : { cwd });
       await refreshSessions();
       await select(s.id);
     } catch (err) { flashMsg(err.message); }
+  };
+
+  // The header model select is context-aware: with a session open it switches
+  // that session's model; with none open it just seeds the next new session.
+  const onModelChange = async (v) => {
+    const prev = model;
+    setModel(v);
+    if (!current) return;
+    const target = v || defaultModel;
+    try {
+      const r = await post(`/sessions/${current}/model`, { model: target });
+      setView((w) => (w ? { ...w, model: r.model ?? target } : w));
+    } catch (err) {
+      flashMsg(err.message);
+      setModel(prev); // revert on failure
+    }
   };
 
   const handleAction = async (name) => {
@@ -267,7 +285,8 @@ const App = () => {
     <div class="h-dvh flex flex-col">
       <${Header} cfg=${cfg} theme=${theme} sideOpen=${sideOpen}
                  onSideToggle=${() => setSideOpen((o) => !o)} onThemeToggle=${toggleTheme}
-                 view=${view} onAction=${handleAction} onDel=${del} />
+                 view=${view} onAction=${handleAction} onDel=${del}
+                 model=${model} onModelChange=${onModelChange} models=${models} defaultModel=${defaultModel} />
       <div class="flex-1 flex min-h-0">
         ${sideOpen ? html`
           <!-- mobile (<md): fixed overlay drawer + dimmed backdrop;
@@ -275,7 +294,7 @@ const App = () => {
                joins the parent flex row as the in-flow column -->
           <div class="fixed inset-0 z-40 flex md:contents">
             <${Sidebar} cls="w-[280px] max-w-[85vw] md:max-w-none min-w-[220px] border-r border-line flex flex-col bg-bg shadow-xl md:shadow-none"
-                       models=${models} defaultModel=${defaultModel} sessions=${sessions} current=${current}
+                       sessions=${sessions} current=${current}
                        onNew=${onNew} onSelect=${select} newCwd=${newCwd} setNewCwd=${setNewCwd} />
             <div class="flex-1 bg-black/50 md:hidden" onclick=${() => setSideOpen(false)}></div>
           </div>` : null}

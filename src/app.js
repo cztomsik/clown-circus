@@ -119,6 +119,16 @@ export const buildApp = ({ manager, config, llm }) => {
     res.status(202).json(started(s));
   }));
 
+  // Set the session's model. Allowed while running (takes effect next turn).
+  app.post('/sessions/:id/model', (req, res) => {
+    const s = manager.require(req.params.id);
+    const model = req.body?.model;
+    if (typeof model !== 'string' || model === '')
+      throw new HttpError(400, 'bad_request', 'model is required');
+    s.setModel(model);
+    res.json({ id: s.id, model: s.model });
+  });
+
   // --- 7.6 Events (SSE) -----------------------------------------------------
   app.get('/sessions/:id/events', (req, res) => {
     const s = manager.require(req.params.id);

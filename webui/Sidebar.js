@@ -1,5 +1,4 @@
 import { Fragment } from 'preact';
-import { useState } from 'preact/hooks';
 import { html } from './ui.js';
 import { baseName, timeAgo } from './util.js';
 
@@ -39,25 +38,19 @@ const SessionList = ({ sessions, current, onSelect }) => {
 
 // `cls` carries the layout (width, border, background) so the caller can
 // adapt it: in-flow column on desktop, fixed overlay drawer on mobile.
-export const Sidebar = ({ cls, models, defaultModel, sessions, current, onNew, onSelect, newCwd, setNewCwd }) => {
-  const [model, setModel] = useState('');
+export const Sidebar = ({ cls, sessions, current, onNew, onSelect, newCwd, setNewCwd }) => {
   const submit = async (e) => {
     e.preventDefault();
     const c = newCwd.trim();
     if (!c) return;
     setNewCwd('');
-    await onNew(c, model.trim());
+    await onNew(c);
   };
   return html`
     <aside class=${cls}>
       <form class="flex flex-col gap-1.5 p-2.5 border-b border-line" onsubmit=${submit}>
         <input value=${newCwd} oninput=${(e) => setNewCwd(e.target.value)} placeholder="/path/to/cwd" required autocomplete="off"
                class="text-ink bg-panel border border-line rounded py-1.5 px-2 focus:outline-none focus:border-accent" />
-        <select value=${model} onchange=${(e) => setModel(e.target.value)}
-                class="text-ink bg-panel border border-line rounded py-1.5 px-2 focus:outline-none focus:border-accent w-full">
-          <option value="">default (${defaultModel ?? '?'})</option>
-          ${models.map((m) => html`<option key=${m} value=${m}>${m}</option>`)}
-        </select>
         <button type="submit"
                 class="text-ink bg-panel border border-line rounded py-1.5 px-2 cursor-pointer hover:border-accent
                        disabled:opacity-40 disabled:cursor-default disabled:hover:border-line">new session</button>

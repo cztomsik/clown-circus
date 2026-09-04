@@ -17,8 +17,10 @@ const ACTIONS = [
 
 // Unified top bar: sidebar toggle, brand, then the session status + live
 // summary (a session is open) or the live config summary (none), then the
-// session-actions dropdown (⋮) and the theme toggle. One row, always.
-export const Header = ({ cfg, theme, sideOpen, onSideToggle, onThemeToggle, view, onAction, onDel }) => {
+// session-actions dropdown (⋮), the context-aware model select, and the theme
+// toggle. One row, always.
+export const Header = ({ cfg, theme, sideOpen, onSideToggle, onThemeToggle, view, onAction, onDel,
+                         model, onModelChange, models, defaultModel }) => {
   const [menuOpen, setMenuOpen] = useState(false);
 
   // Close the menu whenever the selected session changes (e.g. delete/clear).
@@ -43,13 +45,18 @@ export const Header = ({ cfg, theme, sideOpen, onSideToggle, onThemeToggle, view
       ${view
         ? html`
           <span class="py-0.5 px-2 rounded-full text-xs border border-line flex-none ${badgeColor[view.status] ?? 'text-ok'}">${view.status ?? 'idle'}</span>
-          <div class="text-dim text-xs min-w-0 flex-1 truncate">${view.cwd ?? ''} · ${view.model ?? ''} · ${view.tokens ?? 0} tok</div>
+          <div class="text-dim text-xs min-w-0 flex-1 truncate">${view.cwd ?? ''} · ${view.tokens ?? 0} tok</div>
           <button title="session actions" aria-label="session actions" aria-expanded=${menuOpen}
                   class=${`${BTN} flex-none ${menuOpen ? 'border-accent' : ''}`}
                   onclick=${() => setMenuOpen((o) => !o)}>⋮</button>`
         : html`
           <div class="text-dim text-xs min-w-0 flex-1 truncate">${cfg}</div>`}
 
+      <select title="model" aria-label="model" value=${model} onchange=${(e) => onModelChange(e.target.value)}
+              class="text-ink bg-panel border border-line rounded py-1 px-2 focus:outline-none focus:border-accent flex-none w-40 max-w-[38vw]">
+        <option value="">default (${defaultModel ?? '?'})</option>
+        ${models.map((m) => html`<option key=${m} value=${m}>${m}</option>`)}
+      </select>
       <button title="toggle theme" class=${`${BTN} flex-none`} onclick=${onThemeToggle}>${theme === 'dark' ? '→ light' : '→ dark'}</button>
 
       ${menuOpen && view ? html`

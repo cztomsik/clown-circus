@@ -51,11 +51,13 @@ primary interface — the UI is just one client of it.
   and returns a `close()` used as the effect cleanup.
 - **`webui/Header.js`** — the **unified top bar**: sidebar toggle, brand, the
   session status badge + live summary (or the live config summary when no
-  session is open), a `⋮` dropdown holding the session actions, and the theme
-  toggle. All of this shares one row, so it stays compact on mobile.
+  session is open), a **model `<select>`** (context-aware — seeds new sessions
+  or switches the open session's model; see **Header**), a `⋮` dropdown holding
+  the session actions, and the theme toggle. All of this shares one row, so it
+  stays compact on mobile.
 - **`webui/Sidebar.js`** — `Sidebar` + `SessionList`/`SessionItem`: the
-  project-grouped session list and the new-session form (cwd + model
-  `<select>`).
+  project-grouped session list and the new-session form (a `cwd` input + a
+  "new session" button; the model is picked in the header's select).
 - **`webui/Message.js`** — `Messages` + `Message` (and the `Pre` leaf): the flat
   transcript, roles distinguished by colour/weight/tint.
 - **`webui/Todos.js`** — the live todo panel: a **collapsible, floating**
@@ -97,9 +99,9 @@ primary interface — the UI is just one client of it.
   session count, followed by its sessions (status dot colored by
   `idle`/`running`/`error`/`stopped`, pulsing while running; cwd basename,
   last-activity, message/token counts). Refreshed on SSE `status` events and
-  every 10s. New-session form (`cwd` required, **model picker** — a
-  `<select>` populated from `GET /models` with the default model pre-labelled)
-  → `POST /sessions`. The `cwd` field is **pre-set to the selected session's
+  every 10s. New-session form (a `cwd` input + a "new session" button — the
+  model is chosen in the header's model select, see **Header**) →
+  `POST /sessions`. The `cwd` field is **pre-set to the selected session's
   cwd** whenever a session is chosen (state lifted into `App`, written in
   `select()`), so spinning up another session for the same project is one
   click; the field is cleared after a successful create and remains editable.
@@ -107,15 +109,25 @@ primary interface — the UI is just one client of it.
   separate global header and a per-session toolbar. Left to right: a `☰`
   sidebar-toggle button, the `clown-circus` brand (hidden below `sm` to save
   room), then either the **session** status badge + live summary
-  (`cwd · model · N tok`, when a session is open) or the **config** summary
-  (`base_url · default model · db file`, when none is), then the theme toggle.
-  When a session is open, a `⋮` button (between the summary and the theme
-  toggle) opens a dropdown of the session **actions** (`retry`, `init`,
-  `compact`, `undo`, `clear-tools`, `clear`, and `delete` last, separated by a
-  rule). The summary is `flex-1 min-w-0 truncate`, so on narrow viewports it
-  truncates to one line instead of pushing the buttons off-screen. The menu
-  closes on outside-tap (a full-viewport backdrop), on Escape, or when the
-  selected session changes.
+  (`cwd · N tok`, when a session is open) or the **config** summary
+  (`base_url · default model · db file`, when none is), then the **model
+  `<select>`**, then the theme toggle. When a session is open, a `⋮` button
+  (between the summary and the model select) opens a dropdown of the session
+  **actions** (`retry`, `init`, `compact`, `undo`, `clear-tools`, `clear`, and
+  `delete` last, separated by a rule). The summary is `flex-1 min-w-0 truncate`,
+  so on narrow viewports it truncates to one line instead of pushing the
+  buttons off-screen. The menu closes on outside-tap (a full-viewport backdrop),
+  on Escape, or when the selected session changes.
+
+  The **model `<select>`** is context-aware:
+  - **Session open** — mirrors and controls that session's model. Populated
+    from `GET /models` (the default model pre-labelled as the `default (…)`
+    option, value `""`); seeded to the session's model on `select()`; changing
+    it calls `POST /sessions/:id/model` to switch the live session (allowed
+    mid-run — the new model takes effect from the next LLM turn).
+  - **No session** — inert state that seeds the model for the next
+    `POST /sessions` (the sidebar new-session form no longer carries a model
+    picker).
 - **Sidebar toggle (responsive)** — the `☰` button shows/hides the sidebar.
   The initial state follows the viewport: **open** at ≥ 768px, **collapsed**
   below it (auto-collapsed on mobile). At ≥ 768px the sidebar is an in-flow
@@ -204,8 +216,9 @@ primary interface — the UI is just one client of it.
     composer (from the response's `undone` field) and returns focus to it, so
     you can edit and re-send.
   - **Destructive**: `delete` (with `confirm()`).
-  Plus the composer: send (`POST …/messages`) and `stop`.
-  All endpoints are from SPEC §7.5.
+  Plus the composer: send (`POST …/messages`) and `stop`. The header's model
+  `<select>` additionally drives `POST /sessions/:id/model` (switch a session's
+  model; see **Header**). All endpoints are from SPEC §7.5.
 - **Theme toggle** — a button in the `Header` (top-right) switches the
   `--color-*` palette between the default dark and the light theme by setting
   `data-theme` on `<html>`; the current state shows as `→ light` / `→ dark`.

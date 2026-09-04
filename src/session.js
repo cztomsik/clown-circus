@@ -291,6 +291,15 @@ export class Session {
     this.persist();
   }
 
+  // Switch the session's model. Allowed while running: the loop reads
+  // this.model on every turn (see next()), so the change takes effect from the
+  // next LLM call — no stop/restart required.
+  setModel(model) {
+    this.model = model;
+    this.touch();
+    this.persist();
+  }
+
   // Two-phase summarize-then-replace compaction (port of compact/finishCompact).
   // Synchronous entry point so assertIdle() propagates to the HTTP layer (409).
   compact() {

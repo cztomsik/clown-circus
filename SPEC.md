@@ -284,7 +284,8 @@ endpoint and the static web UI (§7.8). Errors use `4xx`/`5xx` with
 - `cwd` is a filesystem path used as the session's working directory. It is
   normalized to an **absolute** path (resolved against the server process cwd if
   relative) and stored in that form.
-- `model` — LLM model name, default from config (`default`).
+- `model` — LLM model name, default from config (`default`). Change a session's
+  model after creation via `POST /sessions/:id/model` (§7.5).
 - `201` on success, returning the created session (meta + snapshot).
 - `400` if `cwd` is missing; `500` if the `cwd` path is not a directory.
 
@@ -361,10 +362,12 @@ All of these operate on a single session and map 1:1 to the original commands in
 | `POST` | `/sessions/:id/clear-tools`| `/clear-tools` | Stop + drop all `role=tool` messages, keep system/user/assistant. `200`. |
 | `POST` | `/sessions/:id/compact`    | `/compact`     | Run the two-phase summarize-then-replace compaction (as in the source). `202` (starts a run). |
 | `POST` | `/sessions/:id/init`       | `/init`        | Convenience: send the prompt that triggers the built-in `init` skill ("Could you /init this project?"). `202`. |
+| `POST` | `/sessions/:id/model`      | —              | Switch the session's model. Body `{ "model": "..." }`. `200` `{ "id", "model" }`; `400` if `model` is missing or empty. Allowed while running — the loop reads the session model on every turn, so it takes effect from the next LLM call. |
 
 Rules common to the run-starting controls (`retry`, `compact`,
-`init`, `messages`): reject with `409` if `running` is already true. `stop` is
-the only control allowed while running.
+`init`, `messages`): reject with `409` if `running` is already true. Only
+`stop` and the `model` switch are allowed while running; the model switch takes
+effect from the next LLM turn (no stop/restart required).
 
 `undo`/`clear`/`clear-tools` are synchronous state edits; if a run is in
 progress they implicitly `stop` first (matching the original, which calls
