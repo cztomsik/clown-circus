@@ -18,7 +18,7 @@
 - **Dependency**: `express` only (v5) at runtime. Dev deps (check-only, never emitted): `typescript`, `@types/node`, `preact`, `htm` — the latter two are installed purely for type declarations; the web UI still loads Preact/htm from the CDN import map. Everything else — SQLite, crypto, http, child_process — is built into Node.
 - **Storage**: builtin **`node:sqlite`** (`DatabaseSync`), single file `~/.clowndb` by default. Emits a harmless `ExperimentalWarning`.
 - **LLM**: OpenAI-compatible `/v1/chat/completions` (llama.cpp by default). Base URL from `--base-url`/`CLOWN_API` (default `http://127.0.0.1:8080`); optional `CLOWN_API_KEY` sent as Bearer.
-- **Spec**: the authoritative spec is [`SPEC.md`](SPEC.md) (~20 sections). Behavior is ported faithfully from `../clown-code/src/`.
+- **Spec**: the authoritative spec is [`SPEC.md`](SPEC.md) (~20 sections). **Note**: the projects have since **diverged** — `../clown-code/` is **no longer a reference point**; `SPEC.md` and this repo's code are the source of truth.
 - **Web UI**: a first-class feature, described authoritatively in [`WEB_UI.md`](WEB_UI.md). Two static files served at `/` — a thin `webui/index.html` shell (Tailwind v4 Play CDN, `@theme` tokens) plus `webui/app.js`, the whole UI as a **Preact + htm** ES module (import-map → esm.sh). Pure client of the REST + SSE API: project-grouped session sidebar, model picker (`GET /models`), full control toolbar (retry, init, compact, undo, clear-tools, clear, delete, stop, send), live chat over SSE, todos panel.
 
 ## Source Structure
@@ -46,7 +46,7 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 
 ## Architecture Notes
 
-- **Source of truth**: `../clown-code/` (Zig). The `Worker`/`WorkerMsg`/fork/pipe machinery in `model.zig` is **removed**; its contract ("run the loop, emit snapshots, report errors") is preserved as an in-process async loop + event emitter per session.
+- **Diverged from the source**: `../clown-code/` (Zig) was the historical origin only. The features have already **diverged** — there is **no point looking in `../clown-code/`** anymore; this repo (and `SPEC.md`) is the source of truth. The `Worker`/`WorkerMsg`/fork/pipe machinery in `model.zig` is **removed**; its contract ("run the loop, emit snapshots, report errors") is preserved as an in-process async loop + event emitter per session.
 - **Concurrency (replaces fork/pipe)**: the agent loop is a plain `async` function on the event loop. A single-flight `running` flag per session rejects overlapping runs with `409 session_busy`. `stop` sets an `AbortController` (checked between turns and to abort the in-flight LLM `fetch` / `run_command` child) — a cooperative replacement for the source's `SIGKILL`.
 - **Persistence**: the SQLite DB is the **system of record** — a one-row upsert on every transition (create, message, tool result, status change, error, delete), not an optional autosave. On restart, `running`/`stopped` sessions reset to `idle` (an in-flight loop can't survive).
 - **Snapshot**: the `snapshot` column stores `{ messages, todos, total_tokens }` — the internal conversation format, persisted per session. It may evolve freely as the tool grows.

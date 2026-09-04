@@ -7,7 +7,10 @@ each with its own working directory, conversation state, and running agent loop,
 all driven over REST + Server-Sent Events. All sessions and their conversation
 state are persisted in a local **SQLite** database.
 
-- **Source of truth for behavior**: `../clown-code/` (Zig + tokamak TUI).
+- **Historical origin**: `../clown-code/` (Zig + tokamak TUI). **Note**: the
+  projects have since **diverged** — Clown-Circus is its own thing now, and
+  `../clown-code/` is **no longer a reference point**. Don't go look there for
+  behavior; this spec (and the code) is authoritative.
 - **Target runtime**: the currently installed **Node.js 24.x** (`v24.14.1`),
   plain JavaScript (ESM). No build step.
 - **Storage**: the builtin **`node:sqlite`** module (no external DB server).
@@ -47,6 +50,12 @@ state are persisted in a local **SQLite** database.
 ---
 
 ## 3. Relationship to Clown-Code
+
+> **Diverged.** Clown-Code was the historical origin of this project, but the
+> features have already diverged enough that there is **no point looking in
+> `../clown-code/`** anymore. Treat this spec and the code in this repo as the
+> single source of truth; the table below is history, not a contract to keep
+> honoring.
 
 | Concern                | Clown-Code (source)                     | Clown-Circus (this port)                          |
 |------------------------|------------------------------------------|---------------------------------------------------|
