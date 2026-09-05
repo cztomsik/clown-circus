@@ -67,8 +67,9 @@ primary interface — the UI is just one client of it.
   non-empty; its header row (a `Todos` label + rotating chevron) toggles the
   block, which scrolls internally when long (`max-h-64`). The string is
   parsed **best-effort** by `parseTodos` (in `webui/util.js`): checkbox lines
-  (`- [x]`, `- [ ] **…**`, `- [ ]`) render as a styled list — dim strikethrough
-  = done, accent bold = in progress — with a `done/total` count in the header,
+  (`- [x]`, `- [ ] … (in progress)`, `- [ ]`) render as a styled list — dim
+  strikethrough = done, accent bold = in progress — with a `done/total` count
+  in the header,
   while any non-checkbox lines are shown as-is (dim). When there are no
   checkbox lines at all the raw string is shown preformatted.
 - **`webui/InputBar.js`** — the composer; owns its `useRef`/`useLayoutEffect`

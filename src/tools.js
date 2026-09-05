@@ -126,8 +126,8 @@ export const buildTools = () =>
       obj({ path: S(), old_content: S(), new_content: S(), replace_all: B() }, ['path', 'old_content', 'new_content']), editFile),
     tool('run_command', 'Execute a shell command and return its output',
       obj({ command: S(), cwd: S() }, ['command']), runCommand),
-    tool('write_todos', "Set the session's todo list — a markdown string, visible to the user. Each call replaces the previous list.",
-      obj({ content: S() }, ['content']), writeTodos),
+    tool('write_todos', "Set the session's todo list — a markdown string, shown to the user. Full replace: pass the entire updated list.",
+      obj({ content: { type: 'string', description: 'The full todo list as markdown.' } }, ['content']), writeTodos),
     tool('load_skill', 'Load a set of specialized instructions (a skill) into the current context to improve performance on a specific task.',
       obj({ skill_name: S() }, ['skill_name']), loadSkill),
   ].map((t) => [t.name, t]));

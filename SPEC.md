@@ -178,7 +178,7 @@ It is an internal format and may evolve freely as the tool grows.
 ```
 
 > **Legacy note**: older rows stored `todos` as `[{ name, status }]`. At load
-> they are converted to markdown lines (`- [ ]` / `- [ ] **…**` / `- [x]`) so existing
+> they are converted to markdown lines (`- [ ]` / `- [ ] … (in progress)` / `- [x]`) so existing
 > sessions keep their progress doc; the next persist rewrites them in place.
 
 > **Multimodal note**: `content` is a plain `string` for text-only messages

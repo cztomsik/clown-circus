@@ -29,15 +29,15 @@ export const prettyArgs = (a) => { try { return JSON.stringify(JSON.parse(a)); }
 
 // Best-effort parse of the todos markdown string (checkbox convention lives in
 // PREFIX.md). Returns one entry per non-empty line:
-//   task line:  { done, inProgress, text }   // - [x] / - [ ] **…** / - [ ]
+//   task line:  { done, inProgress, text }   // - [x] / - [ ] … (in progress) / - [ ]
 //   other line: { text }                     // shown as-is
 const CHECKBOX = /^\s*[-*+]\s+\[( |x|X)\]\s*(.*)$/;
-const BOLD = /^\*\*(.+?)\*\*$/;
+const IN_PROGRESS = /\s*\(in progress\)\s*$/i;
 export const parseTodos = (md) =>
   (md || '').split('\n').map((line) => {
     const m = line.match(CHECKBOX);
     if (!m) return line.trim() ? { text: line.trim() } : null;
-    const raw = m[2].trim();
-    const bold = raw.match(BOLD);
-    return { done: m[1].toLowerCase() === 'x', inProgress: !m[1].trim() && !!bold, text: bold ? bold[1] : raw };
+    const done = m[1].toLowerCase() === 'x';
+    const text = m[2].trim().replace(IN_PROGRESS, '').trim();
+    return { done, inProgress: !done && IN_PROGRESS.test(m[2]), text };
   }).filter(Boolean);

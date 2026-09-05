@@ -26,7 +26,7 @@ const lastIndexOf = (arr, pred) => {
 const legacyTodos = (list) =>
   list.map((t) =>
     t.status === 'completed' ? `- [x] ${t.name}`
-    : t.status === 'in_progress' ? `- [ ] **${t.name}**`
+    : t.status === 'in_progress' ? `- [ ] ${t.name} (in progress)`
     : `- [ ] ${t.name}`).join('\n');
 
 // Session: the port of the `Clown` struct (src/model.zig). Owns the message
