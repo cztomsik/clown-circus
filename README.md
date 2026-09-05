@@ -61,6 +61,9 @@ CLI flags take precedence over environment variables, which take precedence over
 | `--model` / `DEFAULT_MODEL` | `DEFAULT_MODEL` | `default` | Default model for new sessions |
 | `--timeout` / `CLOWN_TIMEOUT_MS` | `CLOWN_TIMEOUT_MS` | `900000` | Per-LLM-request timeout (ms) |
 | `--max-sessions` | `MAX_SESSIONS` | `0` | Optional cap on concurrent sessions (0 = unlimited) |
+| `--trunc` / `CLOWN_TRUNC` | `CLOWN_TRUNC` | `true` | Auto-truncate stale oversized tool results in the LLM-bound view (disable with `--no-trunc`) |
+| `--truncate-gap` / `CLOWN_TRUNC_GAP` | `CLOWN_TRUNC_GAP` | `100000` | History-gap byte threshold that triggers truncation |
+| `--truncate-bytes` / `CLOWN_TRUNC_BYTES` | `CLOWN_TRUNC_BYTES` | `256` | Min size of a tool result to stub (bytes) |
 | `--verbose` | — | off | Log per-session events to stdout |
 
 `CLOWN_API_KEY` (env, optional) is sent as a Bearer token on every LLM request.
@@ -168,7 +171,7 @@ There is **no path sandbox**: the agent may read, write, and execute anywhere th
 | `write_file` | `path`, `content` | Creates parent dirs. |
 | `edit_file` | `path`, `old_content`, `new_content`, `replace_all?` | Exact-match replace. |
 | `run_command` | `command`, `cwd?` | `sh -c`; captures stdout+stderr; abortable on stop. |
-| `update_todos` | `upsert: [{ name, status? }]` | Upsert by name; emits a `todo` event. |
+| `write_todos` | `content: string (markdown)` | Replaces the whole list, stored verbatim (user-visible); emits a `todo` event. |
 | `load_skill` | `skill_name` | Built-in `init`, else `skills/<name>.md` in cwd. |
 
 ---
@@ -191,6 +194,24 @@ src/
 ├─ PREFIX.md     # base system prompt (copied from source)
 └─ skills/init.md
 ```
+
+`webui/` — the static web UI served at `/` (Preact + htm via CDN, no build step):
+
+```
+webui/
+├─ index.html    # page shell: Tailwind CDN + import map + #root mount
+├─ app.js        # root component: all state + side effects
+├─ Header.js     # top bar (toggle, status, model picker, actions menu)
+├─ Sidebar.js    # project-grouped session list + new-session form
+├─ Main.js       # right-hand pane (error banner, todos, transcript, composer)
+├─ Message.js    # transcript rendering (user/assistant/tool, reasoning)
+├─ InputBar.js   # composer (textarea, send/stop, slash cmds, image attach)
+├─ Todos.js      # floating collapsible todo panel
+├─ api.js        # REST + SSE client (no DOM)
+└─ util.js       # pure helpers; image.js (image read/downscale); ui.js (h binding + tokens)
+```
+
+See [`WEB_UI.md`](WEB_UI.md) for details.
 
 ## Security notes
 
