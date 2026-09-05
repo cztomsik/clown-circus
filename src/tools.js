@@ -12,7 +12,6 @@ const tool = (name, description, parameters, run) => ({ name, description, param
 // JSON-schema shorthands (emit the same `parameters` as a literal object schema).
 const S = (vals) => ({ type: 'string', ...(vals ? { enum: vals } : {}) });
 const B = () => ({ type: 'boolean' });
-const A = (items) => ({ type: 'array', items });
 const obj = (properties, required) => ({ type: 'object', properties, required });
 
 const isUtf8 = (buf) => buf.equals(Buffer.from(buf.toString('utf8'), 'utf8'));
@@ -103,15 +102,11 @@ const runCommand = (ctx, args) =>
     child.on('close', () => finish(render()));
   });
 
-const updateTodos = (ctx, args) => {
-  const list = ctx.todos.map((t) => ({ ...t }));
-  for (const ch of args.upsert) {
-    const it = list.find((t) => t.name === ch.name);
-    if (it) Object.assign(it, ch);
-    else list.push({ name: ch.name, status: ch.status ?? 'pending' });
-  }
-  ctx.setTodos(list);
-  return list;
+// The todo list is a user-visible markdown string (see PREFIX.md for the
+// checkbox convention). The tool is a dumb setter: store verbatim, no echo.
+const writeTodos = (ctx, args) => {
+  ctx.setTodos(typeof args.content === 'string' ? args.content : '');
+  return 'Todos updated';
 };
 
 const loadSkill = async (ctx, args) => {
@@ -123,8 +118,6 @@ const loadSkill = async (ctx, args) => {
 
 export const buildTools = () =>
   new Map([
-    tool('update_todos', 'Create/update todo item(s)',
-      obj({ upsert: A(obj({ name: S(), status: S() }, ['name'])) }, ['upsert']), updateTodos),
     tool('read_file', 'Read the contents of a file',
       obj({ path: S(), raw: B() }, ['path']), readFile),
     tool('write_file', 'Write content to a file, creating directories if needed',
@@ -133,6 +126,8 @@ export const buildTools = () =>
       obj({ path: S(), old_content: S(), new_content: S(), replace_all: B() }, ['path', 'old_content', 'new_content']), editFile),
     tool('run_command', 'Execute a shell command and return its output',
       obj({ command: S(), cwd: S() }, ['command']), runCommand),
+    tool('write_todos', "Set the session's todo list — a markdown string, visible to the user. Each call replaces the previous list.",
+      obj({ content: S() }, ['content']), writeTodos),
     tool('load_skill', 'Load a set of specialized instructions (a skill) into the current context to improve performance on a specific task.',
       obj({ skill_name: S() }, ['skill_name']), loadSkill),
   ].map((t) => [t.name, t]));

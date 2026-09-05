@@ -63,9 +63,11 @@ primary interface — the UI is just one client of it.
 - **`webui/Todos.js`** — the live todo panel: a **collapsible, floating**
   overlay anchored top-right inside the main pane (`<main>` is `relative`;
   the panel is `absolute`, semi-transparent `bg-panel/95` + backdrop blur,
-  `z-20`). It renders only while the snapshot has todos; its header row
-  (a `Todos done/total` label + rotating chevron) toggles the list, which
-  scrolls internally when long (`max-h-64`).
+  `z-20`). It renders only while the snapshot's `todos` markdown string is
+  non-empty; its header row (a `Todos` label + rotating chevron) toggles the
+  block, which scrolls internally when long (`max-h-64`). The string is shown
+  **as-is** (preformatted) — best-effort checkbox parsing is a planned
+  follow-up.
 - **`webui/InputBar.js`** — the composer; owns its `useRef`/`useLayoutEffect`
   autofocus and its `SEND_BTN` class string. Handles the image attachment
   affordance (file picker, paste, drag-drop, thumbnail strip) gated on the
@@ -163,9 +165,9 @@ primary interface — the UI is just one client of it.
   dim italic `reasoning` details above the visible response;
   **system** = collapsed dim italic details (the prompt);
   **tool** results = collapsed dim details on a faint panel wash, first line
-  as the summary. Todos rendered from the snapshot's `todos` as a
-  collapsible floating panel overlaying the transcript (top-right of the
-  main pane; see `webui/Todos.js`).
+  as the summary. Todos rendered from the snapshot's `todos` markdown string
+  (shown as-is) in a collapsible floating panel overlaying the transcript
+  (top-right of the main pane; see `webui/Todos.js`).
 - **Live updates** — browser `EventSource` on `GET /sessions/:id/events`:
   - `snapshot` → re-render messages, todos, token count
   - `todo` → re-render todos

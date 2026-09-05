@@ -21,6 +21,14 @@ const lastIndexOf = (arr, pred) => {
   return -1;
 };
 
+// Legacy snapshots stored todos as [{name, status}] — convert to the current
+// markdown string at load so old sessions keep their progress doc.
+const legacyTodos = (list) =>
+  list.map((t) =>
+    t.status === 'completed' ? `- [x] ${t.name}`
+    : t.status === 'in_progress' ? `- [ ] **${t.name}**`
+    : `- [ ] ${t.name}`).join('\n');
+
 // Session: the port of the `Clown` struct (src/model.zig). Owns the message
 // list, todos, token counter, the agentic loop, an event emitter (SSE source),
 // and persistence. The fork/pipe worker is replaced by an in-process async loop
@@ -44,7 +52,9 @@ export class Session {
 
     const snap = row.snapshot ? JSON.parse(row.snapshot) : {};
     this.messages = Array.isArray(snap.messages) ? snap.messages : [];
-    this.todos = Array.isArray(snap.todos) ? snap.todos : [];
+    this.todos = typeof snap.todos === 'string' ? snap.todos
+      : Array.isArray(snap.todos) ? legacyTodos(snap.todos)
+      : '';
     this.totalTokens = snap.total_tokens ?? 0;
     if (this.messages.length === 0) this.messages = [{ role: 'system', content: buildSystemPrompt(this.cwd, this.config.autoTruncate) }];
 
@@ -76,7 +86,7 @@ export class Session {
       created_at: this.createdAt,
       last_activity: this.lastActivity,
       message_count: this.messages.length,
-      todo_count: this.todos.length,
+      todo_count: this.todos.split('\n').filter((l) => l.trim()).length,
       total_tokens: this.totalTokens,
       last_error: this.lastError,
       archived: this.archived,
@@ -316,7 +326,7 @@ export class Session {
   clear() {
     if (this.running) this.stop();
     this.messages = [{ role: 'system', content: buildSystemPrompt(this.cwd, this.config.autoTruncate) }];
-    this.todos = [];
+    this.todos = '';
     this.touch();
     this.emit('todo', this.todos);
     this.emit('snapshot', this.snapshot());

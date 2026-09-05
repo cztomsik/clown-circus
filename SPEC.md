@@ -92,7 +92,7 @@ the sole system of record.
                          │  ┌───────────────────────────────────────┐     │
                          │  │  Session (one per conversation)       │     │
                          │  │   - id, cwd, model, status            │     │
-                         │  │   - messages[], todos[], tokens       │     │
+                         │  │   - messages[], todos (md), tokens    │     │
                          │  │   - agent loop (async)                │     │
                          │  │   - EventEmitter (SSE source)         │     │
                          │  └───────────────────────────────────────┘     │
@@ -157,8 +157,8 @@ The per-session conversation content, persisted as JSON in the `snapshot` column
 It is an internal format and may evolve freely as the tool grows.
 
 ```js
-// TodoItem
-// { name: string, status: string }   // "pending" | "in_progress" | "completed" (free text allowed)
+// Todos
+// string   // user-visible markdown; the checkbox convention lives in PREFIX.md
 
 // ContentPart (OpenAI shape; used for multimodal messages)
 // { type: "text", text: string }
@@ -174,8 +174,12 @@ It is an internal format and may evolve freely as the tool grows.
 // }
 
 // Snapshot  (stored as a JSON string in the `snapshot` column)
-// { messages: Message[], todos: TodoItem[], total_tokens: number }
+// { messages: Message[], todos: string, total_tokens: number }
 ```
+
+> **Legacy note**: older rows stored `todos` as `[{ name, status }]`. At load
+> they are converted to markdown lines (`- [ ]` / `- [ ] **…**` / `- [x]`) so existing
+> sessions keep their progress doc; the next persist rewrites them in place.
 
 > **Multimodal note**: `content` is a plain `string` for text-only messages
 > (the common case). A user message that carries images is an array of
@@ -225,7 +229,7 @@ snapshot; the raw `messages` are not included in list responses):
 // {
 //   id, cwd, model, status, created_at, last_activity, last_error?,
 //   message_count,   // = snapshot.messages.length
-//   todo_count,      // = snapshot.todos.length
+//   todo_count,      // = non-empty lines in snapshot.todos
 //   total_tokens,    // = snapshot.total_tokens
 //   archived         // boolean; false by default
 // }
@@ -335,7 +339,7 @@ endpoint and the static web UI (§7.8). Errors use `4xx`/`5xx` with
   "total_tokens": 18334,
   "last_error": null,
   "archived": false,
-  "snapshot": { "messages": [], "todos": [], "total_tokens": 18334 }
+  "snapshot": { "messages": [], "todos": "", "total_tokens": 18334 }
 }
 ```
 
@@ -426,7 +430,7 @@ Event types (SSE `event:` field):
 | Event      | Data (JSON)                              | Emitted when |
 |------------|------------------------------------------|--------------|
 | `snapshot` | `Snapshot`                               | After each agentic turn / tool batch (replaces the per-tick snapshot the TUI consumed) |
-| `todo`     | `TodoItem[]`                             | Whenever the todo list changes |
+| `todo`     | `string` (markdown)                      | Whenever the todo list changes |
 | `status`   | `{ "status": "running"\|"idle"\|"error"\|"stopped" }` | On state transitions |
 | `error`    | `{ "message": "..." }`                   | On a loop error |
 | `done`     | `{ "total_tokens": n }`                  | When a run completes |
@@ -638,7 +642,7 @@ source, whose only path-traversal note was an unimplemented `TODO`.
 | `write_file`    | `path`, `content`                                | `writeFile` | Creates parent dirs. |
 | `edit_file`     | `path`, `old_content`, `new_content`, `replace_all?: bool` | `editFile` | Exact-match replace; errors on 0 or >1 matches unless `replace_all`. Exact-string semantics kept (the source evaluated line-range/sed edits and rejected them). |
 | `run_command`   | `command`, `cwd?: string`                        | `runCommand`| Runs `sh -c`; captures stdout+stderr (2MB limits); abortable on stop. |
-| `update_todos`  | `upsert: TodoItem[]`                             | `updateTodos`| Upsert by `name`; updates session todo list; emits `todo` event. |
+| `write_todos`  | `content: string (markdown)`                   | `writeTodos`| Replaces the whole list, stored verbatim (user-visible); emits `todo` event. Returns `Todos updated`. |
 | `load_skill`    | `skill_name`                                     | `loadSkill` | Built-in `init` first, else `skills/<name>.md` in cwd (path-validated). |
 
 Tool result values are returned to the model as text (strings / structured
@@ -836,7 +840,7 @@ function readFile(io, ctx, args) {
    `/models`.
 2. `SessionManager` + `Session` shell (load-from-DB at startup, persist on
    change); `GET/POST/DELETE /sessions` with `?cwd` filter; `GET /projects`.
-3. LLM client + agent loop + `read_file`/`run_command`/`update_todos`;
+3. LLM client + agent loop + `read_file`/`run_command`/`write_todos`;
    `POST /messages`; SSE `events`.
 4. Remaining tools (`write_file`, `edit_file`, `load_skill`).
 5. Controls: `stop`, `undo`, `retry`, `clear`, `clear-tools`, `compact`,
