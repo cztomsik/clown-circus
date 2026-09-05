@@ -17,19 +17,25 @@ primary interface — the UI is just one client of it.
   `--color-*` tokens in an `@theme` block (the default **dark** theme). It also
   holds a plain `<style>` block with the **light** palette (overriding the same
   tokens under `:root[data-theme="light"]`), the `dot-bounce` keyframes behind
-  the transcript's working indicator (see `webui/Message.js`), and a tiny
+  the transcript's working indicator (see `webui/Message.js`), the `.md`
+  typography rules behind Markdown message rendering (see `webui/md.js`), and
+  a tiny
   inline `<script>` that
   re-applies the saved theme before first paint (no flash on reload). The
   `<body>` contains only a single `<div id="root">` mount point plus
   `<script type="module" src="/app.js">` — no static UI markup (the whole UI is
   rendered by Preact at runtime).
 - **Import map** — `index.html` declares a `<script type="importmap">` in the
-  `<head>` (before any module script) that maps `preact`, `preact/`, and
-  `htm` to pinned **esm.sh** CDN URLs (`preact@10.29.8`, `htm@3.1.1`). This
-  makes **Preact + htm** importable as bare specifiers in ES modules
+  `<head>` (before any module script) that maps `preact`, `preact/`, `htm`,
+  `marked`, and `dompurify` to pinned **esm.sh** CDN URLs
+  (`preact@10.29.8`, `htm@3.1.1`, `marked@18.0.11`, `dompurify@3.4.14`). This
+  makes them importable as bare specifiers in ES modules
   (`import { h } from "preact"`, `import { useState } from "preact/hooks"`,
-  `import htm from "htm"`), the same way Tailwind is pulled from a CDN — no
-  local copy, no bundling.
+  `import htm from "htm"`, `import { marked } from "marked"`,
+  `import DOMPurify from "dompurify"`), the same way Tailwind is pulled from a
+  CDN — no local copy, no bundling. (`marked`/`dompurify` are also present in
+  `devDependencies`, check-only, purely for `tsc --noEmit` to resolve them —
+  they are never emitted or imported by the server.)
 - **`webui/app.js`** — the entry module (loaded via
   `<script type="module" src="/app.js">`). Holds **only** the stateful `App`
   root component and its mount: all state and side effects live here as
@@ -64,6 +70,18 @@ primary interface — the UI is just one client of it.
   transcript, roles distinguished by colour/weight/tint, plus the `Working`
   indicator (three staggered-bouncing dim dots, optionally labelling the
   in-flight tool) shown after the last message while a run is in flight.
+  User and assistant **text** renders through the `Markdown` component
+  (`webui/md.js`); reasoning, system and tool content stay plain `<pre>`.
+- **`webui/md.js`** — `Markdown({ text, cls })`: the single component that
+  turns message text into HTML. `marked` (GFM, `breaks: true` so single
+  newlines break — chat feel) parses the text, **DOMPurify** sanitises the
+  result (agent output is untrusted; a hook forces `target="_blank"
+  rel="noopener"` on links and strips `javascript:` URLs), and the output is
+  injected into one `<div class="md …">` via `dangerouslySetInnerHTML` — the
+  **only** `dangerouslySetInnerHTML` in the UI. One parse per text change
+  (re-parsing on each SSE snapshot is cheap at transcript scale). Typography
+  lives in the `.md` rules in `index.html`, which reference the `--color-*`
+  tokens so theming is free.
 - **`webui/toolcall.js`** — bespoke rendering of a tool **call** (the
   arguments only; the tool **result** stays a plain dim `<pre>` in
   `Message.js`). One view per registered tool: `read_file`/`write_file`/
@@ -110,10 +128,10 @@ primary interface — the UI is just one client of it.
   4 MP cap, re-encode as PNG; passthrough if already small), and `IMAGE_MIMES`
   (the accepted raster MIME types). Pure DOM, no Preact — kept separate from
   the no-DOM `util.js`.
-- No build step, no extra npm dependency (consistent with SPEC §14). The
+- No build step, no runtime npm dependency (consistent with SPEC §14). The
   whole UI is plain static files in `webui/`; the only runtime UI libraries
-  are **Preact + htm** (import-map → esm.sh) plus Tailwind (CDN) — nothing
-  is bundled or compiled locally.
+  are **Preact + htm + marked + DOMPurify** (import-map → esm.sh) plus
+  Tailwind (CDN) — nothing is bundled or compiled locally.
 - The UI is a **pure client**: every action goes through the existing REST +
   SSE endpoints. It adds no server-side logic, routes, or dependencies.
 
@@ -182,7 +200,12 @@ primary interface — the UI is just one client of it.
   from the snapshot as a flat transcript — no boxed cards or role headers;
   roles are distinguished by colour / weight / background: **user** = accent
   colour, medium weight, faint accent wash with a thin accent left rule;
-  **assistant** = plain ink, with `tool_calls` shown as collapsible dim
+  **assistant** = plain ink. Both **user** and **assistant** text is rendered
+  as **Markdown** (GFM: headings, lists, tables, blockquotes, links, inline
+  and fenced code — see `webui/md.js`; typography in the `.md` rules in
+  `index.html`), with the prose in the sans font and code in mono;
+  reasoning/system/tool content stays plain `<pre>`. Assistant turns
+  additionally show `tool_calls` as collapsible dim
   lines (native `<details>`) whose **call** is rendered per tool (a short
   `tool  path`-style summary title plus a bespoke argument view — see
   `webui/toolcall.js` — e.g. a stacked red/green diff for `edit_file`, a
@@ -285,10 +308,14 @@ primary interface — the UI is just one client of it.
   transpiler, no extra npm dependency. The only runtime libraries (Tailwind,
   Preact, htm) are loaded from CDNs — Preact + htm through the import map,
   Tailwind through the Play CDN script.
-- **No HTML injection**: all session/model/tool content is rendered as Preact
-  text (htm template interpolations become text nodes / `textContent`), never
-  `innerHTML` or `dangerouslySetInnerHTML`. LLM output is untrusted and must
-  never be parsed as HTML.
+- **No un-sanitised HTML injection**: LLM output is untrusted. All content is
+  rendered as Preact text (htm template interpolations become text nodes /
+  `textContent`) **except** user/assistant message text, which `webui/md.js`
+  parses as Markdown and injects via `dangerouslySetInnerHTML` — and only
+  *after* DOMPurify sanitisation (with the link / `javascript:`-URL hooks).
+  `md.js` is the sole `dangerouslySetInnerHTML` in the UI; new HTML injection
+  must not be added, and Markdown output must keep flowing through the same
+  sanitizer.
 - **htm void elements must self-close.** `htm` has no list of HTML void
   elements — in a template a tag is closed only by an explicit `/>` or a
   matching `</tag>`. So void elements (today `<input>`; and if ever added
@@ -316,7 +343,9 @@ primary interface — the UI is just one client of it.
 
 ## Current gaps (intentional — candidates for expansion)
 
-- No markdown/code rendering of assistant content (plain `<pre>`).
+- No syntax highlighting in fenced code blocks (plain mono `<pre><code>`;
+  candidates: `highlight.js` via the import map, plus a language label / copy
+  button on the code header).
 - No multi-session side-by-side view; one session at a time.
 - Image `undo` restores text only (images dropped from the composer); v1
   limitation.

@@ -2,6 +2,7 @@ import { useRef, useLayoutEffect } from 'preact/hooks';
 import { html, PRE } from './ui.js';
 import { prettyArgs, parseArgs } from './util.js';
 import { ToolCall, toolCallTitle } from './toolcall.js';
+import { Markdown } from './md.js';
 
 const Pre = ({ text, cls = PRE }) => html`<pre class=${cls}>${text ?? ''}</pre>`;
 
@@ -77,7 +78,7 @@ const Reasoning = ({ text }) => html`
 const AssistantBlock = ({ m, pairs }) => html`
   <div>
     ${m.reasoning_content ? html`<${Reasoning} text=${m.reasoning_content} />` : null}
-    ${m.content ? html`<${Pre} text=${m.content} />` : null}
+    ${m.content ? html`<${Markdown} text=${m.content} />` : null}
     ${pairs.map((p, i) => html`<${ToolPair} key=${p.tc.id ?? i} tc=${p.tc} result=${p.result} />`)}
   </div>`;
 
@@ -104,14 +105,15 @@ const Message = ({ m }) => {
   }
   const isUser = m.role === 'user';
   const content = m.content;
+  const cls = isUser ? 'font-medium text-accent' : undefined;
   return html`
-    <div class=${`font-mono ${isUser ? 'border-l-2 border-accent bg-accent/10 rounded-r-md pl-3 pr-2 py-1.5' : ''}`}>
+    <div class=${isUser ? 'border-l-2 border-accent bg-accent/10 rounded-r-md pl-3 pr-2 py-1.5' : ''}>
       ${m.reasoning_content ? html`<${Reasoning} text=${m.reasoning_content} />` : null}
       ${Array.isArray(content)
         ? content.map((part, i) => part.type === 'text'
-            ? html`<${Pre} key=${i} text=${part.text} cls=${isUser ? 'm-0 font-medium text-accent whitespace-pre-wrap break-words' : PRE} />`
+            ? html`<${Markdown} key=${i} text=${part.text} cls=${cls} />`
             : html`<img key=${i} src=${part.image_url?.url} alt="attachment" class="max-h-64 max-w-full rounded border border-line my-1" />`)
-        : content ? html`<${Pre} text=${content} cls=${isUser ? 'm-0 font-medium text-accent whitespace-pre-wrap break-words' : PRE} />` : null}
+        : content ? html`<${Markdown} text=${content} cls=${cls} />` : null}
     </div>`;
 };
 
