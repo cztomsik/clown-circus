@@ -65,9 +65,12 @@ primary interface — the UI is just one client of it.
   the panel is `absolute`, semi-transparent `bg-panel/95` + backdrop blur,
   `z-20`). It renders only while the snapshot's `todos` markdown string is
   non-empty; its header row (a `Todos` label + rotating chevron) toggles the
-  block, which scrolls internally when long (`max-h-64`). The string is shown
-  **as-is** (preformatted) — best-effort checkbox parsing is a planned
-  follow-up.
+  block, which scrolls internally when long (`max-h-64`). The string is
+  parsed **best-effort** by `parseTodos` (in `webui/util.js`): checkbox lines
+  (`- [x]`, `- [ ] **…**`, `- [ ]`) render as a styled list — dim strikethrough
+  = done, accent bold = in progress — with a `done/total` count in the header,
+  while any non-checkbox lines are shown as-is (dim). When there are no
+  checkbox lines at all the raw string is shown preformatted.
 - **`webui/InputBar.js`** — the composer; owns its `useRef`/`useLayoutEffect`
   autofocus and its `SEND_BTN` class string. Handles the image attachment
   affordance (file picker, paste, drag-drop, thumbnail strip) gated on the
@@ -166,8 +169,8 @@ primary interface — the UI is just one client of it.
   **system** = collapsed dim italic details (the prompt);
   **tool** results = collapsed dim details on a faint panel wash, first line
   as the summary. Todos rendered from the snapshot's `todos` markdown string
-  (shown as-is) in a collapsible floating panel overlaying the transcript
-  (top-right of the main pane; see `webui/Todos.js`).
+  (best-effort checkbox parsing) in a collapsible floating panel overlaying the
+  transcript (top-right of the main pane; see `webui/Todos.js`).
 - **Live updates** — browser `EventSource` on `GET /sessions/:id/events`:
   - `snapshot` → re-render messages, todos, token count
   - `todo` → re-render todos
