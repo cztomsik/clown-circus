@@ -21,7 +21,7 @@ export const Main = (p) => !p.view
       <main class="relative flex-1 flex flex-col min-w-0">
         <${ErrorBox} message=${p.flash ?? p.view.last_error} />
         <${Todos} todos=${extractTodos(p.view.messages)} />
-        <${Messages} messages=${p.view.messages} />
+        <${Messages} messages=${p.view.messages} running=${p.view.status === 'running'} />
         <${InputBar} running=${p.view.status === 'running'} current=${p.view.id} value=${p.input}
                       onInput=${(e) => p.setInput(e.target.value)} onKey=${p.onKey} onSend=${p.onSend} onStop=${p.onStop}
                       attachments=${p.attachments} onAddFiles=${p.onAddFiles} onRemoveAttachment=${p.onRemoveAttachment}

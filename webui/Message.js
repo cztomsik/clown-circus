@@ -111,14 +111,38 @@ const Message = ({ m }) => {
     </div>`;
 };
 
-// List of messages; keeps the container scrolled to the newest turn.
-export const Messages = ({ messages }) => {
+// While a run is in flight, the latest assistant turn ends with tool calls
+// whose results have not arrived yet — the first one is what's executing now.
+const inFlightTool = (blocks) => {
+  const last = blocks[blocks.length - 1];
+  const pending = last?.pairs?.find((p) => !p.result);
+  return pending ? pending.tc.function.name : null;
+};
+
+// Shown after the last message while a run is in flight: three small staggered-
+// bouncing dim dots (keyframes in index.html), plus the in-flight tool's name
+// when it's known, as a quiet hint of what's running.
+const Working = ({ tool }) => html`
+  <div class="flex items-center gap-2 py-0.5" aria-label="working">
+    <span class="flex items-end gap-[3px] h-3">
+      <span class="working-dot inline-block w-1.5 h-1.5 rounded-full bg-dim"></span>
+      <span class="working-dot inline-block w-1.5 h-1.5 rounded-full bg-dim"></span>
+      <span class="working-dot inline-block w-1.5 h-1.5 rounded-full bg-dim"></span>
+    </span>
+    ${tool ? html`<span class="text-dim/70 text-xs font-mono">${tool}…</span>` : null}
+  </div>`;
+
+// List of messages; keeps the container scrolled to the newest turn (and to
+// the working indicator when a run starts).
+export const Messages = ({ messages, running = false }) => {
   const ref = useRef(null);
-  useLayoutEffect(() => { const el = ref.current; if (el) el.scrollTop = el.scrollHeight; }, [messages]);
+  useLayoutEffect(() => { const el = ref.current; if (el) el.scrollTop = el.scrollHeight; }, [messages, running]);
+  const blocks = buildBlocks(messages);
   return html`
     <div ref=${ref} class="flex-1 overflow-y-auto p-3 flex flex-col gap-2.5">
-      ${buildBlocks(messages).map((b, i) => b.pairs
+      ${blocks.map((b, i) => b.pairs
         ? html`<${AssistantBlock} key=${i} m=${b.m} pairs=${b.pairs} />`
         : html`<${Message} key=${i} m=${b.m} />`)}
+      ${running ? html`<${Working} tool=${inFlightTool(blocks)} />` : null}
     </div>`;
 };

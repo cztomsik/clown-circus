@@ -16,7 +16,9 @@ primary interface — the UI is just one client of it.
   from the Play CDN (`@tailwindcss/browser@4`) with the colour palette as
   `--color-*` tokens in an `@theme` block (the default **dark** theme). It also
   holds a plain `<style>` block with the **light** palette (overriding the same
-  tokens under `:root[data-theme="light"]`) and a tiny inline `<script>` that
+  tokens under `:root[data-theme="light"]`), the `dot-bounce` keyframes behind
+  the transcript's working indicator (see `webui/Message.js`), and a tiny
+  inline `<script>` that
   re-applies the saved theme before first paint (no flash on reload). The
   `<body>` contains only a single `<div id="root">` mount point plus
   `<script type="module" src="/app.js">` — no static UI markup (the whole UI is
@@ -59,7 +61,9 @@ primary interface — the UI is just one client of it.
   project-grouped session list and the new-session form (a `cwd` input + a
   "new session" button; the model is picked in the header's select).
 - **`webui/Message.js`** — `Messages` + `Message` (and the `Pre` leaf): the flat
-  transcript, roles distinguished by colour/weight/tint.
+  transcript, roles distinguished by colour/weight/tint, plus the `Working`
+  indicator (three staggered-bouncing dim dots, optionally labelling the
+  in-flight tool) shown after the last message while a run is in flight.
 - **`webui/Todos.js`** — the live todo panel: a **collapsible, floating**
   overlay anchored top-right inside the main pane (`<main>` is `relative`;
   the panel is `absolute`, semi-transparent `bg-panel/95` + backdrop blur,
@@ -174,7 +178,14 @@ primary interface — the UI is just one client of it.
   dim italic `reasoning` details above the visible response;
   **system** = collapsed dim italic details (the prompt);
   **tool** results = collapsed dim details on a faint panel wash, first line
-  as the summary. Todos rendered from the last `write_todos` tool call found
+  as the summary. While the session is running, a **working indicator** —
+  three small dim dots bouncing on a staggered `dot-bounce` cycle (keyframes
+  in `index.html`) — renders after the last message; when the latest
+  assistant turn ends with a tool call whose result hasn't arrived yet, the
+  tool's `name()` is shown next to the dots as a quiet hint of what's
+  executing. It is purely derived from the existing SSE-driven `status`
+  (no new state or polling), so it disappears immediately on
+  `done`/`error`/`stop`. Todos rendered from the last `write_todos` tool call found
   in the session's messages (derived client-side via `extractTodos`; best-effort
   checkbox parsing) in a collapsible floating panel overlaying the
   transcript (top-right of the main pane; see `webui/Todos.js`).
