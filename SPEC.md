@@ -229,7 +229,6 @@ snapshot; the raw `messages` are not included in list responses):
 // {
 //   id, cwd, model, status, created_at, last_activity, last_error?,
 //   message_count,   // = snapshot.messages.length
-//   todo_count,      // = non-empty lines in snapshot.todos
 //   total_tokens,    // = snapshot.total_tokens
 //   archived         // boolean; false by default
 // }
@@ -335,7 +334,6 @@ endpoint and the static web UI (§7.8). Errors use `4xx`/`5xx` with
   "created_at": "2026-09-02T12:00:00.000Z",
   "last_activity": "2026-09-02T12:05:00.000Z",
   "message_count": 42,
-  "todo_count": 3,
   "total_tokens": 18334,
   "last_error": null,
   "archived": false,

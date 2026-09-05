@@ -86,7 +86,6 @@ export class Session {
       created_at: this.createdAt,
       last_activity: this.lastActivity,
       message_count: this.messages.length,
-      todo_count: this.todos.split('\n').filter((l) => l.trim()).length,
       total_tokens: this.totalTokens,
       last_error: this.lastError,
       archived: this.archived,
@@ -257,7 +256,6 @@ export class Session {
       cwd: this.cwd,
       signal: this.signal,
       timeoutMs: this.config.timeoutMs,
-      todos: this.todos,
       emit: (e, d) => this.emit(e, d),
       setTodos: (todos) => {
         this.todos = todos;

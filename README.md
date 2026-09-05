@@ -103,7 +103,7 @@ Errors: `{ "error": { "code", "message" } }`.
 {
   "id": "...", "cwd": "/abs/path", "model": "default", "status": "idle",
   "created_at": "2026-09-02T12:00:00.000Z", "last_activity": "2026-09-02T12:05:00.000Z",
-  "message_count": 42, "todo_count": 3, "total_tokens": 18334, "last_error": null
+  "message_count": 42, "total_tokens": 18334, "last_error": null
 }
 ```
 
