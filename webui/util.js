@@ -27,6 +27,10 @@ export const timeAgo = (iso) => {
 
 export const prettyArgs = (a) => { try { return JSON.stringify(JSON.parse(a)); } catch { return a ?? ''; } };
 
+// Parse a tool call's `arguments` JSON string into an object, or null when it
+// is absent / not valid JSON (callers then render the raw string instead).
+export const parseArgs = (a) => { try { const o = JSON.parse(a); return o && typeof o === 'object' ? o : null; } catch { return null; } };
+
 // Best-effort parse of the todos markdown string (checkbox convention lives in
 // PREFIX.md). Returns one entry per non-empty line:
 //   task line:  { done, inProgress, text }   // - [x] / - [ ] … (in progress) / - [ ]

@@ -64,6 +64,16 @@ primary interface — the UI is just one client of it.
   transcript, roles distinguished by colour/weight/tint, plus the `Working`
   indicator (three staggered-bouncing dim dots, optionally labelling the
   in-flight tool) shown after the last message while a run is in flight.
+- **`webui/toolcall.js`** — bespoke rendering of a tool **call** (the
+  arguments only; the tool **result** stays a plain dim `<pre>` in
+  `Message.js`). One view per registered tool: `read_file`/`write_file`/
+  `edit_file` show the path (`edit_file` as a stacked red-gutter old over
+  green-gutter new diff), `run_command` as a `$`-prompt line (+ cwd),
+  `write_todos` as a count + the parsed checkbox list, and `load_skill` as the
+  skill name. Exports `ToolCall({ name, args, raw })` (the body; unknown tools
+  or an unparseable `arguments` string fall back to the generic pretty-JSON
+  `<pre>`) and `toolCallTitle(name, args)` (the short collapsed-summary title,
+  or `null` when the tool has none).
 - **`webui/Todos.js`** — the live todo panel: a **collapsible, floating**
   overlay anchored top-right inside the main pane (`<main>` is `relative`;
   the panel is `absolute`, semi-transparent `bg-panel/95` + backdrop blur,
@@ -88,7 +98,7 @@ primary interface — the UI is just one client of it.
   the unified `Header`.
 - **`webui/util.js`** — a small module of pure, dependency-free helpers
   (`baseName`, `parseCommand`, `modelId`, `timeAgo`, `prettyArgs`,
-  `parseTodos`, `extractTodos`), exported by
+  `parseArgs`, `parseTodos`, `extractTodos`), exported by
   name and pulled in with `import { … } from './util.js'`. `parseCommand(text)`
   parses a composer `/cmd [arg]` line (returns `null` for a plain message), and
   `modelId(m)` normalises a `/models` entry to a plain id. `extractTodos(messages)`
@@ -173,7 +183,12 @@ primary interface — the UI is just one client of it.
   roles are distinguished by colour / weight / background: **user** = accent
   colour, medium weight, faint accent wash with a thin accent left rule;
   **assistant** = plain ink, with `tool_calls` shown as collapsible dim
-  `name(args)` lines (native `<details>` disclosure marker); a turn that carries
+  lines (native `<details>`) whose **call** is rendered per tool (a short
+  `tool  path`-style summary title plus a bespoke argument view — see
+  `webui/toolcall.js` — e.g. a stacked red/green diff for `edit_file`, a
+  `$`-prompt for `run_command`, the parsed list for `write_todos`; unknown
+  tools fall back to pretty-JSON) and whose **result** stays a plain dim
+  `<pre>`; a turn that carries
   `reasoning_content` (the provider's chain-of-thought) shows it as a collapsed
   dim italic `reasoning` details above the visible response;
   **system** = collapsed dim italic details (the prompt);
