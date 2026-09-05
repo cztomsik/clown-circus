@@ -16,9 +16,19 @@ export const InputBar = ({ running, current, value, onInput, onKey, onSend, onSt
   // box is already focused during normal typing.
   useLayoutEffect(() => { ref.current?.focus(); }, [current, value]);
 
+  // Pull file objects out of a paste or drop event. items → getAsFile() is the
+  // reliable path on iOS Safari (where clipboardData.files can be empty for a
+  // pasted image); fall back to the files collection for everything else.
+  const extractFiles = (dt) => {
+    const fromItems = Array.from(dt?.items ?? [])
+      .map((it) => (it.kind === 'file' ? it.getAsFile() : null))
+      .filter(Boolean);
+    return fromItems.length ? fromItems : Array.from(dt?.files ?? []);
+  };
+
   // Paste: pull image files from clipboardData.
   const onPaste = (e) => {
-    const files = Array.from(e.clipboardData?.files ?? []);
+    const files = extractFiles(e.clipboardData);
     if (files.length) { e.preventDefault(); onAddFiles(files); }
   };
 
@@ -26,7 +36,7 @@ export const InputBar = ({ running, current, value, onInput, onKey, onSend, onSt
   const onDragEnter = (e) => { e.preventDefault(); dragCounter.current++; setDragOver(true); };
   const onDragLeave = (e) => { e.preventDefault(); dragCounter.current--; if (dragCounter.current <= 0) { dragCounter.current = 0; setDragOver(false); } };
   const onDragOver = (e) => e.preventDefault();
-  const onDrop = (e) => { e.preventDefault(); dragCounter.current = 0; setDragOver(false); onAddFiles(Array.from(e.dataTransfer.files)); };
+  const onDrop = (e) => { e.preventDefault(); dragCounter.current = 0; setDragOver(false); const files = extractFiles(e.dataTransfer); if (files.length) onAddFiles(files); };
 
   const onFileChange = (e) => { onAddFiles(Array.from(e.target.files ?? [])); e.target.value = ''; };
 
@@ -54,7 +64,9 @@ export const InputBar = ({ running, current, value, onInput, onKey, onSend, onSt
                   class=${`flex-1 [field-sizing:content] min-h-[5rem] max-h-[33dvh] overflow-y-auto text-ink bg-panel border border-line rounded py-1.5 px-2 focus:outline-none focus:border-accent transition-opacity ${running ? 'opacity-50' : ''} ${dragOver ? 'border-accent bg-accent/5' : ''}`}></textarea>
         <div class="flex flex-col gap-1.5">
           ${visionCapable ? html`
-            <input ref=${fileRef} type="file" accept="image/*" multiple class="hidden" onchange=${onFileChange} />
+            <!-- sr-only (not display:none): iOS Safari won't open the picker
+                 from a programmatic .click() on a display:none file input. -->
+            <input ref=${fileRef} type="file" accept="image/*" multiple class="sr-only" onchange=${onFileChange} />
             <button disabled=${running} class=${SEND_BTN + ' text-sm'}
                     title="attach image"
                     onclick=${() => fileRef.current?.click()}>📎</button>` : null}

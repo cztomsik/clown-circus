@@ -124,10 +124,14 @@ primary interface — the UI is just one client of it.
   messages array; `parseTodos(md)` parses it into structured entries.
 - **`webui/image.js`** — client-side image helpers for the composer's
   attachment feature: `fileToDataURL(file)` (FileReader → base64 data-URL),
-  `capImageDataURLSize(dataUrl)` (downscale via canvas if the image exceeds a
-  4 MP cap, re-encode as PNG; passthrough if already small), and `IMAGE_MIMES`
-  (the accepted raster MIME types). Pure DOM, no Preact — kept separate from
-  the no-DOM `util.js`.
+  `prepareImageDataURL(dataUrl)` (decode to validate the bytes, downscale via
+  canvas if the image exceeds a 4 MP cap, and re-encode to a sendable format —
+  JPEG/PNG/WebP/GIF — if the source isn't one, e.g. an iOS HEIC/HEIF camera
+  capture → PNG; passthrough if already small *and* sendable), and
+  `isImageFile(file)` (the accept predicate: any `image/*` except SVG, plus an
+  empty/unknown type — iOS Safari reports no MIME for a pasted image, so the
+  real validation is the decode in `prepareImageDataURL`). Pure DOM, no
+  Preact — kept separate from the no-DOM `util.js`.
 - No build step, no runtime npm dependency (consistent with SPEC §14). The
   whole UI is plain static files in `webui/`; the only runtime UI libraries
   are **Preact + htm + marked + DOMPurify** (import-map → esm.sh) plus

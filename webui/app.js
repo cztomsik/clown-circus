@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'preact/hooks';
 import { html } from './ui.js';
 import { api, post, openSessionEvents } from './api.js';
 import { baseName, parseCommand, modelId } from './util.js';
-import { fileToDataURL, capImageDataURLSize, IMAGE_MIMES } from './image.js';
+import { fileToDataURL, prepareImageDataURL, isImageFile } from './image.js';
 import { Header } from './Header.js';
 import { Sidebar } from './Sidebar.js';
 import { Main } from './Main.js';
@@ -14,6 +14,15 @@ const isWide = () => window.matchMedia('(min-width: 768px)').matches;
 
 // localStorage key for a session's composer draft.
 const inputKey = (id) => `clown-circus-input-${id}`;
+
+// Attachment id. crypto.randomUUID() is only exposed in *secure* contexts
+// (https / localhost); a phone that reaches the server over a LAN IP is not,
+// so fall back to a non-crypto id. It only needs to be unique among the
+// current thumbnails (Preact keys + remove-by-id).
+const uid = () =>
+  (crypto.randomUUID
+    ? crypto.randomUUID()
+    : `att-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
 
 // ── root component (owns all state + side effects) ───────────────────
 const App = () => {
@@ -234,15 +243,19 @@ const App = () => {
 
   // --- Attachments (image upload) -------------------------------------------
 
-  const addFiles = async (files) => {
-    const valid = Array.from(files).filter((f) => IMAGE_MIMES.includes(f.type));
-    if (!valid.length) return;
-    const items = await Promise.all(valid.map(async (f) => ({
-      id: crypto.randomUUID(),
-      name: f.name,
-      dataUrl: await fileToDataURL(f),
-    })));
-    setAttachments((prev) => [...prev, ...items]);
+  const addFiles = async (fileList) => {
+    const files = Array.from(fileList ?? []);
+    if (!files.length) return;
+    const valid = files.filter(isImageFile);
+    if (!valid.length) { flashMsg('no supported image in that'); return; }
+    try {
+      const items = await Promise.all(valid.map(async (f) => ({
+        id: uid(),
+        name: f.name || 'image',
+        dataUrl: await fileToDataURL(f),
+      })));
+      setAttachments((prev) => [...prev, ...items]);
+    } catch (err) { flashMsg(`couldn't read image: ${err?.message ?? err}`); }
   };
 
   const removeAttachment = (id) => setAttachments((prev) => prev.filter((a) => a.id !== id));
@@ -265,7 +278,7 @@ const App = () => {
         const parts = [];
         if (text) parts.push({ type: 'text', text });
         for (const a of savedAttachments) {
-          const capped = await capImageDataURLSize(a.dataUrl);
+          const capped = await prepareImageDataURL(a.dataUrl);
           parts.push({ type: 'image_url', image_url: { url: capped } });
         }
         message = parts;
