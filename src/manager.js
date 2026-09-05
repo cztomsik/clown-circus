@@ -45,7 +45,7 @@ export class SessionManager {
       throw new HttpError(400, 'bad_request', `max sessions (${this.config.maxSessions}) reached`);
 
     const now = new Date().toISOString();
-    const snap = { messages: [], todos: '', total_tokens: 0 };
+    const snap = { messages: [], total_tokens: 0 };
     const row = {
       id: randomUUID(),
       cwd,

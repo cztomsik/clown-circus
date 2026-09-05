@@ -16,7 +16,7 @@ export const api = async (path, opts = {}) => {
 export const post = (path, body) => api(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
 
 // Open the SSE stream for one session. `handlers` maps an event name
-// (snapshot / todo / status / done / error) to a callback that receives the
+// (snapshot / status / done / error) to a callback that receives the
 // event's JSON-parsed `data`. EventSource auto-reconnects and re-sends
 // Last-Event-ID, so the server's replay ring (SPEC §7.6) covers brief
 // disconnects. A connection failure (a native `error` event with no data) is

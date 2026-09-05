@@ -103,11 +103,9 @@ const runCommand = (ctx, args) =>
   });
 
 // The todo list is a user-visible markdown string (see PREFIX.md for the
-// checkbox convention). The tool is a dumb setter: store verbatim, no echo.
-const writeTodos = (ctx, args) => {
-  ctx.setTodos(typeof args.content === 'string' ? args.content : '');
-  return 'Todos updated';
-};
+// checkbox convention). The tool is a no-op: the tool call's presence in the
+// transcript IS the todo list — the web UI derives it from messages.
+const writeTodos = (_ctx, _args) => 'Todos updated';
 
 const loadSkill = async (ctx, args) => {
   if (args.skill_name === 'init') return BUILTIN_INIT;

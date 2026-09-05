@@ -46,7 +46,7 @@ primary interface — the UI is just one client of it.
 - **`webui/api.js`** — all client → server traffic, kept apart from the
   components (no DOM, no Preact, no htm): the JSON `api()`/`post()` REST helpers
   and `openSessionEvents(id, handlers)`, which opens the per-session SSE
-  `EventSource`, fans its events out to a `{snapshot, todo, status, done,
+  `EventSource`, fans its events out to a `{snapshot, status, done,
   error}` handler map (each `data` JSON-parsed), swallows connection failures,
   and returns a `close()` used as the effect cleanup.
 - **`webui/Header.js`** — the **unified top bar**: sidebar toggle, brand, the
@@ -63,10 +63,12 @@ primary interface — the UI is just one client of it.
 - **`webui/Todos.js`** — the live todo panel: a **collapsible, floating**
   overlay anchored top-right inside the main pane (`<main>` is `relative`;
   the panel is `absolute`, semi-transparent `bg-panel/95` + backdrop blur,
-  `z-20`). It renders only while the snapshot's `todos` markdown string is
-  non-empty; its header row (a `Todos` label + rotating chevron) toggles the
-  block, which scrolls internally when long (`max-h-64`). The string is
-  parsed **best-effort** by `parseTodos` (in `webui/util.js`): checkbox lines
+  `z-20`). It renders only while a `write_todos` tool call is found in the
+  session's messages (the markdown is derived client-side via
+  `extractTodos`); its header row (a `Todos` label + rotating chevron)
+  toggles the block, which scrolls internally when long (`max-h-64`). The
+  string is parsed **best-effort** by `parseTodos` (in `webui/util.js`):
+  checkbox lines
   (`- [x]`, `- [ ] … (in progress)`, `- [ ]`) render as a styled list — dim
   strikethrough = done, accent bold = in progress — with a `done/total` count
   in the header,
@@ -81,10 +83,13 @@ primary interface — the UI is just one client of it.
   selected). The session status/actions no longer live here — they moved into
   the unified `Header`.
 - **`webui/util.js`** — a small module of pure, dependency-free helpers
-  (`baseName`, `parseCommand`, `modelId`, `timeAgo`, `prettyArgs`), exported by
+  (`baseName`, `parseCommand`, `modelId`, `timeAgo`, `prettyArgs`,
+  `parseTodos`, `extractTodos`), exported by
   name and pulled in with `import { … } from './util.js'`. `parseCommand(text)`
   parses a composer `/cmd [arg]` line (returns `null` for a plain message), and
-  `modelId(m)` normalises a `/models` entry to a plain id.
+  `modelId(m)` normalises a `/models` entry to a plain id. `extractTodos(messages)`
+  derives the todo markdown from the last `write_todos` tool call in the
+  messages array; `parseTodos(md)` parses it into structured entries.
 - **`webui/image.js`** — client-side image helpers for the composer's
   attachment feature: `fileToDataURL(file)` (FileReader → base64 data-URL),
   `capImageDataURLSize(dataUrl)` (downscale via canvas if the image exceeds a
@@ -169,12 +174,12 @@ primary interface — the UI is just one client of it.
   dim italic `reasoning` details above the visible response;
   **system** = collapsed dim italic details (the prompt);
   **tool** results = collapsed dim details on a faint panel wash, first line
-  as the summary. Todos rendered from the snapshot's `todos` markdown string
-  (best-effort checkbox parsing) in a collapsible floating panel overlaying the
+  as the summary. Todos rendered from the last `write_todos` tool call found
+  in the session's messages (derived client-side via `extractTodos`; best-effort
+  checkbox parsing) in a collapsible floating panel overlaying the
   transcript (top-right of the main pane; see `webui/Todos.js`).
 - **Live updates** — browser `EventSource` on `GET /sessions/:id/events`:
-  - `snapshot` → re-render messages, todos, token count
-  - `todo` → re-render todos
+  - `snapshot` → re-render messages (todos derived from them), token count
   - `status` → update badge, swap send↔stop, refresh the sidebar
   - `error` → transient error banner
   - `done` → update token count

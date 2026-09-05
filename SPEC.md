@@ -92,7 +92,7 @@ the sole system of record.
                          │  ┌───────────────────────────────────────┐     │
                          │  │  Session (one per conversation)       │     │
                          │  │   - id, cwd, model, status            │     │
-                         │  │   - messages[], todos (md), tokens    │     │
+                         │  │   - messages[], tokens                  │     │
                          │  │   - agent loop (async)                │     │
                          │  │   - EventEmitter (SSE source)         │     │
                          │  └───────────────────────────────────────┘     │
@@ -117,7 +117,7 @@ Components (each is a flat file under `src/`):
   sessions from SQLite into memory at startup, and coordinates create/list/
   retrieve/destroy + persist-on-change. Owns IDs and lifecycle.
 - **`session.js` (Session)** — the port of the `Clown` struct (`src/model.zig`).
-  Owns the message list, todos, token counter, the agentic loop, and an event
+  Owns the message list, token counter, the agentic loop, and an event
   emitter. Replaces the fork/pipe worker with an in-process async loop guarded
   by a single-flight flag so only one run executes at a time.
 - **`loop.js`** — the agent loop (port of `workerInner`), shared by sessions.
@@ -174,12 +174,8 @@ It is an internal format and may evolve freely as the tool grows.
 // }
 
 // Snapshot  (stored as a JSON string in the `snapshot` column)
-// { messages: Message[], todos: string, total_tokens: number }
+// { messages: Message[], total_tokens: number }
 ```
-
-> **Legacy note**: older rows stored `todos` as `[{ name, status }]`. At load
-> they are converted to markdown lines (`- [ ]` / `- [ ] … (in progress)` / `- [x]`) so existing
-> sessions keep their progress doc; the next persist rewrites them in place.
 
 > **Multimodal note**: `content` is a plain `string` for text-only messages
 > (the common case). A user message that carries images is an array of
@@ -202,7 +198,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at    TEXT NOT NULL,                  -- ISO 8601
   last_activity TEXT NOT NULL,                  -- ISO 8601
   last_error    TEXT,                           -- nullable
-  snapshot      TEXT NOT NULL,                  -- JSON: { messages, todos, total_tokens }
+  snapshot      TEXT NOT NULL,                  -- JSON: { messages, total_tokens }
   archived      INTEGER NOT NULL DEFAULT 0      -- 0/1; hidden from the default list
 );
 
@@ -337,7 +333,7 @@ endpoint and the static web UI (§7.8). Errors use `4xx`/`5xx` with
   "total_tokens": 18334,
   "last_error": null,
   "archived": false,
-  "snapshot": { "messages": [], "todos": "", "total_tokens": 18334 }
+  "snapshot": { "messages": [], "total_tokens": 18334 }
 }
 ```
 
@@ -394,7 +390,7 @@ All of these operate on a single session and map 1:1 to the original commands in
 | `POST` | `/sessions/:id/stop`       | `/stop`        | Cooperatively abort the running loop. `200` `{ "status": "stopped" }`. No-op (still `200`) if idle. |
 | `POST` | `/sessions/:id/undo`       | `/undo`        | Pop the last message from history. Returns the popped message text (if any) in `{ "undone": "..." }`. |
 | `POST` | `/sessions/:id/retry`      | `/retry`       | Strip trailing assistant/tool messages (keep last user message) and re-run. `202` when it starts a run, `409` if busy. |
-| `POST` | `/sessions/:id/clear`      | `/clear`       | Stop + clear history (keep system message) + clear todos. `200`. |
+| `POST` | `/sessions/:id/clear`      | `/clear`       | Stop + clear history (keep system message). `200`. |
 | `POST` | `/sessions/:id/clear-tools`| `/clear-tools` | Stop + drop all `role=tool` messages, keep system/user/assistant. `200`. |
 | `POST` | `/sessions/:id/compact`    | `/compact`     | Run the two-phase summarize-then-replace compaction (as in the source). `202` (starts a run). |
 | `POST` | `/sessions/:id/init`       | `/init`        | Convenience: send the prompt that triggers the built-in `init` skill ("Could you /init this project?"). `202`. |
@@ -428,7 +424,6 @@ Event types (SSE `event:` field):
 | Event      | Data (JSON)                              | Emitted when |
 |------------|------------------------------------------|--------------|
 | `snapshot` | `Snapshot`                               | After each agentic turn / tool batch (replaces the per-tick snapshot the TUI consumed) |
-| `todo`     | `string` (markdown)                      | Whenever the todo list changes |
 | `status`   | `{ "status": "running"\|"idle"\|"error"\|"stopped" }` | On state transitions |
 | `error`    | `{ "message": "..." }`                   | On a loop error |
 | `done`     | `{ "total_tokens": n }`                  | When a run completes |
@@ -640,7 +635,7 @@ source, whose only path-traversal note was an unimplemented `TODO`.
 | `write_file`    | `path`, `content`                                | `writeFile` | Creates parent dirs. |
 | `edit_file`     | `path`, `old_content`, `new_content`, `replace_all?: bool` | `editFile` | Exact-match replace; errors on 0 or >1 matches unless `replace_all`. Exact-string semantics kept (the source evaluated line-range/sed edits and rejected them). |
 | `run_command`   | `command`, `cwd?: string`                        | `runCommand`| Runs `sh -c`; captures stdout+stderr (2MB limits); abortable on stop. |
-| `write_todos`  | `content: string (markdown)`                   | `writeTodos`| Replaces the whole list, stored verbatim (user-visible); emits `todo` event. Returns `Todos updated`. |
+| `write_todos`  | `content: string (markdown)`                   | `writeTodos`| No-op: the tool call's presence in the transcript IS the todo list (the web UI derives it from messages). Returns `Todos updated`. |
 | `load_skill`    | `skill_name`                                     | `loadSkill` | Built-in `init` first, else `skills/<name>.md` in cwd (path-validated). |
 
 Tool result values are returned to the model as text (strings / structured
@@ -654,7 +649,7 @@ Each tool invocation receives a `ToolContext`:
 // {
 //   cwd: string,           // session cwd (working directory for tools)
 //   signal: AbortSignal,   // for run_command
-//   emit(event, data),     // e.g. emit("todo", todos)
+//   emit(event, data),     // e.g. emit("status", { status })
 // }
 ```
 

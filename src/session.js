@@ -21,16 +21,10 @@ const lastIndexOf = (arr, pred) => {
   return -1;
 };
 
-// Legacy snapshots stored todos as [{name, status}] — convert to the current
-// markdown string at load so old sessions keep their progress doc.
-const legacyTodos = (list) =>
-  list.map((t) =>
-    t.status === 'completed' ? `- [x] ${t.name}`
-    : t.status === 'in_progress' ? `- [ ] ${t.name} (in progress)`
-    : `- [ ] ${t.name}`).join('\n');
+
 
 // Session: the port of the `Clown` struct (src/model.zig). Owns the message
-// list, todos, token counter, the agentic loop, an event emitter (SSE source),
+// list, token counter, the agentic loop, an event emitter (SSE source),
 // and persistence. The fork/pipe worker is replaced by an in-process async loop
 // guarded by the `running` single-flight flag.
 export class Session {
@@ -52,9 +46,6 @@ export class Session {
 
     const snap = row.snapshot ? JSON.parse(row.snapshot) : {};
     this.messages = Array.isArray(snap.messages) ? snap.messages : [];
-    this.todos = typeof snap.todos === 'string' ? snap.todos
-      : Array.isArray(snap.todos) ? legacyTodos(snap.todos)
-      : '';
     this.totalTokens = snap.total_tokens ?? 0;
     if (this.messages.length === 0) this.messages = [{ role: 'system', content: buildSystemPrompt(this.cwd, this.config.autoTruncate) }];
 
@@ -74,7 +65,7 @@ export class Session {
   // --- Views / persistence --------------------------------------------------
 
   snapshot() {
-    return { messages: this.messages, todos: this.todos, total_tokens: this.totalTokens };
+    return { messages: this.messages, total_tokens: this.totalTokens };
   }
 
   meta() {
@@ -257,12 +248,6 @@ export class Session {
       signal: this.signal,
       timeoutMs: this.config.timeoutMs,
       emit: (e, d) => this.emit(e, d),
-      setTodos: (todos) => {
-        this.todos = todos;
-        this.emit('todo', todos);
-        this.touch();
-        this.persist();
-      },
     };
   }
 
@@ -324,9 +309,7 @@ export class Session {
   clear() {
     if (this.running) this.stop();
     this.messages = [{ role: 'system', content: buildSystemPrompt(this.cwd, this.config.autoTruncate) }];
-    this.todos = '';
     this.touch();
-    this.emit('todo', this.todos);
     this.emit('snapshot', this.snapshot());
     this.persist();
   }

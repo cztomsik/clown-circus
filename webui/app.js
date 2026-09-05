@@ -135,8 +135,7 @@ const App = () => {
   useEffect(() => {
     if (!current) return;
     return openSessionEvents(current, {
-      snapshot: (snap) => setView((v) => v ? { ...v, messages: snap.messages, todos: snap.todos, tokens: snap.total_tokens } : v),
-      todo: (todos) => setView((v) => v ? { ...v, todos } : v),
+      snapshot: (snap) => setView((v) => v ? { ...v, messages: snap.messages, tokens: snap.total_tokens } : v),
       status: (s) => { setView((v) => v ? { ...v, status: s.status } : v); refreshSessions(); },
       done: (d) => setView((v) => v ? { ...v, tokens: d.total_tokens } : v),
       error: (err) => { setView((v) => v ? { ...v, status: 'error' } : v); flashMsg(err.message); refreshSessions(); },
@@ -151,7 +150,7 @@ const App = () => {
       const d = await api(`/sessions/${id}`);
       setView({
         id: d.id ?? id, cwd: d.cwd, model: d.model, status: d.status, last_error: d.last_error,
-        messages: d.snapshot.messages, todos: d.snapshot.todos, tokens: d.snapshot.total_tokens,
+        messages: d.snapshot.messages, tokens: d.snapshot.total_tokens,
         archived: d.archived,
       });
       setNewCwd(d.cwd);
@@ -199,7 +198,7 @@ const App = () => {
         const d = await api(`/sessions/${current}`);
         setView((v) => v ? {
           ...v, status: d.status, last_error: d.last_error,
-          messages: d.snapshot.messages, todos: d.snapshot.todos, tokens: d.snapshot.total_tokens,
+          messages: d.snapshot.messages, tokens: d.snapshot.total_tokens,
         } : v);
       } else if (name === 'archive' || name === 'unarchive') {
         // metadata-only flag: reflect it in the open view, refresh the list.

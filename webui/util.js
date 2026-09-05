@@ -41,3 +41,20 @@ export const parseTodos = (md) =>
     const text = m[2].trim().replace(IN_PROGRESS, '').trim();
     return { done, inProgress: !done && IN_PROGRESS.test(m[2]), text };
   }).filter(Boolean);
+
+// Derive the todo list markdown from the messages array: find the last
+// assistant message whose tool_calls include write_todos and return its
+// `content` argument (the tool is a no-op — the call in the transcript IS
+// the todo list). Returns '' when no write_todos call is present.
+export const extractTodos = (messages) => {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role !== 'assistant' || !m.tool_calls) continue;
+    for (const tc of m.tool_calls) {
+      if (tc.function?.name !== 'write_todos') continue;
+      try { return JSON.parse(tc.function.arguments ?? '{}').content ?? ''; }
+      catch { return ''; }
+    }
+  }
+  return '';
+};

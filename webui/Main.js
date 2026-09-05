@@ -1,4 +1,5 @@
 import { html } from './ui.js';
+import { extractTodos } from './util.js';
 import { Todos } from './Todos.js';
 import { Messages } from './Message.js';
 import { InputBar } from './InputBar.js';
@@ -19,7 +20,7 @@ export const Main = (p) => !p.view
   : html`
       <main class="relative flex-1 flex flex-col min-w-0">
         <${ErrorBox} message=${p.flash ?? p.view.last_error} />
-        <${Todos} todos=${p.view.todos} />
+        <${Todos} todos=${extractTodos(p.view.messages)} />
         <${Messages} messages=${p.view.messages} />
         <${InputBar} running=${p.view.status === 'running'} current=${p.view.id} value=${p.input}
                       onInput=${(e) => p.setInput(e.target.value)} onKey=${p.onKey} onSend=${p.onSend} onStop=${p.onStop}
