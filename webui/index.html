@@ -59,6 +59,13 @@
 .working-dot:nth-child(2) { animation-delay: .15s; }
 .working-dot:nth-child(3) { animation-delay: .3s; }
 
+/* iOS Safari auto-zooms (and sometimes fails to zoom back) when a focused
+   input/textarea has a computed font-size under 16px. The body is 14px
+   (text-sm), so bump inputs up on small screens. */
+@media (max-width: 767px) {
+  input, textarea { font-size: 16px; }
+}
+
 /* Markdown rendering (webui/md.js → .md): prose typography for assistant /
    user text, referencing the same --color-* tokens so dark/light theming is
    free. The body font stays sans (only code is mono). */
