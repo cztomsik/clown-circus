@@ -31,6 +31,9 @@
 }
 </style>
 <style>
+/* --color-code is used only from plain CSS below, so it can't live in
+   @theme (the CDN tree-shakes @theme vars no utility references). */
+:root { --color-code: #6f95a8; }
 /* Light palette: same --color-* tokens, applied when <html data-theme="light">. */
 :root[data-theme="light"] {
   --color-bg: #ecebe6;
@@ -39,6 +42,7 @@
   --color-ink: #21242b;
   --color-dim: #6e737b;
   --color-accent: #a56f12;
+  --color-code: #33667f;
   --color-err: #c0392b;
   --color-ok: #2f8f5b;
 }
@@ -73,10 +77,11 @@
 .md li > ol { margin: .15em 0; list-style: lower-alpha; }
 .md blockquote { margin: 0 0 .5em; border-left: 2px solid var(--color-line); padding-left: .8em; color: var(--color-dim); }
 .md a { color: var(--color-accent); text-decoration: underline; text-underline-offset: 2px; }
+/* Inline code: plain mono, no pill/bubble — muted blue, distinct from
+   links (accent) but calm against the body ink. */
 .md code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: .85em; background: var(--color-panel); border: 1px solid var(--color-line);
-  border-radius: 4px; padding: .08em .3em;
+  font-size: .9em; color: var(--color-code);
 }
 .md pre {
   background: var(--color-bg); border: 1px solid var(--color-line); border-radius: 6px;
