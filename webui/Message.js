@@ -1,4 +1,4 @@
-import { useRef, useState, useLayoutEffect } from 'preact/hooks';
+import { useRef, useState, useEffect, useLayoutEffect } from 'preact/hooks';
 import { html, PRE } from './ui.js';
 import { prettyArgs, parseArgs } from './util.js';
 import { ToolCall, toolCallTitle } from './toolcall.js';
@@ -125,18 +125,39 @@ const inFlightTool = (blocks) => {
   return pending ? pending.tc.function.name : null;
 };
 
+// Elapsed-run clock: Working mounts exactly when a run starts (its caller
+// renders it conditionally on `running`), so mount time ≈ run start as far as
+// the client knows. Recomputed from Date.now() on every 1s tick, so a
+// backgrounded tab's throttled interval can't drift it — only the *display*
+// lags while hidden.
+const fmtElapsed = (total) => {
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return m ? `${m}m ${String(s).padStart(2, '0')}s` : `${s}s`;
+};
+
 // Shown after the last message while a run is in flight: three small staggered-
-// bouncing dim dots (keyframes in index.html), plus the in-flight tool's name
-// when it's known, as a quiet hint of what's running.
-const Working = ({ tool }) => html`
-  <div class="flex items-center gap-2 py-0.5" aria-label="working">
-    <span class="flex items-end gap-[3px] h-3">
-      <span class="working-dot inline-block w-1.5 h-1.5 rounded-full bg-dim"></span>
-      <span class="working-dot inline-block w-1.5 h-1.5 rounded-full bg-dim"></span>
-      <span class="working-dot inline-block w-1.5 h-1.5 rounded-full bg-dim"></span>
-    </span>
-    ${tool ? html`<span class="text-dim/70 text-xs font-mono">${tool}…</span>` : null}
-  </div>`;
+// bouncing dim dots (keyframes in index.html), the in-flight tool's name when
+// it's known, and a live elapsed-time readout (tabular nums, so it doesn't
+// jitter as the digits change).
+const Working = ({ tool }) => {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const start = Date.now();
+    const t = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return html`
+    <div class="flex items-center gap-2 py-0.5" aria-label="working">
+      <span class="flex items-end gap-[3px] h-3">
+        <span class="working-dot inline-block w-1.5 h-1.5 rounded-full bg-dim"></span>
+        <span class="working-dot inline-block w-1.5 h-1.5 rounded-full bg-dim"></span>
+        <span class="working-dot inline-block w-1.5 h-1.5 rounded-full bg-dim"></span>
+      </span>
+      ${tool ? html`<span class="text-dim/70 text-xs font-mono">${tool}…</span>` : null}
+      <span class="text-dim/70 text-xs font-mono tabular-nums">${fmtElapsed(elapsed)}</span>
+    </div>`;
+};
 
 // Distance (from the bottom) that still counts as "pinned".
 const NEAR_BOTTOM = 80;

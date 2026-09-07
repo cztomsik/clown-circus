@@ -25,7 +25,7 @@ const ACTIONS = [
 // session-actions dropdown (⋮), the context-aware model select, and the theme
 // toggle. One row, always.
 export const Header = ({ cfg, theme, sideOpen, onSideToggle, onThemeToggle, view, onAction, onDel,
-                         model, onModelChange, models, defaultModel }) => {
+                         model, onModelChange, models }) => {
   const [menuOpen, setMenuOpen] = useState(false);
 
   // Close the menu whenever the selected session changes (e.g. delete/clear).
@@ -66,11 +66,13 @@ export const Header = ({ cfg, theme, sideOpen, onSideToggle, onThemeToggle, view
           <div class="text-dim text-xs min-w-0 flex-1 truncate">${cfg}</div>`}
 
       <select title="model" aria-label="model" value=${model} onchange=${(e) => onModelChange(e.target.value)}
-              class="text-ink bg-panel border border-line rounded py-1 px-2 focus:outline-none focus:border-accent flex-none w-40 max-w-[38vw]">
-        <option value="">default (${defaultModel ?? '?'})</option>
+              class="text-ink bg-panel border border-line rounded py-1.5 md:py-1 px-2 focus:outline-none focus:border-accent flex-none w-32 max-w-[36vw]">
+        <option value="">default</option>
         ${models.map((m) => html`<option key=${m} value=${m}>${m}</option>`)}
       </select>
-      <button title="toggle theme" class=${`${BTN} flex-none`} onclick=${onThemeToggle}>${theme === 'dark' ? '→ light' : '→ dark'}</button>
+      <!-- Icon = the theme it switches TO (same semantics as the old "→ x" label). -->
+      <button title=${theme === 'dark' ? 'switch to the light theme' : 'switch to the dark theme'} aria-label="toggle theme"
+              class=${`${BTN} flex-none`} onclick=${onThemeToggle}>${theme === 'dark' ? '☀' : '🌙'}</button>
 
       ${menuOpen && view ? html`
         <div class="fixed inset-0 z-40" onclick=${() => setMenuOpen(false)}></div>

@@ -69,7 +69,8 @@ primary interface — the UI is just one client of it.
 - **`webui/Message.js`** — `Messages` + `Message` (and the `Pre` leaf): the flat
   transcript, roles distinguished by colour/weight/tint, plus the `Working`
   indicator (three staggered-bouncing dim dots, optionally labelling the
-  in-flight tool) shown after the last message while a run is in flight.
+  in-flight tool, and a live elapsed-time clock) shown after the last message
+  while a run is in flight.
   The list **auto-scrolls to the newest turn only while the reader is
   "pinned"** near the bottom (within 80px); once scrolled up, incoming
   snapshots leave the view alone and a floating bottom-centre `↓ latest` pill
@@ -187,8 +188,8 @@ primary interface — the UI is just one client of it.
 
   The **model `<select>`** is context-aware:
   - **Session open** — mirrors and controls that session's model. Populated
-    from `GET /models` (the default model pre-labelled as the `default (…)`
-    option, value `""`); seeded to the session's model on `select()`; changing
+    from `GET /models` (the default model is the plain `default` option,
+    value `""`); seeded to the session's model on `select()`; changing
     it calls `POST /sessions/:id/model` to switch the live session (allowed
     mid-run — the new model takes effect from the next LLM turn).
   - **No session** — inert state that seeds the model for the next
@@ -232,9 +233,13 @@ primary interface — the UI is just one client of it.
   in `index.html`) — renders after the last message; when the latest
   assistant turn ends with a tool call whose result hasn't arrived yet, the
   tool's `name()` is shown next to the dots as a quiet hint of what's
-  executing. It is purely derived from the existing SSE-driven `status`
-  (no new state or polling), so it disappears immediately on
-  `done`/`error`/`stop`. Todos rendered from the last `write_todos` tool call found
+  executing. Next to that, a **live elapsed-time clock** (`45s`,
+  `2m 05s`, tabular nums) ticks once a second, measured client-side from
+  when the indicator mounted (≈ when the UI observed the run start) and
+  recomputed from `Date.now()` each tick, so a backgrounded tab's throttled
+  interval can't drift it. The indicator's *visibility* is purely derived
+  from the existing SSE-driven `status` (no new polling), so it disappears
+  immediately on `done`/`error`/`stop`. Todos rendered from the last `write_todos` tool call found
   in the session's messages (derived client-side via `extractTodos`; best-effort
   checkbox parsing) in a collapsible floating panel overlaying the
   transcript (top-right of the main pane; see `webui/Todos.js`).
@@ -312,9 +317,10 @@ primary interface — the UI is just one client of it.
   Plus the composer: send (`POST …/messages`) and `stop`. The header's model
   `<select>` additionally drives `POST /sessions/:id/model` (switch a session's
   model; see **Header**). All endpoints are from SPEC §7.5.
-- **Theme toggle** — a button in the `Header` (top-right) switches the
-  `--color-*` palette between the default dark and the light theme by setting
-  `data-theme` on `<html>`; the current state shows as `→ light` / `→ dark`.
+- **Theme toggle** — a compact icon button in the `Header` (top-right)
+  switches the `--color-*` palette between the default dark and the light
+  theme by setting `data-theme` on `<html>`; the icon shows the theme it
+  switches **to** (☀ in dark mode, 🌙 in light mode).
   The choice is persisted in `localStorage` under `clown-circus-theme`, and a
   tiny inline `<script>` in `index.html` re-applies it before first paint so
   reloads open in the right theme.

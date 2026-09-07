@@ -319,7 +319,7 @@ const App = () => {
       <${Header} cfg=${cfg} theme=${theme} sideOpen=${sideOpen}
                  onSideToggle=${() => setSideOpen((o) => !o)} onThemeToggle=${toggleTheme}
                  view=${view} onAction=${handleAction} onDel=${del}
-                 model=${model} onModelChange=${onModelChange} models=${models} defaultModel=${defaultModel} />
+                 model=${model} onModelChange=${onModelChange} models=${models} />
       <div class="flex-1 flex min-h-0">
         ${sideOpen ? html`
           <!-- mobile (<md): fixed overlay drawer + dimmed backdrop;
