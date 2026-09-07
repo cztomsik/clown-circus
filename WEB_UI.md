@@ -70,6 +70,12 @@ primary interface — the UI is just one client of it.
   transcript, roles distinguished by colour/weight/tint, plus the `Working`
   indicator (three staggered-bouncing dim dots, optionally labelling the
   in-flight tool) shown after the last message while a run is in flight.
+  The list **auto-scrolls to the newest turn only while the reader is
+  "pinned"** near the bottom (within 80px); once scrolled up, incoming
+  snapshots leave the view alone and a floating bottom-centre `↓ latest` pill
+  smooth-scrolls back down and re-pins. `Messages` is keyed by session id
+  (in `Main.js`), so a session switch remounts it and lands at the bottom of
+  the new transcript.
   User and assistant **text** renders through the `Markdown` component
   (`webui/md.js`); reasoning, system and tool content stay plain `<pre>`.
 - **`webui/md.js`** — `Markdown({ text, cls })`: the single component that
@@ -260,7 +266,8 @@ primary interface — the UI is just one client of it.
   Each image is read client-side via `FileReader` → base64 data-URL, then
   downscaled (canvas) if it exceeds the 4 MP cap before being sent. A
   **thumbnail strip** above the textarea shows attached images with a per-image
-  remove (×) button. On send, images are sent as OpenAI `ContentPart[]`
+  remove (×) button — always visible below `md` (touch never fires `:hover`),
+  hover-revealed on desktop. On send, images are sent as OpenAI `ContentPart[]`
   (`{type:"image_url", image_url:{url:"data:…"}}`) alongside the text part.
   **Vision gating**: on boot, the UI builds a `visionModels` set from
   `GET /models` (`architecture.input_modalities` includes `"image"`). The entire

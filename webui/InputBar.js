@@ -49,7 +49,9 @@ export const InputBar = ({ running, current, value, onInput, onKey, onSend, onSt
           ${attachments.map((a) => html`
             <div key=${a.id} class="relative group w-16 h-16 border border-line rounded overflow-hidden">
               <img src=${a.dataUrl} alt=${a.name} class="w-full h-full object-cover" />
-              <button class="absolute top-0.5 right-0.5 w-5 h-5 flex items-center justify-center bg-black/60 text-white text-xs rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+              <!-- Hover-gated only on desktop: touch devices never fire :hover,
+                   so below md the × is always visible. -->
+              <button class="absolute top-0.5 right-0.5 w-6 h-6 flex items-center justify-center bg-black/60 text-white text-xs rounded-full transition-opacity cursor-pointer md:opacity-0 md:group-hover:opacity-100"
                       onclick=${() => onRemoveAttachment(a.id)}>×</button>
             </div>`)}
         </div>` : null}

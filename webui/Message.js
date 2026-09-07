@@ -1,4 +1,4 @@
-import { useRef, useLayoutEffect } from 'preact/hooks';
+import { useRef, useState, useLayoutEffect } from 'preact/hooks';
 import { html, PRE } from './ui.js';
 import { prettyArgs, parseArgs } from './util.js';
 import { ToolCall, toolCallTitle } from './toolcall.js';
@@ -138,17 +138,54 @@ const Working = ({ tool }) => html`
     ${tool ? html`<span class="text-dim/70 text-xs font-mono">${tool}…</span>` : null}
   </div>`;
 
-// List of messages; keeps the container scrolled to the newest turn (and to
-// the working indicator when a run starts).
+// Distance (from the bottom) that still counts as "pinned".
+const NEAR_BOTTOM = 80;
+
+// List of messages. Keeps the container scrolled to the newest turn (and to
+// the working indicator when a run starts) — but only while the reader is
+// "pinned" near the bottom. Scrolled up → new SSE snapshots don't yank them
+// back; a floating "↓ latest" pill (bottom-centre of the pane) smooth-scrolls
+// back and re-pins. `pinned` mirrors `pinnedRef` for the pill's visibility;
+// the ref is what the layout effect reads (no effect-ordering dependency).
 export const Messages = ({ messages, running = false }) => {
   const ref = useRef(null);
-  useLayoutEffect(() => { const el = ref.current; if (el) el.scrollTop = el.scrollHeight; }, [messages, running]);
+  const [pinned, setPinned] = useState(true);
+  const pinnedRef = useRef(true);
+
+  const isPinned = (el) => el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM;
+
+  const onScroll = () => {
+    const el = ref.current;
+    if (!el) return;
+    pinnedRef.current = isPinned(el);
+    setPinned(pinnedRef.current); // same value → Preact bails out, no re-render
+  };
+
+  const jumpToLatest = () => {
+    const el = ref.current;
+    if (!el) return;
+    pinnedRef.current = true;
+    setPinned(true);
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  };
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el && pinnedRef.current) el.scrollTop = el.scrollHeight;
+  }, [messages, running]);
+
   const blocks = buildBlocks(messages);
   return html`
-    <div ref=${ref} class="flex-1 overflow-y-auto p-3 flex flex-col gap-2.5">
-      ${blocks.map((b, i) => b.pairs
-        ? html`<${AssistantBlock} key=${i} m=${b.m} pairs=${b.pairs} />`
-        : html`<${Message} key=${i} m=${b.m} />`)}
-      ${running ? html`<${Working} tool=${inFlightTool(blocks)} />` : null}
+    <div class="relative flex-1 flex flex-col min-h-0">
+      <div ref=${ref} class="flex-1 overflow-y-auto p-3 flex flex-col gap-2.5" onscroll=${onScroll}>
+        ${blocks.map((b, i) => b.pairs
+          ? html`<${AssistantBlock} key=${i} m=${b.m} pairs=${b.pairs} />`
+          : html`<${Message} key=${i} m=${b.m} />`)}
+        ${running ? html`<${Working} tool=${inFlightTool(blocks)} />` : null}
+      </div>
+      ${!pinned ? html`
+        <button class="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 text-xs text-ink bg-panel border border-line rounded-full shadow-lg cursor-pointer hover:border-accent"
+                title="scroll to the latest message"
+                onclick=${jumpToLatest}>↓ latest</button>` : null}
     </div>`;
 };
