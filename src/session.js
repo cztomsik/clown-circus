@@ -289,6 +289,22 @@ export class Session {
     void runLoop(this);
   }
 
+  // Roll a mid-turn transcript back to a valid boundary. The loop appends an
+  // assistant tool_calls message before executing its tools, so a copy taken
+  // while the source is running can end with calls that lack tool results —
+  // invalid to send back to the LLM. If (and only if) the trailing assistant
+  // tool_calls is not fully answered by the tool messages after it, strip
+  // that message and its (partial) results. Completed transcripts are
+  // untouched — a fork of an idle session keeps the final assistant reply.
+  settle() {
+    let i = this.messages.length - 1;
+    while (i >= 0 && this.messages[i].role === 'tool') i--;
+    const a = this.messages[i];
+    if (!a || a.role !== 'assistant' || !a.tool_calls?.length) return;
+    const answered = new Set(this.messages.slice(i + 1).map((m) => m.tool_call_id));
+    if (a.tool_calls.some((tc) => !answered.has(tc.id))) this.messages.length = i;
+  }
+
   init() {
     this.send('Could you /init this project?');
   }

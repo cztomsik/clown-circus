@@ -170,8 +170,9 @@ primary interface — the UI is just one client of it.
   `<select>`**, then the theme toggle. When a session is open, a `⋮` button
   (between the summary and the model select) opens a dropdown of the session
   **actions** (`retry`, `init`, `compact`, `undo`, `clear-tools`, `clear`,
-  `archive` — which flips to `unarchive` when the open session is archived —
-  and `delete` last, separated by a rule). Archiving hides the session from
+  `duplicate`, `archive` — which flips to `unarchive` when the open session is
+  archived — and `delete` last, separated by a rule). `duplicate` forks the
+  session (same `cwd` + history) and immediately opens the copy. Archiving hides the session from
   the default sidebar list (see **Sidebar**); the toggle is reflected in the
   open session's state immediately. The summary is `flex-1 min-w-0 truncate`,
   so on narrow viewports it truncates to one line instead of pushing the
@@ -274,9 +275,10 @@ primary interface — the UI is just one client of it.
   `/`, the command (lowercased, first whitespace-delimited token) is dispatched
   by `runCommand()`; otherwise it is a normal message. The commands map 1:1 to
   the §7.5 control endpoints and reuse the existing handlers (no new endpoint):
-  `/stop`, `/retry`, `/init`, `/compact`, `/clear`, `/clear-tools`, `/undo` →
+  `/stop`, `/retry`, `/init`, `/compact`, `/clear`, `/clear-tools`, `/undo`,
+  `/duplicate` →
   the matching `POST /sessions/:id/…` (`/undo` restores the popped message into
-  the composer). A command is parsed **before** the running no-op guard, so
+  the composer; `/duplicate` opens the new fork). A command is parsed **before** the running no-op guard, so
   `/stop` and the implicit-stop commands (`/undo`, `/clear`, `/clear-tools`)
   work while a run is in flight; plain messages still no-op while running
   (type-ahead preserved). The command text is cleared on a recognized command
@@ -285,7 +287,7 @@ primary interface — the UI is just one client of it.
   headless equivalent — `/exit`/`/quit`, `/save`/`/load`, `/continue`, `/sudo` —
   are intentionally not ported.
 - **Controls** — the session actions live in the `⋮` dropdown in the unified
-  header (see **Header**), in three logical groups (`delete` last, separated
+  header (see **Header**), in four logical groups (`delete` last, separated
   by a thin rule):
   - **Agent actions**: `retry`, `init` — fire-and-forget (202),
     start the loop.
@@ -294,6 +296,11 @@ primary interface — the UI is just one client of it.
     snapshot after the call. `undo` restores the popped user message into the
     composer (from the response's `undone` field) and returns focus to it, so
     you can edit and re-send.
+  - **Forking**: `duplicate` — `POST …/duplicate` creates a fork (same
+    `cwd` + history, copied verbatim unless the running source ends with
+    pending `tool_calls`, in which case the dangling tail is stripped; 201)
+    and immediately **selects the copy**, so the diverging conversation can
+    start right away — the source stays open in the sidebar.
   - **Destructive**: `delete` (with `confirm()`).
   Plus the composer: send (`POST …/messages`) and `stop`. The header's model
   `<select>` additionally drives `POST /sessions/:id/model` (switch a session's

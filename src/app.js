@@ -148,6 +148,14 @@ export const buildApp = ({ manager, config, llm }) => {
     res.json({ id: s.id, model: s.model });
   });
 
+  // Fork the session: a new session with the same cwd/model and a deep copy of
+  // the transcript (rolled back to the last user turn). Allowed while the
+  // source is running — the copy is independent. Returns the new session.
+  app.post('/sessions/:id/duplicate', (req, res) => {
+    const s = manager.duplicate(req.params.id);
+    res.status(201).json(s.detail());
+  });
+
   // --- 7.6 Events (SSE) -----------------------------------------------------
   app.get('/sessions/:id/events', (req, res) => {
     const s = manager.require(req.params.id);

@@ -14,6 +14,7 @@ const ACTIONS = [
   { key: 'undo', label: 'undo', title: 'pop the last message' },
   { key: 'clear-tools', label: 'clear-tools', title: 'remove all tool results from history' },
   { key: 'clear', label: 'clear', title: 'reset history to the system prompt' },
+  { key: 'duplicate', label: 'duplicate', title: 'fork into a new session with the same cwd and history' },
   { key: 'archive',
     label: (archived) => (archived ? 'unarchive' : 'archive'),
     title: (archived) => (archived ? 'restore to the default session list' : 'hide from the default session list (kept for later)') },

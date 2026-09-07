@@ -214,6 +214,11 @@ const App = () => {
         const r = await post(`/sessions/${current}/${name}`);
         setView((v) => (v ? { ...v, archived: r.archived } : v));
         refreshSessions();
+      } else if (name === 'duplicate') {
+        // fork: the server returns the new session; jump to it so the branch
+        // can continue immediately (the source stays open in the sidebar).
+        const r = await post(`/sessions/${current}/duplicate`);
+        await select(r.id);
       } else {
         // agent actions (retry/init/compact): fire-and-forget; SSE streams the rest.
         await post(`/sessions/${current}/${name}`);
@@ -237,6 +242,7 @@ const App = () => {
       case 'compact': setInput(''); void handleAction('compact'); return;
       case 'clear': setInput(''); void handleAction('clear'); return;
       case 'clear-tools': setInput(''); void handleAction('clear-tools'); return;
+      case 'duplicate': setInput(''); void handleAction('duplicate'); return;
       default: flashMsg(`unknown command: /${name}`);
     }
   };

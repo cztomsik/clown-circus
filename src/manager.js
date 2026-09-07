@@ -64,6 +64,38 @@ export class SessionManager {
     return s;
   }
 
+  // Fork a session: a new session with the same cwd/model/archived, fresh
+  // id/timestamps, last_error cleared, and a deep copy of the transcript
+  // (the JSON round-trip in the row makes the copy fully independent of the
+  // source's message array). Allowed while the source is running: if the
+  // copy ends mid-turn (an assistant tool_calls whose tool results have not
+  // all arrived yet — an invalid LLM transcript), settle() strips that
+  // message and its partial results; completed transcripts are copied verbatim.
+  duplicate(id) {
+    const src = this.require(id);
+    if (this.config.maxSessions && this.sessions.size >= this.config.maxSessions)
+      throw new HttpError(400, 'bad_request', `max sessions (${this.config.maxSessions}) reached`);
+
+    const now = new Date().toISOString();
+    const row = {
+      id: randomUUID(),
+      cwd: src.cwd,
+      model: src.model,
+      status: 'idle',
+      created_at: now,
+      last_activity: now,
+      last_error: null,
+      snapshot: JSON.stringify(src.snapshot()), // JSON round-trip → deep copy
+      archived: src.archived,
+    };
+    const s = new Session({ row, ...this._opts() });
+    s.settle(); // a running source may end with pending tool_calls
+    s.persist();
+    this.sessions.set(s.id, s);
+    this._track(s);
+    return s;
+  }
+
   // `includeArchived` (default false): when true, archived sessions are included
   // in the result; when false, only non-archived sessions are returned. Mirrors
   // the `?archived` flag on `GET /sessions`.
