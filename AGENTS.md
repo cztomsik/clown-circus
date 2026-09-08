@@ -28,7 +28,7 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 
 | File | Purpose |
 |------|---------|
-| `src/main.js` | Bootstrap: parse config → open DB → build LLM client + tools → create SessionManager → build Express app → listen + SIGINT/SIGTERM shutdown. |
+| `src/main.js` | Bootstrap: wire the import-time config/db/llm/tools singletons → create SessionManager → build Express app → listen + SIGINT/SIGTERM shutdown. |
 | `src/config.js` | Resolve config from CLI flags with env fallbacks, then defaults (`port`, `host`, `dbFile`, `baseUrl`, `model`, `timeoutMs`, `maxSessions`, `verbose`, `autoTruncate`, `truncateGap`, `truncateBytes`). |
 | `src/app.js` | Express app factory: all REST routes, the SSE endpoint, 404 fallback, and the error-mapping middleware. |
 | `src/db.js` | Thin `node:sqlite` wrapper: opens/migrates the DB (idempotent DDL + `user_version`) and exposes the helpers the manager/session use — `upsert`, `all` (startup load), `deleteRow`, `close`. Listing + project grouping are done in memory by the manager, not in SQL. |
@@ -37,7 +37,7 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 | `src/loop.js` | `runLoop` — the agent loop (port of `workerInner`): `next()` → execute tool calls → emit snapshot → repeat; converts every outcome to a terminal status and never throws. |
 | `src/llm.js` | OpenAI-compatible chat client: `chat()` + `listModels()`. Distinguishes stop-abort from timeout (504) / network-HTTP (502) via `LlmError.kind`. |
 | `src/prompt.js` | `buildSystemPrompt(cwd)`: `PREFIX.md` + `AGENTS.md`→`CLOWN.md` fallback (1MB cap) + date + realpath (port of `loadSystemPrompt`). |
-| `src/tools.js` | All tools + `buildTools()`/`toolSchemas()`. Relative paths resolve against the session cwd (no path sandbox). |
+| `src/tools.js` | All tools + `tools`/`toolSchemas` singletons. Relative paths resolve against the session cwd (no path sandbox). |
 | `src/errors.js` | `HttpError` + `mapError()` (thrown errors → the §7.7 status/code table). Small module added to keep the import graph cycle-free. |
 | `src/PREFIX.md` | Base system prompt with guidelines (copied verbatim from the source). |
 | `src/skills/init.md` | Built-in `/init` skill (copied from the source): explore the project and write an `AGENTS.md`. |

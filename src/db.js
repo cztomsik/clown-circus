@@ -1,13 +1,14 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { config } from './config.js';
 
 const SCHEMA_VERSION = 2;
 
 // Open (creating parents if needed) the SQLite file, run idempotent DDL and
 // versioned migrations, and return a small query-helper object. The
 // `snapshot` column is a JSON string.
-export const openDb = (dbFile) => {
+const openDb = (dbFile) => {
   mkdirSync(dirname(dbFile), { recursive: true });
   const db = new DatabaseSync(dbFile);
 
@@ -58,3 +59,6 @@ export const openDb = (dbFile) => {
 
   return { close: () => db.close(), upsert, all, deleteRow };
 };
+
+// One connection for the whole process — opened (and migrated) at import time.
+export const db = openDb(config.dbFile);

@@ -114,7 +114,7 @@ const loadSkill = async (ctx, args) => {
 
 // --- Registration -----------------------------------------------------------
 
-export const buildTools = () =>
+const buildTools = () =>
   new Map([
     tool('read_file', 'Read the contents of a file',
       obj({ path: S(), raw: B() }, ['path']), readFile),
@@ -131,8 +131,12 @@ export const buildTools = () =>
   ].map((t) => [t.name, t]));
 
 // OpenAI `tools` array for the LLM, derived from a registry.
-export const toolSchemas = (registry) =>
+const schemasOf = (registry) =>
   [...registry.values()].map((t) => ({
     type: 'function',
     function: { name: t.name, description: t.description, parameters: t.parameters },
   }));
+
+// One tool registry (and its OpenAI schemas) for the whole process.
+export const tools = buildTools();
+export const toolSchemas = schemasOf(tools);

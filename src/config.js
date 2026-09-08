@@ -32,7 +32,7 @@ const bool = (f, name, env, dflt) => {
 };
 
 // Resolve config from CLI flags with env fallbacks, then defaults.
-export const loadConfig = (argv = process.argv) => {
+const loadConfig = (argv = process.argv) => {
   const f = parseFlags(argv);
   const env = process.env;
 
@@ -53,3 +53,6 @@ export const loadConfig = (argv = process.argv) => {
     truncateBytes: num(f['truncate-bytes'], env.CLOWN_TRUNC_BYTES ?? 256),
   };
 };
+
+// One config for the whole process — resolved from CLI flags/env/defaults at import time.
+export const config = loadConfig();

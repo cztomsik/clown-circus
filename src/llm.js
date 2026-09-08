@@ -8,6 +8,8 @@
 // own timeoutMs (-> LlmError 'timeout') or a user stop (-> 'aborted') can end
 // a request.
 
+import { config } from './config.js';
+
 // Disables undici's 300s headers/body timeouts on the builtin global
 // dispatcher, so only our own AbortController (timeout + stop) can end a
 // request. The dispatcher is lazily created by the first fetch — `data:`
@@ -36,7 +38,7 @@ export class LlmError extends Error {
   }
 }
 
-export const createLlm = (config) => {
+const createLlm = () => {
   patchGlobalDispatcher();
 
   const headers = () => {
@@ -103,3 +105,7 @@ export const createLlm = (config) => {
 
   return { chat, listModels };
 };
+
+// One client for the whole process — created at import time (this is what
+// patches the global fetch dispatcher).
+export const llm = createLlm();
