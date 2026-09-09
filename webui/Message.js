@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect, useLayoutEffect } from 'preact/hooks';
 import { html, PRE } from './ui.js';
-import { prettyArgs, parseArgs } from './util.js';
+import { prettyArgs, parseArgs, reasoningText } from './util.js';
 import { ToolCall, toolCallTitle } from './toolcall.js';
 import { Markdown } from './md.js';
 
@@ -65,9 +65,9 @@ const ToolPair = ({ tc, result }) => {
     </details>`;
 };
 
-// The model's chain-of-thought, when the provider emits `reasoning_content`
-// on an assistant turn. Rendered collapsed + dim/italic so it reads as
-// secondary to the visible response; the label mirrors the field name.
+// The model's chain-of-thought, when the provider emits reasoning on an
+// assistant turn (llama.cpp: `reasoning_content`, vLLM: `reasoning`). Rendered
+// collapsed + dim/italic so it reads as secondary to the visible response.
 const Reasoning = ({ text }) => html`
   <details class="border-l-2 border-line bg-panel/40 rounded-r-md">
     <summary class="py-1 px-2.5 text-dim/70 text-xs italic cursor-pointer select-none">reasoning</summary>
@@ -75,12 +75,15 @@ const Reasoning = ({ text }) => html`
   </details>`;
 
 // Assistant turn: optional reasoning + text, followed by its tool-call pairs.
-const AssistantBlock = ({ m, pairs }) => html`
-  <div>
-    ${m.reasoning_content ? html`<${Reasoning} text=${m.reasoning_content} />` : null}
-    ${m.content ? html`<${Markdown} text=${m.content} />` : null}
-    ${pairs.map((p, i) => html`<${ToolPair} key=${p.tc.id ?? i} tc=${p.tc} result=${p.result} />`)}
-  </div>`;
+const AssistantBlock = ({ m, pairs }) => {
+  const r = reasoningText(m);
+  return html`
+    <div>
+      ${r ? html`<${Reasoning} text=${r} />` : null}
+      ${m.content ? html`<${Markdown} text=${m.content} />` : null}
+      ${pairs.map((p, i) => html`<${ToolPair} key=${p.tc.id ?? i} tc=${p.tc} result=${p.result} />`)}
+    </div>`;
+};
 
 // Roles are distinguished by colour / weight / tint instead of boxed cards:
 // user = accent amber on a faint amber wash, assistant = plain ink (tool calls
@@ -106,9 +109,10 @@ const Message = ({ m }) => {
   const isUser = m.role === 'user';
   const content = m.content;
   const cls = isUser ? 'font-medium text-accent' : undefined;
+  const r = reasoningText(m);
   return html`
     <div class=${isUser ? 'border-l-2 border-accent bg-accent/10 rounded-r-md pl-3 pr-2 py-1.5' : ''}>
-      ${m.reasoning_content ? html`<${Reasoning} text=${m.reasoning_content} />` : null}
+      ${r ? html`<${Reasoning} text=${r} />` : null}
       ${Array.isArray(content)
         ? content.map((part, i) => part.type === 'text'
             ? html`<${Markdown} key=${i} text=${part.text} cls=${cls} />`

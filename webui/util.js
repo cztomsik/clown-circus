@@ -17,6 +17,12 @@ export const parseCommand = (text) => {
 // Normalise a /models entry ({id} | {name} | "id") to a plain id string.
 export const modelId = (m) => m?.id ?? m?.name ?? m;
 
+// The assistant chain-of-thought, whichever field the provider used (llama.cpp
+// emits `reasoning_content`, vLLM emits `reasoning`). The wire and DB keep the
+// provider's raw field verbatim — each message round-trips to the provider that
+// made it — so only the display normalises here. Null when absent.
+export const reasoningText = (m) => m?.reasoning_content ?? m?.reasoning ?? null;
+
 export const timeAgo = (iso) => {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
   if (s < 60) return `${Math.floor(s)}s ago`;
