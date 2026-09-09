@@ -65,8 +65,8 @@ primary interface — the UI is just one client of it.
   and returns a `close()` used as the effect cleanup.
 - **`webui/Header.js`** — the **unified top bar**: sidebar toggle, brand, the
   session status badge + live summary (or the live config summary when no
-  session is open), a **model `<select>`** (context-aware — seeds new sessions
-  or switches the open session's model; see **Header**), a `⋮` dropdown holding
+  session is open), a **model `<select>`** (client-side: picks the model for
+  the next send; see **Header**), a `⋮` dropdown holding
   the session actions, and the theme toggle. All of this shares one row, so it
   stays compact on mobile.
 - **`webui/Sidebar.js`** — `Sidebar` + `SessionList`/`SessionItem`: the
@@ -183,7 +183,7 @@ primary interface — the UI is just one client of it.
   sidebar-toggle button, the `clown-circus` brand (hidden below `sm` to save
   room), then either the **session** status badge + live summary
   (`cwd · N tok`, when a session is open) or the **config** summary
-  (`base_url · default model · db file`, when none is), then the **model
+  (`base_url · db file`, when none is), then the **model
   `<select>`**, then the theme toggle. When a session is open, a `⋮` button
   (between the summary and the model select) opens a dropdown of the session
   **actions** (`retry`, `init`, `compact`, `undo`, `clear-tools`, `clear`,
@@ -196,15 +196,19 @@ primary interface — the UI is just one client of it.
   buttons off-screen. The menu closes on outside-tap (a full-viewport backdrop),
   on Escape, or when the selected session changes.
 
-  The **model `<select>`** is context-aware:
-  - **Session open** — mirrors and controls that session's model. Populated
-    from `GET /models` (the default model is the plain `default` option,
-    value `""`); seeded to the session's model on `select()`; changing
-    it calls `POST /sessions/:id/model` to switch the live session (allowed
-    mid-run — the new model takes effect from the next LLM turn).
-  - **No session** — inert state that seeds the model for the next
-    `POST /sessions` (the sidebar new-session form no longer carries a model
-    picker).
+  The **model `<select>`** is pure client state — it picks the model for the
+  *next* send. Populated from `GET /models`; there is no "default" option,
+  the server has no default model of its own. Whenever the list is non-empty
+  the select **always points at a real model**: pre-filled from the open
+  session's **last-used model** on `select()` (the value the server persisted
+  from the previous send), and when that value has no matching option (stale
+  — removed from the backend) or nothing is selected yet, it falls back to
+  the **first model in the list**. The selected model is sent in the body of
+  every `POST …/messages` (required field) and of `POST /sessions`, where
+  the server pins it for the whole run and persists it as the session's
+  last-used model. Only when `/models` is empty (LLM unreachable) can the
+  select be valueless — creating a session and sending then flash
+  "no models available".
 - **Sidebar toggle (responsive)** — the `☰` button shows/hides the sidebar.
   The initial state follows the viewport: **open** at ≥ 768px, **collapsed**
   below it (auto-collapsed on mobile). At ≥ 768px the sidebar is an in-flow
@@ -325,9 +329,9 @@ primary interface — the UI is just one client of it.
     and immediately **selects the copy**, so the diverging conversation can
     start right away — the source stays open in the sidebar.
   - **Destructive**: `delete` (with `confirm()`).
-  Plus the composer: send (`POST …/messages`) and `stop`. The header's model
-  `<select>` additionally drives `POST /sessions/:id/model` (switch a session's
-  model; see **Header**). All endpoints are from SPEC §7.5.
+  Plus the composer: send (`POST …/messages`, with the model `<select>`'s
+  value as the required `model` body field — see **Header**) and `stop`. All
+  control endpoints are from SPEC §7.5.
 - **Theme toggle** — a compact icon button in the `Header` (top-right)
   switches the `--color-*` palette between the default dark and the light
   theme by setting `data-theme` on `<html>`; the icon shows the theme it

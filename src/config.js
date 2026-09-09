@@ -44,7 +44,6 @@ const loadConfig = (argv = process.argv) => {
     dbFile,
     baseUrl: str(f['base-url'], env.CLOWN_API ?? 'http://127.0.0.1:8080').replace(/\/+$/, ''),
     apiKey: env.CLOWN_API_KEY ?? null,
-    model: str(f.model, env.DEFAULT_MODEL ?? 'default'),
     timeoutMs: num(f.timeout, env.CLOWN_TIMEOUT_MS ?? 900000),
     verbose: f.verbose === true || str(f.verbose, '') === 'true',
     autoTruncate: bool(f, 'trunc', env.CLOWN_TRUNC, true),

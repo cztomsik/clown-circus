@@ -193,7 +193,7 @@ Overridable via `--db-file`/`DB_FILE`. Created/migrated on startup
 CREATE TABLE IF NOT EXISTS sessions (
   id            TEXT PRIMARY KEY,               -- UUIDv4
   cwd           TEXT NOT NULL,                  -- absolute working directory
-  model         TEXT NOT NULL DEFAULT 'default',
+  model         TEXT NOT NULL,                    -- last model used (set on send); the web UI pre-fills its picker from it
   status        TEXT NOT NULL DEFAULT 'idle',   -- idle | running | error | stopped
   created_at    TEXT NOT NULL,                  -- ISO 8601
   last_activity TEXT NOT NULL,                  -- ISO 8601
@@ -234,8 +234,8 @@ snapshot; the raw `messages` are not included in list responses):
 
 ## 6. Session Lifecycle
 
-1. **Created** via `POST /sessions` with a `cwd` (required path) and optional
-   `model`. A row is inserted into SQLite and the session is loaded into memory.
+1. **Created** via `POST /sessions` with a `cwd` and a `model` (both required).
+   A row is inserted into SQLite and the session is loaded into memory.
    Status `idle`.
 2. **Running** when an agentic loop is active (after a message/retry/compact).
    Every state change is upserted to SQLite.
@@ -282,7 +282,7 @@ endpoint and the static web UI (§7.8). Errors use `4xx`/`5xx` with
 |--------|-----------------|-------------|
 | `GET`  | `/health`       | Liveness probe → `{ "ok": true, "sessions": <n> }` |
 | `GET`  | `/models`       | Proxy `GET /v1/models` to the LLM (analog of `/models` command) |
-| `GET`  | `/config`       | Read-only effective server config (base_url, db_file, defaults) |
+| `GET`  | `/config`       | Read-only effective server config (base_url, db_file, timeouts, truncation) |
 
 ### 7.2 Sessions
 
@@ -302,22 +302,26 @@ endpoint and the static web UI (§7.8). Errors use `4xx`/`5xx` with
   - absent, `"false"`, or `"0"` → **non-archived only** (the default)
 - `400` if `cwd` is supplied but empty.
 
-`POST /sessions` body (`cwd` required, the rest optional):
+`POST /sessions` body (`cwd` and `model` required):
 
 ```json
 {
   "cwd": "/abs/path/to/project",
-  "model": "default"
+  "model": "llama-3"
 }
 ```
 
 - `cwd` is a filesystem path used as the session's working directory. It is
   normalized to an **absolute** path (resolved against the server process cwd if
   relative) and stored in that form.
-- `model` — LLM model name, default from config (`default`). Change a session's
-  model after creation via `POST /sessions/:id/model` (§7.5).
+- `model` — the LLM model to run (non-empty string). It is stored as the
+  session's **last-used model**: each `POST /sessions/:id/messages` (§7.4)
+  specifies the model for its run and the value is persisted — the web UI
+  pre-fills its model picker from it, and `retry`/`init`/`compact` reuse it.
+  There is no server-side default: the client always says which model to use.
 - `201` on success, returning the created session (meta + snapshot).
-- `400` if `cwd` is missing; `500` if the `cwd` path is not a directory.
+- `400` if `cwd` or `model` is missing; `500` if the `cwd` path is not a
+  directory.
 
 `GET /sessions/:id` response:
 
@@ -325,7 +329,7 @@ endpoint and the static web UI (§7.8). Errors use `4xx`/`5xx` with
 {
   "id": "...",
   "cwd": "/abs/path",
-  "model": "default",
+  "model": "llama-3",
   "status": "idle",
   "created_at": "2026-09-02T12:00:00.000Z",
   "last_activity": "2026-09-02T12:05:00.000Z",
@@ -366,13 +370,17 @@ Clients use this to build a project sidebar; selecting one is equivalent to
 |--------|---------------------------------|-------------|
 | `POST` | `/sessions/:id/messages`        | Append a user message and start the agent loop |
 
-Body: `{ "message": "help me fix the tests" }` or
+Body: `{ "message": "help me fix the tests", "model": "llama-3" }` or
 `{ "message": [{"type":"text","text":"describe this"},{"type":"image_url","image_url":{"url":"data:image/png;base64,…"}}] }`.
 
 - `message` is a **non-empty string** (text-only, the common case) or a
   **non-empty `ContentPart[]`** (multimodal; OpenAI content-parts shape).
   Image data is carried as base64 data-URLs inside the JSON body (no multipart
   upload). The JSON body limit is **25 MB** to accommodate a few capped images.
+- `model` is **required**: the model to run this send on (non-empty string;
+  `400` `bad_request` if missing or empty). It is pinned for the whole run and
+  persisted as the session's last-used model (the value the web UI pre-fills
+  its picker from; `retry`/`init`/`compact` reuse it).
 - `202 Accepted` immediately: `{ "id", "status": "running" }`. The run is
   asynchronous; progress is delivered over the SSE stream (§8) and reflected in
   `GET /sessions/:id`.
@@ -394,19 +402,16 @@ All of these operate on a single session and map 1:1 to the original commands in
 | `POST` | `/sessions/:id/clear-tools`| `/clear-tools` | Stop + drop all `role=tool` messages, keep system/user/assistant. `200`. |
 | `POST` | `/sessions/:id/compact`    | `/compact`     | Run the two-phase summarize-then-replace compaction (as in the source). `202` (starts a run). |
 | `POST` | `/sessions/:id/init`       | `/init`        | Convenience: send the prompt that triggers the built-in `init` skill ("Could you /init this project?"). `202`. |
-| `POST` | `/sessions/:id/model`      | —              | Switch the session's model. Body `{ "model": "..." }`. `200` `{ "id", "model" }`; `400` if `model` is missing or empty. Allowed while running — the loop reads the session model on every turn, so it takes effect from the next LLM call. |
 | `POST` | `/sessions/:id/duplicate`  | —              | Fork the session into a new one: same `cwd`, `model`, and archived flag; fresh id/timestamps; `last_error` cleared; a **deep copy** of the transcript (independent of the source). If the source is running and the copy ends mid-turn (an assistant `tool_calls` whose tool results have not all arrived yet — an invalid LLM transcript), that message and its partial results are stripped; a completed transcript is copied verbatim. Allowed while the source is running. `201`, returning the new session (meta + snapshot). `404` if the source is unknown. |
 | `POST` | `/sessions/:id/archive`    | —              | Mark the session as archived: kept in the DB but hidden from the default `GET /sessions` list and `/projects` counts. No body. `200` `{ "id", "archived": true }`. |
 | `POST` | `/sessions/:id/unarchive`  | —              | Restore an archived session to the default list. No body. `200` `{ "id", "archived": false }`. |
 
 Rules common to the run-starting controls (`retry`, `compact`,
 `init`, `messages`): reject with `409` if `running` is already true. Only
-`stop`, the `model` switch, and the `archive`/`unarchive` flags are allowed
-while running; the model switch takes effect from the next LLM turn (no
-stop/restart required), the archive flags are metadata-only edits that
-never touch the conversation, and `duplicate` deep-copies the transcript
-into an independent session (the source is never touched, even while it
-runs).
+`stop` and the `archive`/`unarchive` flags are allowed while running —
+metadata-only edits that never touch the conversation — and `duplicate`
+deep-copies the transcript into an independent session (the source is never
+touched, even while it runs).
 
 `undo`/`clear`/`clear-tools` are synchronous state edits; if a run is in
 progress they implicitly `stop` first (matching the original, which calls
@@ -452,8 +457,8 @@ Event types (SSE `event:` field):
 
 | HTTP | `code`            | Meaning |
 |------|-------------------|---------|
-| `400`| `bad_request`     | Malformed body / missing `cwd` / empty `cwd` filter |
-| `404`| `not_found`       | Unknown session id, unknown model |
+| `400`| `bad_request`     | Malformed body / missing `cwd` or `model` / empty `cwd` filter |
+| `404`| `not_found`       | Unknown session id |
 | `409`| `session_busy`    | Run-starting call while `running` is true |
 | `500`| `internal`        | Unhandled server error (incl. DB errors) |
 | `502`| `llm_unavailable` | The LLM endpoint is unreachable / returns an error |
@@ -607,7 +612,6 @@ Via CLI flags and/or environment variables, resolved at startup into a
 | `--host` / `HOST`          | `HOST`           | `127.0.0.1`              | Bind address (localhost default for safety) |
 | `--db-file` / `DB_FILE`    | `DB_FILE`        | `~/.clowndb`             | Path to the SQLite database file |
 | `--base-url` / `CLOWN_API` | `CLOWN_API`      | `http://127.0.0.1:8080`  | LLM OpenAI-compatible base URL (kept from source) |
-| `--model` / `DEFAULT_MODEL`| `DEFAULT_MODEL`  | `default`                | Default LLM model for new sessions |
 | `--timeout` / `CLOWN_TIMEOUT_MS` | `CLOWN_TIMEOUT_MS` | `900000` (15 min)      | Per-LLM-request timeout (matches source's `15*60`) |
 | `--trunc` / `--no-trunc` · `CLOWN_TRUNC` | `CLOWN_TRUNC` | `true`                 | Master on/off for auto-truncation (on by default; `--no-trunc` disables) |
 | `--truncate-gap` / `CLOWN_TRUNC_GAP`    | `CLOWN_TRUNC_GAP`  | `100000` (bytes)         | Run a truncation pass once the *history gap* (bytes before the latest user turn, system prompt excluded) exceeds this |

@@ -12,7 +12,7 @@ const main = () => {
 
   const server = app.listen(config.port, config.host, () => {
     log(`clown-circus listening on http://${config.host}:${config.port}`);
-    log(`db: ${config.dbFile} | llm: ${config.baseUrl} | model: ${config.model}`);
+    log(`db: ${config.dbFile} | llm: ${config.baseUrl}`);
     log(`sessions: ${manager.sessions.size}`);
   });
 

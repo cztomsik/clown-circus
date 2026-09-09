@@ -18,7 +18,7 @@ const openDb = (dbFile) => {
     CREATE TABLE IF NOT EXISTS sessions (
       id            TEXT PRIMARY KEY,
       cwd           TEXT NOT NULL,
-      model         TEXT NOT NULL DEFAULT 'default',
+      model         TEXT NOT NULL,
       status        TEXT NOT NULL DEFAULT 'idle',
       created_at    TEXT NOT NULL,
       last_activity TEXT NOT NULL,

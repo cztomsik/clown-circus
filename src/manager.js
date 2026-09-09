@@ -39,7 +39,7 @@ export class SessionManager {
     const row = {
       id: randomUUID(),
       cwd,
-      model: model ?? config.model,
+      model,
       status: 'idle',
       created_at: now,
       last_activity: now,

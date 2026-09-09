@@ -35,7 +35,7 @@ export class Session {
   constructor({ row }) {
     this.id = row.id;
     this.cwd = row.cwd;
-    this.model = row.model ?? config.model;
+    this.model = row.model;
     this.status = row.status ?? 'idle';
     this.createdAt = row.created_at ?? new Date().toISOString();
     this.lastActivity = row.last_activity ?? this.createdAt;
@@ -261,8 +261,16 @@ export class Session {
   }
 
   // Append a user message and start the loop (fire-and-forget; the caller gets 202).
-  send(text) {
+  // `model` (optional) is the model the client wants for this run: it is pinned
+  // for the whole run and persisted as the session's "last used" model, which is
+  // what the web UI pre-fills the picker from (and what retry/init/compact reuse).
+  send(text, model) {
     this.assertIdle();
+    if (model) {
+      this.model = model;
+      this.touch();
+      this.persist();
+    }
     this.appendUser(text);
     void runLoop(this);
   }
@@ -336,18 +344,9 @@ export class Session {
     this.persist();
   }
 
-  // Switch the session's model. Allowed while running: the loop reads
-  // this.model on every turn (see next()), so the change takes effect from the
-  // next LLM call — no stop/restart required.
-  setModel(model) {
-    this.model = model;
-    this.touch();
-    this.persist();
-  }
-
-  // Flag the session as archived (or not). Like the model switch, this is a
-  // metadata-only edit: allowed while running, it never touches the
-  // conversation. Archived sessions persist but are hidden from the default
+  // Flag the session as archived (or not). A metadata-only edit: allowed while
+  // running, it never touches the conversation. Archived sessions persist but
+  // are hidden from the default
   // `GET /sessions` list.
   setArchived(archived) {
     this.archived = !!archived;

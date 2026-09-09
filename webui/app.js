@@ -27,7 +27,6 @@ const uid = () =>
 // ── root component (owns all state + side effects) ───────────────────
 const App = () => {
   const [cfg, setCfg] = useState('loading…');
-  const [defaultModel, setDefaultModel] = useState(null);
   const [models, setModels] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [current, setCurrent] = useState(null);
@@ -35,7 +34,9 @@ const App = () => {
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState([]);
   const [newCwd, setNewCwd] = useState('');
-  const [model, setModel] = useState(''); // header select: '' = the default model
+  // Header select; kept pointing at a real model whenever /models returned
+  // anything (see the effect below) — only '' when the list is empty.
+  const [model, setModel] = useState('');
   const [flash, setFlash] = useState(null);
   const flashTimer = useRef(null);
   const [visionModels, setVisionModels] = useState(new Set());
@@ -67,17 +68,14 @@ const App = () => {
   useEffect(() => {
     let timer;
     (async () => {
-      let def = null;
       try {
         const c = await api('/config');
-        def = c.default_model;
-        setDefaultModel(def);
-        setCfg(`${c.base_url} · default model: ${c.default_model} · db: ${c.db_file}`);
+        setCfg(`${c.base_url} · db: ${c.db_file}`);
       } catch { setCfg(''); }
       try {
         const { data } = await api('/models');
         const list = data ?? [];
-        setModels(list.map(modelId).filter(Boolean).filter((m) => m !== def));
+        setModels(list.map(modelId).filter(Boolean));
         const known = new Set();
         const vision = new Set();
         for (const m of list) {
@@ -94,6 +92,14 @@ const App = () => {
     timer = setInterval(refreshSessions, 10000);
     return () => { clearInterval(timer); clearTimeout(flashTimer.current); };
   }, []);
+
+  // The select always points at a model that exists in the list whenever one
+  // is known: pre-fills from the open session's last-used model (select()),
+  // and falls back to the first model when that value has no matching option
+  // (stale — removed from the backend) or nothing is selected yet.
+  useEffect(() => {
+    if (models.length && !models.includes(model)) setModel(models[0]);
+  }, [models, model]);
 
   // theme: reflect to <html data-theme> and persist so it survives reloads.
   useEffect(() => {
@@ -163,7 +169,7 @@ const App = () => {
         archived: d.archived,
       });
       setNewCwd(d.cwd);
-      setModel(d.model === defaultModel ? '' : d.model); // sync the select to the session
+      setModel(d.model); // pre-fill the select (the effect drops stale values)
     } catch (err) {
       flashMsg(err.message);
       setCurrent(null);
@@ -172,28 +178,18 @@ const App = () => {
   };
 
   const onNew = async (cwd) => {
+    if (!model) { flashMsg('no models available — check the LLM endpoint'); return; }
     try {
-      const s = await post('/sessions', model ? { cwd, model } : { cwd });
+      const s = await post('/sessions', { cwd, model });
       await refreshSessions();
       await select(s.id);
     } catch (err) { flashMsg(err.message); }
   };
 
-  // The header model select is context-aware: with a session open it switches
-  // that session's model; with none open it just seeds the next new session.
-  const onModelChange = async (v) => {
-    const prev = model;
-    setModel(v);
-    if (!current) return;
-    const target = v || defaultModel;
-    try {
-      const r = await post(`/sessions/${current}/model`, { model: target });
-      setView((w) => (w ? { ...w, model: r.model ?? target } : w));
-    } catch (err) {
-      flashMsg(err.message);
-      setModel(prev); // revert on failure
-    }
-  };
+  // Pure client state: the select picks the model for the *next send* (sent
+  // with the messages POST). With a session open it's pre-filled from that
+  // session's last-used model; with none open it also seeds new sessions.
+  const onModelChange = (v) => setModel(v);
 
   const handleAction = async (name) => {
     if (!current) return;
@@ -291,7 +287,8 @@ const App = () => {
       } else {
         message = text;
       }
-      await post(`/sessions/${current}/messages`, { message });
+      if (!model) { flashMsg('no models available — check the LLM endpoint'); setInput(text); setAttachments(savedAttachments); return; }
+      await post(`/sessions/${current}/messages`, { message, model });
     } catch (err) { flashMsg(err.message); setInput(text); setAttachments(savedAttachments); }
   };
 

@@ -37,7 +37,6 @@ export const buildApp = ({ manager }) => {
     res.json({
       base_url: config.baseUrl,
       db_file: config.dbFile,
-      default_model: config.model,
       timeout_ms: config.timeoutMs,
       host: config.host,
       port: config.port,
@@ -74,7 +73,10 @@ export const buildApp = ({ manager }) => {
     }
     if (!st.isDirectory()) throw new HttpError(500, 'internal', `cwd is not a directory: ${abs}`);
 
-    const s = manager.create({ cwd: abs, model: body.model });
+    const model = body.model;
+    if (typeof model !== 'string' || model === '')
+      throw new HttpError(400, 'bad_request', 'model is required');
+    const s = manager.create({ cwd: abs, model });
     res.status(201).json(s.detail());
   });
 
@@ -97,7 +99,10 @@ export const buildApp = ({ manager }) => {
       (Array.isArray(message) && message.length > 0);
     if (!valid)
       throw new HttpError(400, 'bad_request', 'message must be a non-empty string or a non-empty ContentPart[]');
-    s.send(message); // throws 409 if busy
+    const model = req.body?.model;
+    if (typeof model !== 'string' || model === '')
+      throw new HttpError(400, 'bad_request', 'model is required');
+    s.send(message, model); // throws 409 if busy
     res.status(202).json({ id: s.id, status: 'running' });
   });
 
@@ -149,16 +154,6 @@ export const buildApp = ({ manager }) => {
     s.setArchived(false);
     res.json({ id: s.id, archived: false });
   }));
-
-  // Set the session's model. Allowed while running (takes effect next turn).
-  app.post('/sessions/:id/model', (req, res) => {
-    const s = manager.require(req.params.id);
-    const model = req.body?.model;
-    if (typeof model !== 'string' || model === '')
-      throw new HttpError(400, 'bad_request', 'model is required');
-    s.setModel(model);
-    res.json({ id: s.id, model: s.model });
-  });
 
   // Fork the session: a new session with the same cwd/model and a deep copy of
   // the transcript (rolled back to the last user turn). Allowed while the
