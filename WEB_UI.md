@@ -122,11 +122,13 @@ primary interface — the UI is just one client of it.
   selected). The session status/actions no longer live here — they moved into
   the unified `Header`.
 - **`webui/util.js`** — a small module of pure, dependency-free helpers
-  (`baseName`, `parseCommand`, `modelId`, `timeAgo`, `prettyArgs`,
-  `parseArgs`, `parseTodos`, `extractTodos`), exported by
+  (`baseName`, `parseCommand`, `modelId`, `reasoningText`, `timeAgo`,
+  `prettyArgs`, `parseArgs`, `parseTodos`, `extractTodos`), exported by
   name and pulled in with `import { … } from './util.js'`. `parseCommand(text)`
   parses a composer `/cmd [arg]` line (returns `null` for a plain message), and
-  `modelId(m)` normalises a `/models` entry to a plain id. `extractTodos(messages)`
+  `modelId(m)` normalises a `/models` entry to a plain id. `reasoningText(m)`
+  reads the assistant chain-of-thought from whichever field the provider used
+  (`reasoning_content` or `reasoning`). `extractTodos(messages)`
   derives the todo markdown from the last `write_todos` tool call in the
   messages array; `parseTodos(md)` parses it into structured entries.
 - **`webui/image.js`** — client-side image helpers for the composer's
@@ -223,9 +225,10 @@ primary interface — the UI is just one client of it.
   `webui/toolcall.js` — e.g. a stacked red/green diff for `edit_file`, a
   `$`-prompt for `run_command`, the parsed list for `write_todos`; unknown
   tools fall back to pretty-JSON) and whose **result** stays a plain dim
-  `<pre>`; a turn that carries
-  `reasoning_content` (the provider's chain-of-thought) shows it as a collapsed
-  dim italic `reasoning` details above the visible response;
+  `<pre>`; a turn that carries the provider's chain-of-thought
+  (llama.cpp's `reasoning_content` or vLLM's `reasoning`, read via
+  `reasoningText`) shows it as a collapsed dim italic `reasoning` details
+  above the visible response;
   **system** = collapsed dim italic details (the prompt);
   **tool** results = collapsed dim details on a faint panel wash, first line
   as the summary. While the session is running, a **working indicator** —

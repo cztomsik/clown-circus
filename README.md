@@ -142,7 +142,7 @@ allowed mid-run.
 |---|---|---|
 | `GET` | `/sessions/:id/events` | `text/event-stream` of session activity |
 
-Event types: `snapshot`, `todo`, `status`, `error`, `done`, `pong`. Each event carries an
+Event types: `snapshot`, `status`, `error`, `done`, `pong`. Each event carries an
 incremental `id:` (a per-session sequence number). Reconnect with `?since=<seq>` (or a
 `Last-Event-ID` header) to replay missed events. A `: keep-alive` comment is sent every 15s.
 
@@ -155,8 +155,9 @@ system of record: state is upserted on every transition (create, message, tool r
 change, error, delete). On startup all sessions are loaded into memory; any session persisted
 as `running`/`stopped` (killed mid-run) is reset to `idle`.
 
-The `snapshot` column stores `{ messages, todos, total_tokens }` — the internal
-conversation format, persisted per session. It may evolve freely as the tool grows.
+The `snapshot` column stores `{ messages, total_tokens }` — the internal
+conversation format, persisted per session (the todo list is *not* stored; the
+web UI derives it from the last `write_todos` tool call). It may evolve freely as the tool grows.
 
 ---
 
@@ -171,7 +172,7 @@ There is **no path sandbox**: the agent may read, write, and execute anywhere th
 | `write_file` | `path`, `content` | Creates parent dirs. |
 | `edit_file` | `path`, `old_content`, `new_content`, `replace_all?` | Exact-match replace. |
 | `run_command` | `command`, `cwd?` | `sh -c`; captures stdout+stderr; abortable on stop. |
-| `write_todos` | `content: string (markdown)` | Replaces the whole list, stored verbatim (user-visible); emits a `todo` event. |
+| `write_todos` | `content: string (markdown)` | No-op: the tool call's presence in the transcript IS the todo list (the web UI derives it from messages); returns "Todos updated". |
 | `load_skill` | `skill_name` | Built-in `init`, else `skills/<name>.md` in cwd. |
 
 ---
