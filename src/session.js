@@ -2,6 +2,10 @@ import { EventEmitter } from 'node:events';
 import { buildSystemPrompt } from './prompt.js';
 import { runLoop } from './loop.js';
 import { HttpError } from './errors.js';
+import { config } from './config.js';
+import { db } from './db.js';
+import { llm } from './llm.js';
+import { tools, toolSchemas } from './tools.js';
 
 const MAX_EVENTS = 200; // bounded per-session replay ring for SSE `?since`
 
@@ -28,7 +32,7 @@ const lastIndexOf = (arr, pred) => {
 // and persistence. The fork/pipe worker is replaced by an in-process async loop
 // guarded by the `running` single-flight flag.
 export class Session {
-  constructor({ row, db, llm, tools, toolSchemas, config }) {
+  constructor({ row }) {
     this.id = row.id;
     this.cwd = row.cwd;
     this.model = row.model ?? config.model;
@@ -38,16 +42,10 @@ export class Session {
     this.lastError = row.last_error ?? null;
     this.archived = !!row.archived;
 
-    this.db = db;
-    this.llm = llm;
-    this.tools = tools;
-    this.toolSchemas = toolSchemas;
-    this.config = config;
-
     const snap = row.snapshot ? JSON.parse(row.snapshot) : {};
     this.messages = Array.isArray(snap.messages) ? snap.messages : [];
     this.totalTokens = snap.total_tokens ?? 0;
-    if (this.messages.length === 0) this.messages = [{ role: 'system', content: buildSystemPrompt(this.cwd, this.config.autoTruncate) }];
+    if (this.messages.length === 0) this.messages = [{ role: 'system', content: buildSystemPrompt(this.cwd, config.autoTruncate) }];
 
     this.running = false;
     this.compacting = false;
@@ -102,7 +100,7 @@ export class Session {
   }
 
   persist() {
-    this.db.upsert(this.row());
+    db.upsert(this.row());
   }
 
   touch() {
@@ -183,10 +181,10 @@ export class Session {
   // this.messages is returned as-is. this.messages is never mutated, so
   // persistence + the web UI keep the full content. Pure and idempotent.
   truncatedMessages() {
-    if (!this.config.autoTruncate) return this.messages;
+    if (!config.autoTruncate) return this.messages;
     const li = lastIndexOf(this.messages, (m) => m.role === 'user');
     const end = li === -1 ? this.messages.length : li; // gap = everything before the latest user turn
-    const budget = this.config.truncateBytes;
+    const budget = config.truncateBytes;
     const out = this.messages.slice(); // same refs except any stubbed tool msgs
     let total = 0;
     for (let i = 0; i < end; i++) {
@@ -196,19 +194,19 @@ export class Session {
       total += n;
       if (m.role === 'tool' && n > budget) out[i] = { ...m, content: `<truncated ${n} bytes>` }; // original untouched
     }
-    return total > this.config.truncateGap ? out : this.messages;
+    return total > config.truncateGap ? out : this.messages;
   }
 
   async next() {
     const messages = this.truncatedMessages(); // LLM-bound view (stubbed iff gap over mark)
     let attempts = 2; // auto_retry (1) + 1, as in the source
     while (attempts-- > 0) {
-      const { message, usage } = await this.llm.chat({
+      const { message, usage } = await llm.chat({
         model: this.model,
         messages,
-        tools: this.toolSchemas,
+        tools: toolSchemas,
         maxCompletionTokens: 32 * 1024,
-        timeoutMs: this.config.timeoutMs,
+        timeoutMs: config.timeoutMs,
         signal: this.signal,
       });
       if (usage.total_tokens) this.totalTokens = usage.total_tokens;
@@ -221,7 +219,7 @@ export class Session {
   }
 
   async accept(tc) {
-    const t = this.tools.get(tc.function.name);
+    const t = tools.get(tc.function.name);
     let content;
     if (!t) {
       content = `Unknown tool: ${tc.function.name}`;
@@ -246,7 +244,7 @@ export class Session {
     return {
       cwd: this.cwd,
       signal: this.signal,
-      timeoutMs: this.config.timeoutMs,
+      timeoutMs: config.timeoutMs,
       emit: (e, d) => this.emit(e, d),
     };
   }
@@ -324,7 +322,7 @@ export class Session {
 
   clear() {
     if (this.running) this.stop();
-    this.messages = [{ role: 'system', content: buildSystemPrompt(this.cwd, this.config.autoTruncate) }];
+    this.messages = [{ role: 'system', content: buildSystemPrompt(this.cwd, config.autoTruncate) }];
     this.touch();
     this.emit('snapshot', this.snapshot());
     this.persist();

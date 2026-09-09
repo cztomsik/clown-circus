@@ -1,16 +1,14 @@
 #!/usr/bin/env node
 import { config } from './config.js';
 import { db } from './db.js';
-import { llm } from './llm.js';
-import { tools, toolSchemas } from './tools.js';
 import { SessionManager } from './manager.js';
 import { buildApp } from './app.js';
 
 const log = (m) => console.log(`[${new Date().toISOString()}] ${m}`);
 
 const main = () => {
-  const manager = new SessionManager({ db, config, llm, tools, toolSchemas });
-  const app = buildApp({ manager, config, llm });
+  const manager = new SessionManager();
+  const app = buildApp({ manager });
 
   const server = app.listen(config.port, config.host, () => {
     log(`clown-circus listening on http://${config.host}:${config.port}`);

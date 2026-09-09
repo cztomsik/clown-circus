@@ -1,28 +1,21 @@
 import { randomUUID } from 'node:crypto';
 import { Session } from './session.js';
 import { HttpError } from './errors.js';
+import { config } from './config.js';
+import { db } from './db.js';
 
 // SessionManager: the multi-session registry. Loads every session from the DB
 // into memory at startup (resetting any in-flight status to idle), and owns
 // create/list/get/delete + persist-on-change. The in-memory map is the hot
 // state; the DB mirrors it as the system of record.
 export class SessionManager {
-  constructor({ db, config, llm, tools, toolSchemas }) {
-    this.db = db;
-    this.config = config;
-    this.llm = llm;
-    this.tools = tools;
-    this.toolSchemas = toolSchemas;
+  constructor() {
     this.sessions = new Map();
     this._load();
   }
 
-  _opts() {
-    return { db: this.db, llm: this.llm, tools: this.tools, toolSchemas: this.toolSchemas, config: this.config };
-  }
-
   _track(s) {
-    if (this.config.verbose)
+    if (config.verbose)
       s.emitter.on('event', (rec) => {
         if (rec.event === 'snapshot') return;
         console.log(`[${new Date().toISOString()}] session=${s.id} ${rec.event} ${JSON.stringify(rec.data)}`);
@@ -30,10 +23,10 @@ export class SessionManager {
   }
 
   _load() {
-    for (const row of this.db.all()) {
+    for (const row of db.all()) {
       // An in-flight loop can't survive a restart: running/stopped -> idle.
       const status = row.status === 'running' || row.status === 'stopped' ? 'idle' : row.status;
-      const s = new Session({ row: { ...row, status }, ...this._opts() });
+      const s = new Session({ row: { ...row, status } });
       this.sessions.set(s.id, s);
       s.persist();
       this._track(s);
@@ -41,15 +34,15 @@ export class SessionManager {
   }
 
   create({ cwd, model }) {
-    if (this.config.maxSessions && this.sessions.size >= this.config.maxSessions)
-      throw new HttpError(400, 'bad_request', `max sessions (${this.config.maxSessions}) reached`);
+    if (config.maxSessions && this.sessions.size >= config.maxSessions)
+      throw new HttpError(400, 'bad_request', `max sessions (${config.maxSessions}) reached`);
 
     const now = new Date().toISOString();
     const snap = { messages: [], total_tokens: 0 };
     const row = {
       id: randomUUID(),
       cwd,
-      model: model ?? this.config.model,
+      model: model ?? config.model,
       status: 'idle',
       created_at: now,
       last_activity: now,
@@ -57,7 +50,7 @@ export class SessionManager {
       snapshot: JSON.stringify(snap),
       archived: false,
     };
-    const s = new Session({ row, ...this._opts() });
+    const s = new Session({ row });
     s.persist();
     this.sessions.set(s.id, s);
     this._track(s);
@@ -73,8 +66,8 @@ export class SessionManager {
   // message and its partial results; completed transcripts are copied verbatim.
   duplicate(id) {
     const src = this.require(id);
-    if (this.config.maxSessions && this.sessions.size >= this.config.maxSessions)
-      throw new HttpError(400, 'bad_request', `max sessions (${this.config.maxSessions}) reached`);
+    if (config.maxSessions && this.sessions.size >= config.maxSessions)
+      throw new HttpError(400, 'bad_request', `max sessions (${config.maxSessions}) reached`);
 
     const now = new Date().toISOString();
     const row = {
@@ -88,7 +81,7 @@ export class SessionManager {
       snapshot: JSON.stringify(src.snapshot()), // JSON round-trip → deep copy
       archived: src.archived,
     };
-    const s = new Session({ row, ...this._opts() });
+    const s = new Session({ row });
     s.settle(); // a running source may end with pending tool_calls
     s.persist();
     this.sessions.set(s.id, s);
@@ -135,7 +128,7 @@ export class SessionManager {
     if (!s) return false;
     s.destroy();
     this.sessions.delete(id);
-    this.db.deleteRow(id);
+    db.deleteRow(id);
     return true;
   }
 }

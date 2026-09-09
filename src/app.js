@@ -3,12 +3,14 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { statSync } from 'node:fs';
 import { HttpError, mapError } from './errors.js';
+import { config } from './config.js';
+import { llm } from './llm.js';
 
 const HEARTBEAT_MS = 15000;
 const WEBUI_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'webui');
 
 // Build the Express app (all routes wired here).
-export const buildApp = ({ manager, config, llm }) => {
+export const buildApp = ({ manager }) => {
   const app = express();
   app.use(express.json({ limit: '25mb' }));
   app.disable('x-powered-by');
