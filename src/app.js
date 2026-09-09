@@ -39,7 +39,6 @@ export const buildApp = ({ manager }) => {
       db_file: config.dbFile,
       default_model: config.model,
       timeout_ms: config.timeoutMs,
-      max_sessions: config.maxSessions,
       host: config.host,
       port: config.port,
       auto_truncate: config.autoTruncate,

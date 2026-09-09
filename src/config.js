@@ -46,7 +46,6 @@ const loadConfig = (argv = process.argv) => {
     apiKey: env.CLOWN_API_KEY ?? null,
     model: str(f.model, env.DEFAULT_MODEL ?? 'default'),
     timeoutMs: num(f.timeout, env.CLOWN_TIMEOUT_MS ?? 900000),
-    maxSessions: num(f['max-sessions'], env.MAX_SESSIONS ?? 0),
     verbose: f.verbose === true || str(f.verbose, '') === 'true',
     autoTruncate: bool(f, 'trunc', env.CLOWN_TRUNC, true),
     truncateGap: num(f['truncate-gap'], env.CLOWN_TRUNC_GAP ?? 100000),

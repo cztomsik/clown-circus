@@ -34,9 +34,6 @@ export class SessionManager {
   }
 
   create({ cwd, model }) {
-    if (config.maxSessions && this.sessions.size >= config.maxSessions)
-      throw new HttpError(400, 'bad_request', `max sessions (${config.maxSessions}) reached`);
-
     const now = new Date().toISOString();
     const snap = { messages: [], total_tokens: 0 };
     const row = {
@@ -66,8 +63,6 @@ export class SessionManager {
   // message and its partial results; completed transcripts are copied verbatim.
   duplicate(id) {
     const src = this.require(id);
-    if (config.maxSessions && this.sessions.size >= config.maxSessions)
-      throw new HttpError(400, 'bad_request', `max sessions (${config.maxSessions}) reached`);
 
     const now = new Date().toISOString();
     const row = {
