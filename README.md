@@ -196,11 +196,12 @@ src/
 └─ skills/init.md
 ```
 
-`webui/` — the static web UI served at `/` (Preact + htm via CDN, no build step):
+`webui/` — the static web UI served at `/` (Preact + htm, no build step;
+browser libraries served locally from `node_modules` under `/vendor/*`):
 
 ```
 webui/
-├─ index.html    # page shell: Tailwind CDN + import map + #root mount
+├─ index.html    # page shell: import map → /vendor/* + local Tailwind JIT + #root mount
 ├─ app.js        # root component: all state + side effects
 ├─ Header.js     # top bar (toggle, status, model picker, actions menu)
 ├─ Sidebar.js    # project-grouped session list + new-session form

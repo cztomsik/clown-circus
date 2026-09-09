@@ -7,15 +7,15 @@
 <script type="importmap">
 {
   "imports": {
-    "preact": "https://esm.sh/preact@10.29.8",
-    "preact/": "https://esm.sh/preact@10.29.8/",
-    "htm": "https://esm.sh/htm@3.1.1",
-    "marked": "https://esm.sh/marked@18.0.11",
-    "dompurify": "https://esm.sh/dompurify@3.4.14"
+    "preact": "/vendor/preact/preact.mjs",
+    "preact/hooks": "/vendor/preact-hooks/hooks.mjs",
+    "htm": "/vendor/htm/htm.mjs",
+    "marked": "/vendor/marked/marked.esm.js",
+    "dompurify": "/vendor/dompurify/purify.es.mjs"
   }
 }
 </script>
-<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<script src="/vendor/tailwind/index.global.js"></script>
 <style type="text/tailwindcss">
 /* Default (dark) palette. Every utility references var(--color-*), so the
    light block below recolours the whole UI by overriding the same tokens. */
@@ -32,7 +32,7 @@
 </style>
 <style>
 /* --color-code is used only from plain CSS below, so it can't live in
-   @theme (the CDN tree-shakes @theme vars no utility references). */
+   @theme (the in-browser Tailwind JIT tree-shakes @theme vars no utility references). */
 :root { --color-code: #6f95a8; }
 /* Light palette: same --color-* tokens, applied when <html data-theme="light">. */
 :root[data-theme="light"] {

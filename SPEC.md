@@ -462,14 +462,17 @@ Event types (SSE `event:` field):
 ### 7.8 Web UI
 
 A web UI is served at `GET /` from `webui/` (via `express.static`): a thin
-`index.html` shell (Tailwind v4 Play CDN, an import map for Preact/htm, and a
-single `#root` mount) plus a set of small **Preact + htm** ES modules — `app.js`
+`index.html` shell (Tailwind v4 via the locally-served `@tailwindcss/browser`
+JIT, an import map for Preact/htm/marked/dompurify, and a single `#root`
+mount) plus a set of small **Preact + htm** ES modules — `app.js`
 holds the root component (all state + side effects), with component modules
 (`Header.js`, `Sidebar.js`, `Main.js`, `Message.js`, `InputBar.js`, `Todos.js`)
 and non-component helpers (`api.js`, `util.js`, `image.js`, `ui.js`; the full
 file list is in §13). It is a **pure client** of the API in this section — it
-adds no server logic, routes, or dependencies. No build step: the only runtime
-libraries (Tailwind, Preact, htm) are loaded from CDNs.
+adds no server logic, routes, or dependencies. No build step: the only
+runtime libraries (Tailwind, Preact, htm, marked, DOMPurify) are served from
+`node_modules` through `/vendor/*` static mounts in `src/app.js` — no
+network CDNs, the UI works fully offline.
 
 The authoritative description of the UI — features, constraints/invariants,
 and the current gaps it is expected to grow into — lives in
@@ -670,7 +673,7 @@ clown-circus/
 ├─ tsconfig.json            # tsc config: checkJs/allowJs/noEmit, strict:false, types:[node] (type-check only)
 ├─ .gitignore
 ├─ webui/
-│  ├─ index.html            # web UI shell served at / (Tailwind CDN + import map + #root)
+│  ├─ index.html            # web UI shell served at / (import map → /vendor/* + #root)
 │  ├─ app.js                # the web UI: Preact + htm ES module (root component + state)
 │  ├─ ui.js                 # htm→h binding + shared class tokens
 │  ├─ api.js                # REST + SSE client helpers
@@ -724,19 +727,23 @@ subdirectories.
   slow non-streaming turns with an opaque `"fetch failed"` error.
 - **SSE** via a minimal helper over the Express response (no heavy deps).
 - **`node:crypto.randomUUID`** for session ids.
-- Minimal dependencies: just `express`. Everything else (SQLite, crypto, http,
-  child_process) is built into Node.
-- **TypeScript (dev-only, check-only)**: `typescript`, `@types/node`, `preact`
-  and `htm` are dev dependencies used *solely* to type-check the plain-JS
-  codebase — they never emit and are not part of the runtime or build. (The
-  `preact`/`htm` packages are installed only for their type declarations; the
-  web UI still loads those libraries from the CDN import map at runtime.) Run
+- Minimal dependencies: `express` for the server, plus the web UI's browser
+  libraries (`preact`, `htm`, `marked`, `dompurify`, `@tailwindcss/browser`) —
+  those are `dependencies` because `src/app.js` serves their dist files to the
+  browser under `/vendor/*` (offline, no CDN); the server never imports them
+  as code. Everything else (SQLite, crypto, http, child_process) is built
+  into Node.
+- **TypeScript (dev-only, check-only)**: `typescript` and `@types/node` are
+  dev dependencies used *solely* to type-check the plain-JS codebase — they
+  never emit and are not part of the runtime or build. (The web UI's
+  libraries double as type sources: `webui/*.js` imports them as bare
+  specifiers, so `tsc --noEmit` resolves them from the same packages the
+  server serves to the browser.) Run
   with `npm run typecheck` (i.e. `tsc --noEmit`), configured in `tsconfig.json`:
   `checkJs` + `allowJs` + `noEmit` with `strict: false`, plus `types: ["node"]`
   (the native `tsc` does not auto-include `@types` the way the JS compiler does).
-  The **server** (`src/`) is type-clean. The **web UI** (`webui/`) has only 2
-  errors left — `Event` vs `MessageEvent` in the SSE handler — which are
-  **intentionally not fixed yet**.
+  Both **`src/`** and **`webui/`** are type-clean (the SSE `onmessage`
+  handler is cast to `MessageEvent` in `webui/api.js`).
 
 ---
 

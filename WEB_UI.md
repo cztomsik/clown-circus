@@ -13,7 +13,8 @@ primary interface — the UI is just one client of it.
 - **`webui/index.html`** — a thin page shell, served at `GET /` via
   `express.static` in `src/app.js`. The `<head>` holds the import map, a
   `<style type="text/tailwindcss">` block, and styling is **Tailwind CSS v4**
-  from the Play CDN (`@tailwindcss/browser@4`) with the colour palette as
+  via the `@tailwindcss/browser` JIT (served from node_modules at
+  `/vendor/tailwind/index.global.js`) with the colour palette as
   `--color-*` tokens in an `@theme` block (the default **dark** theme). It also
   holds a plain `<style>` block with the **light** palette (overriding the same
   tokens under `:root[data-theme="light"]`), the `dot-bounce` keyframes behind
@@ -26,16 +27,21 @@ primary interface — the UI is just one client of it.
   `<script type="module" src="/app.js">` — no static UI markup (the whole UI is
   rendered by Preact at runtime).
 - **Import map** — `index.html` declares a `<script type="importmap">` in the
-  `<head>` (before any module script) that maps `preact`, `preact/`, `htm`,
-  `marked`, and `dompurify` to pinned **esm.sh** CDN URLs
-  (`preact@10.29.8`, `htm@3.1.1`, `marked@18.0.11`, `dompurify@3.4.14`). This
-  makes them importable as bare specifiers in ES modules
-  (`import { h } from "preact"`, `import { useState } from "preact/hooks"`,
-  `import htm from "htm"`, `import { marked } from "marked"`,
-  `import DOMPurify from "dompurify"`), the same way Tailwind is pulled from a
-  CDN — no local copy, no bundling. (`marked`/`dompurify` are also present in
-  `devDependencies`, check-only, purely for `tsc --noEmit` to resolve them —
-  they are never emitted or imported by the server.)
+  `<head>` (before any module script) that maps `preact`, `preact/hooks`,
+  `htm`, `marked`, and `dompurify` to local `/vendor/…` paths. `src/app.js`
+  mounts one `express.static` per package dist dir under `/vendor/*`
+  (serving the exact ESM dist files straight out of `node_modules` — e.g.
+  `/vendor/preact/preact.mjs` → `preact/dist/preact.mjs`,
+  `/vendor/preact-hooks/hooks.mjs` → `preact/hooks/dist/hooks.mjs`, which
+  itself imports bare `"preact"` and resolves through the import map, just
+  like esm.sh's subpath mapping did). This makes them importable as bare
+  specifiers in ES modules (`import { h } from "preact"`,
+  `import { useState } from "preact/hooks"`, `import htm from "htm"`,
+  `import { marked } from "marked"`, `import DOMPurify from "dompurify"`)
+  with **no network and no bundling** — the UI works fully offline. The
+  packages are real `dependencies` in `package.json`: the server serves their
+  files at runtime, and `tsc --noEmit` resolves them for the check-only type
+  declarations.
 - **`webui/app.js`** — the entry module (loaded via
   `<script type="module" src="/app.js">`). Holds **only** the stateful `App`
   root component and its mount: all state and side effects live here as
@@ -141,10 +147,12 @@ primary interface — the UI is just one client of it.
   empty/unknown type — iOS Safari reports no MIME for a pasted image, so the
   real validation is the decode in `prepareImageDataURL`). Pure DOM, no
   Preact — kept separate from the no-DOM `util.js`.
-- No build step, no runtime npm dependency (consistent with SPEC §14). The
-  whole UI is plain static files in `webui/`; the only runtime UI libraries
-  are **Preact + htm + marked + DOMPurify** (import-map → esm.sh) plus
-  Tailwind (CDN) — nothing is bundled or compiled locally.
+- No build step (consistent with SPEC §14). The whole UI is plain static
+  files in `webui/`; the only runtime UI libraries are **Preact + htm +
+  marked + DOMPurify** (import map → local `/vendor/*` routes) plus Tailwind
+  (the `@tailwindcss/browser` JIT, likewise served locally) — nothing is
+  bundled or compiled locally, and all of it is served from `node_modules`
+  so the UI works offline.
 - The UI is a **pure client**: every action goes through the existing REST +
   SSE endpoints. It adds no server-side logic, routes, or dependencies.
 
@@ -330,11 +338,15 @@ primary interface — the UI is just one client of it.
 
 ## Constraints / invariants
 
-- **Static files, no build step, no npm dependencies.** All UI assets live
-  in `webui/` and are served as-is by `express.static`. No bundler, no
-  transpiler, no extra npm dependency. The only runtime libraries (Tailwind,
-  Preact, htm) are loaded from CDNs — Preact + htm through the import map,
-  Tailwind through the Play CDN script.
+- **Static files, no build step.** All UI assets live in `webui/` and are
+  served as-is by `express.static`. No bundler, no transpiler. The runtime
+  libraries (Preact, htm, marked, DOMPurify, Tailwind) come from
+  `node_modules` — the import map points at the `/vendor/*` static mounts in
+  `src/app.js`, and Tailwind's JIT loads from
+  `/vendor/tailwind/index.global.js`. Nothing is fetched from a network CDN,
+  so the UI works fully offline; upgrading a UI library means bumping the
+  version in `package.json` + `npm install` (the dist file paths the import
+  map references are the package's stable ESM entries).
 - **No un-sanitised HTML injection**: LLM output is untrusted. All content is
   rendered as Preact text (htm template interpolations become text nodes /
   `textContent`) **except** user/assistant message text, which `webui/md.js`

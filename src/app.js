@@ -8,6 +8,7 @@ import { llm } from './llm.js';
 
 const HEARTBEAT_MS = 15000;
 const WEBUI_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'webui');
+const NM = join(dirname(fileURLToPath(import.meta.url)), '..', 'node_modules');
 
 // Build the Express app (all routes wired here).
 export const buildApp = ({ manager }) => {
@@ -15,6 +16,16 @@ export const buildApp = ({ manager }) => {
   app.use(express.json({ limit: '25mb' }));
   app.disable('x-powered-by');
   app.use(express.static(WEBUI_DIR)); // web UI at / (see WEB_UI.md)
+
+  // Browser deps for the web UI, served from node_modules (offline, no CDN).
+  // Each mount exposes one package's dist dir; index.html's import map /
+  // Tailwind script reference the exact files (see WEB_UI.md).
+  app.use('/vendor/preact', express.static(join(NM, 'preact/dist')));
+  app.use('/vendor/preact-hooks', express.static(join(NM, 'preact/hooks/dist')));
+  app.use('/vendor/htm', express.static(join(NM, 'htm/dist')));
+  app.use('/vendor/marked', express.static(join(NM, 'marked/lib')));
+  app.use('/vendor/dompurify', express.static(join(NM, 'dompurify/dist')));
+  app.use('/vendor/tailwind', express.static(join(NM, '@tailwindcss/browser/dist')));
 
   const sseFrame = (res, rec) =>
     res.write(`id: ${rec.seq}\nevent: ${rec.event}\ndata: ${JSON.stringify(rec.data)}\n\n`);
