@@ -28,7 +28,7 @@ export class SessionManager {
       const status = row.status === 'running' || row.status === 'stopped' ? 'idle' : row.status;
       const s = new Session({ row: { ...row, status } });
       this.sessions.set(s.id, s);
-      s.persist();
+      s.persist(false); // status rewrite is not activity: keep the stored timestamp
       this._track(s);
     }
   }

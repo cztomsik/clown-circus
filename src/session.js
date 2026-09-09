@@ -99,12 +99,12 @@ export class Session {
     };
   }
 
-  persist() {
+  // Persist the row to SQLite, bumping last_activity first — a persist IS
+  // activity. `touch: false` for writes that aren't (the startup reload that
+  // rewrites a pre-restart status must not clobber the stored timestamp).
+  persist(touch = true) {
+    if (touch) this.lastActivity = new Date().toISOString();
     db.upsert(this.row());
-  }
-
-  touch() {
-    this.lastActivity = new Date().toISOString();
   }
 
   // --- Events (SSE source) --------------------------------------------------
@@ -148,7 +148,6 @@ export class Session {
   setStatus(status) {
     const changed = this.status !== status;
     this.status = status;
-    this.touch();
     if (changed) this.emit('status', { status });
     this.persist();
   }
@@ -255,7 +254,6 @@ export class Session {
   // immediately (before the loop's first LLM turn) — same pattern as undo/clear.
   appendUser(text) {
     this.messages.push({ role: 'user', content: text });
-    this.touch();
     this.emit('snapshot', this.snapshot());
     this.persist();
   }
@@ -268,7 +266,6 @@ export class Session {
     this.assertIdle();
     if (model) {
       this.model = model;
-      this.touch();
       this.persist();
     }
     this.appendUser(text);
@@ -322,7 +319,6 @@ export class Session {
     if (this.messages.length && this.messages.at(-1).role === 'user') {
       undone = textOf(this.messages.pop().content);
     }
-    this.touch();
     this.emit('snapshot', this.snapshot());
     this.persist();
     return undone;
@@ -331,7 +327,6 @@ export class Session {
   clear() {
     if (this.running) this.stop();
     this.messages = [{ role: 'system', content: buildSystemPrompt(this.cwd, config.autoTruncate) }];
-    this.touch();
     this.emit('snapshot', this.snapshot());
     this.persist();
   }
@@ -339,7 +334,6 @@ export class Session {
   clearTools() {
     if (this.running) this.stop();
     this.messages = this.messages.filter((m) => m.role !== 'tool');
-    this.touch();
     this.emit('snapshot', this.snapshot());
     this.persist();
   }
@@ -350,7 +344,6 @@ export class Session {
   // `GET /sessions` list.
   setArchived(archived) {
     this.archived = !!archived;
-    this.touch();
     this.persist();
   }
 
@@ -383,7 +376,6 @@ export class Session {
     } catch (err) {
       this.status = 'error';
       this.lastError = err?.message ?? String(err);
-      this.touch();
       this.emit('error', { message: this.lastError });
       this.persist();
     } finally {
