@@ -8,6 +8,7 @@ const badgeColor = { running: 'text-accent', idle: 'text-ok', error: 'text-err',
 // and no horizontal overflow). `delete` is kept last, separated by a rule.
 // `archive` flips its label/key with the session's state (archive ↔ unarchive).
 const ACTIONS = [
+  { key: 'open-vscode', label: 'open in vscode', title: 'open the session working directory in VS Code (vscode:// URI)' },
   { key: 'retry', label: 'retry', title: 'strip trailing assistant/tool messages and re-run' },
   { key: 'init', label: 'init', title: 'run the /init skill on this project' },
   { key: 'compact', label: 'compact', title: 'summarize and replace the history' },
@@ -38,7 +39,15 @@ export const Header = ({ cfg, theme, sideOpen, onSideToggle, onThemeToggle, view
     return () => window.removeEventListener('keydown', onKey);
   }, [menuOpen]);
 
-  const run = (key) => { setMenuOpen(false); onAction(key); };
+  const run = (key) => {
+    setMenuOpen(false);
+    if (key === 'open-vscode') {
+      // Not a REST action — hand the session cwd to the local VS Code URI handler.
+      window.open('vscode://file/' + encodeURI(view.cwd ?? ''));
+      return;
+    }
+    onAction(key);
+  };
 
   // Resolve the label/title functions (archive flips with the session state)
   // and pick the endpoint key to call.
