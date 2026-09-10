@@ -53,8 +53,8 @@ const ToolPair = ({ tc, result }) => {
   const args = parseArgs(tc.function.arguments);
   const title = toolCallTitle(name, args) ?? `${name}(${firstLine(raw, 80)})`;
   return html`
-    <details class="border-l-2 border-line bg-panel/70 rounded-r-md">
-      <summary class="py-1 px-2.5 text-dim text-xs cursor-pointer select-none break-words">
+    <details class="border-l-2 border-line/60 open:bg-panel/70 open:rounded-r-md">
+      <summary class="py-1 px-2.5 text-dim text-xs cursor-pointer select-none break-words hover:text-ink/70">
         ${title}${result ? html` <span class="opacity-60">— ${firstLine(result.content)}</span>` : null}
       </summary>
       <div class="p-1.5 space-y-1">
@@ -69,8 +69,8 @@ const ToolPair = ({ tc, result }) => {
 // assistant turn (llama.cpp: `reasoning_content`, vLLM: `reasoning`). Rendered
 // collapsed + dim/italic so it reads as secondary to the visible response.
 const Reasoning = ({ text }) => html`
-  <details class="border-l-2 border-line bg-panel/40 rounded-r-md">
-    <summary class="py-1 px-2.5 text-dim/70 text-xs italic cursor-pointer select-none">reasoning</summary>
+  <details class="border-l-2 border-line/50 open:bg-panel/40 open:rounded-r-md">
+    <summary class="py-1 px-2.5 text-dim/70 text-xs italic cursor-pointer select-none hover:text-dim">reasoning</summary>
     <${Pre} text=${text} cls="m-0 px-2.5 pb-1.5 pt-0.5 text-dim text-xs italic whitespace-pre-wrap break-words" />
   </details>`;
 
@@ -101,8 +101,8 @@ const Message = ({ m }) => {
   if (m.role === 'tool') {
     const first = firstLine(m.content);
     return html`
-      <details class="border-l-2 border-line bg-panel/70 rounded-r-md">
-        <summary class="py-1 px-2.5 text-dim text-xs cursor-pointer select-none">tool result — ${first}</summary>
+      <details class="border-l-2 border-line/60 open:bg-panel/70 open:rounded-r-md">
+        <summary class="py-1 px-2.5 text-dim text-xs cursor-pointer select-none hover:text-ink/70">tool result — ${first}</summary>
         <${Pre} text=${m.content} cls="m-0 pt-0.5 pb-1.5 px-2.5 text-dim text-xs whitespace-pre-wrap break-words" />
       </details>`;
   }
