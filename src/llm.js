@@ -87,7 +87,9 @@ const createLlm = () => {
     }
     const choice = data.choices?.[0];
     if (!choice) throw new LlmError('http', 'LLM returned no choices');
-    return { message: choice.message, usage: data.usage ?? {} };
+    const usage = data.usage ?? {};
+    console.log(`[llm] completion model=${model} total_tokens=${usage.total_tokens ?? 'n/a'}`);
+    return { message: choice.message, usage };
   };
 
   const listModels = async (timeoutMs = 10000) => {
