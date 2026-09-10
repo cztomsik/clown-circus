@@ -186,14 +186,24 @@ export class Session {
     const budget = config.truncateBytes;
     const out = this.messages.slice(); // same refs except any stubbed tool msgs
     let total = 0;
+    let toolTotal = 0;
+    let toolKept = 0;
     for (let i = 0; i < end; i++) {
       const m = out[i];
       if (m.role === 'system') continue;
       const n = Buffer.byteLength(typeof m.content === 'string' ? m.content : String(m.content), 'utf8');
       total += n;
-      if (m.role === 'tool' && n > budget) out[i] = { ...m, content: `<truncated ${n} bytes>` }; // original untouched
+      if (m.role === 'tool') {
+        toolTotal++;
+        if (n > budget) out[i] = { ...m, content: `<truncated ${n} bytes>` }; // original untouched
+        else toolKept++;
+      }
     }
-    return total > config.truncateGap ? out : this.messages;
+    if (total > config.truncateGap) {
+      console.log(`[${new Date().toISOString()}] session=${this.id} auto-truncate: gap ${total} bytes > ${config.truncateGap} — tool results ${toolKept}/${toolTotal} kept as-is (${toolTotal - toolKept} stubbed)`);
+      return out;
+    }
+    return this.messages;
   }
 
   async next() {
