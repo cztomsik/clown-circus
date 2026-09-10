@@ -232,6 +232,10 @@ primary interface — the UI is just one client of it.
   the drawer, so one tap on a session lands you in the chat.
 - **Session view** — full detail from `GET /sessions/:id`. Messages rendered
   from the snapshot as a flat transcript — no boxed cards or role headers;
+  consecutive assistant turns (one agent run's worth of LLM calls, ending
+  in the tool-less final turn) are grouped into a single tight-spacing
+  unit (`gap-1` inside, `gap-3` between runs) so a run reads as one
+  continuous flow;
   roles are distinguished by colour / weight / background: **user** = accent
   colour, medium weight, faint accent wash with a thin accent left rule;
   **assistant** = plain ink. Both **user** and **assistant** text is rendered

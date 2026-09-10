@@ -121,6 +121,20 @@ const Message = ({ m }) => {
     </div>`;
 };
 
+// Consecutive assistant turns (one agent run's worth of LLM calls, ending in
+// the tool-less final turn) render as a single visual unit with a tight gap,
+// so a run reads as one continuous flow instead of a staircase of fragments.
+const isAssistantTurn = (b) => b.pairs || b.m.role === 'assistant';
+const groupRuns = (blocks) => {
+  const groups = [];
+  for (const b of blocks) {
+    const last = groups[groups.length - 1];
+    if (last?.blocks && isAssistantTurn(b)) last.blocks.push(b);
+    else groups.push(isAssistantTurn(b) ? { blocks: [b] } : b);
+  }
+  return groups;
+};
+
 // While a run is in flight, the latest assistant turn ends with tool calls
 // whose results have not arrived yet — the first one is what's executing now.
 const inFlightTool = (blocks) => {
@@ -200,12 +214,16 @@ export const Messages = ({ messages, running = false }) => {
   }, [messages, running]);
 
   const blocks = buildBlocks(messages);
+  const groups = groupRuns(blocks);
   return html`
     <div class="relative flex-1 flex flex-col min-h-0">
-      <div ref=${ref} class="flex-1 overflow-y-auto p-3 flex flex-col gap-2.5" onscroll=${onScroll}>
-        ${blocks.map((b, i) => b.pairs
-          ? html`<${AssistantBlock} key=${i} m=${b.m} pairs=${b.pairs} />`
-          : html`<${Message} key=${i} m=${b.m} />`)}
+      <div ref=${ref} class="flex-1 overflow-y-auto p-3 flex flex-col gap-3" onscroll=${onScroll}>
+        ${groups.map((g, i) => g.blocks
+          ? html`<div key=${i} class="flex flex-col gap-1">
+              ${g.blocks.map((b, j) => b.pairs
+                ? html`<${AssistantBlock} key=${j} m=${b.m} pairs=${b.pairs} />`
+                : html`<${Message} key=${j} m=${b.m} />`)}</div>`
+          : html`<${Message} key=${i} m=${g.m} />`)}
         ${running ? html`<${Working} tool=${inFlightTool(blocks)} />` : null}
       </div>
       ${!pinned ? html`
