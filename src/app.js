@@ -123,6 +123,11 @@ export const buildApp = ({ manager }) => {
     res.status(202).json(started(s));
   }));
 
+  app.post('/sessions/:id/retry-turn', session((s, res) => {
+    s.retryTurn();
+    res.status(202).json(started(s));
+  }));
+
   app.post('/sessions/:id/clear', session((s, res) => {
     s.clear();
     res.json(done(s));

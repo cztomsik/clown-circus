@@ -210,7 +210,17 @@ export class Session {
       });
       if (usage.total_tokens) this.totalTokens = usage.total_tokens;
       const empty = (message.content == null || message.content === '') && !message.tool_calls?.length;
-      if (empty) continue; // retry on empty choice
+      // A truncated completion can yield tool_calls whose `arguments` is not
+      // valid JSON (the string cut off mid-value). Persisting that message
+      // would poison the transcript: the provider 400s on it in every
+      // subsequent request. Treat it like an empty choice — retry, and if it
+      // persists fall through to the "no usable completion" error below.
+      const corrupt = (message.tool_calls ?? []).some((tc) => {
+        const args = tc.function?.arguments;
+        if (!args) return false; // absent/empty = no params, fine
+        try { JSON.parse(args); return false; } catch { return true; }
+      });
+      if (empty || corrupt) continue; // retry on empty or corrupt choice
       this.messages.push(message); // record the real response in the full transcript
       return message.tool_calls ?? null;
     }
@@ -289,6 +299,24 @@ export class Session {
   retry() {
     this.assertIdle();
     this.popTrailing();
+    void runLoop(this);
+  }
+
+  // Roll the transcript back to just before the LAST assistant message — strip
+  // that message and everything after it (any tool results it spawned and any
+  // later user nudge) — then re-run the loop from there. Unlike retry() (which
+  // rolls back to the last user message), this reaches a poisoned mid-turn
+  // assistant response (e.g. a truncated tool call) that is followed by a tool
+  // result + user message, which popTrailing() can't get to. The new tail is
+  // the message before the stripped assistant — always a valid user/tool
+  // resume point for the loop.
+  retryTurn() {
+    this.assertIdle();
+    const i = lastIndexOf(this.messages, (m) => m.role === 'assistant');
+    if (i === -1) throw new HttpError(400, 'bad_request', 'no assistant message to retry');
+    this.messages.length = i; // strip the last assistant msg and everything after it
+    this.emit('snapshot', this.snapshot());
+    this.persist();
     void runLoop(this);
   }
 

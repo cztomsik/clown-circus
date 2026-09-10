@@ -10,6 +10,7 @@ const badgeColor = { running: 'text-accent', idle: 'text-ok', error: 'text-err',
 const ACTIONS = [
   { key: 'open-vscode', label: 'open in vscode', title: 'open the session working directory in VS Code (vscode:// URI)' },
   { key: 'retry', label: 'retry', title: 'strip trailing assistant/tool messages and re-run' },
+  { key: 'retry-turn', label: 'retry-turn', title: 'strip the last assistant message (and anything after it) and re-run — recovers a stuck/poisoned turn' },
   { key: 'init', label: 'init', title: 'run the /init skill on this project' },
   { key: 'compact', label: 'compact', title: 'summarize and replace the history' },
   { key: 'undo', label: 'undo', title: 'pop the last message' },

@@ -234,6 +234,7 @@ const App = () => {
       case 'stop': setInput(''); void stop(); return;
       case 'undo': setInput(''); void handleAction('undo'); return;
       case 'retry': setInput(''); void handleAction('retry'); return;
+      case 'retry-turn': setInput(''); void handleAction('retry-turn'); return;
       case 'init': setInput(''); void handleAction('init'); return;
       case 'compact': setInput(''); void handleAction('compact'); return;
       case 'clear': setInput(''); void handleAction('clear'); return;
