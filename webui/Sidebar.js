@@ -19,7 +19,7 @@ const SessionItem = ({ s, active, onSelect }) => html`
     <span class="text-dim text-[11px]">${s.status} · ${timeAgo(s.last_activity)} · ${s.message_count} msgs · ${s.total_tokens} tok</span>
   </li>`;
 
-const SessionList = ({ sessions, current, onSelect, showArchived }) => {
+const SessionList = ({ sessions, current, onSelect, showArchived, grouped }) => {
   // Archived sessions are hidden unless the toggle is on; they render in a
   // flat, dimmed section at the bottom (still selectable / openable).
   const visible = sessions.filter((s) => !s.archived);
@@ -30,14 +30,17 @@ const SessionList = ({ sessions, current, onSelect, showArchived }) => {
     if (!groups.has(s.cwd)) groups.set(s.cwd, []);
     groups.get(s.cwd).push(s);
   }
+  const items = (ss) => ss.map((s) => html`<${SessionItem} key=${s.id} s=${s} active=${s.id === current} onSelect=${onSelect} />`);
   return html`
     <ul class="list-none m-0 p-0 overflow-y-auto flex-1">
-      ${[...groups].map(([cwd, ss]) => html`
-        <${Fragment} key=${cwd}>
-          <li class="px-2.5 pt-3 pb-1 text-dim text-[10px] uppercase tracking-wider select-none">${baseName(cwd)} (${ss.length})</li>
-          ${ss.map((s) => html`<${SessionItem} key=${s.id} s=${s} active=${s.id === current} onSelect=${onSelect} />`)}
-        </${Fragment}>
-      `)}
+      ${grouped
+        ? [...groups].map(([cwd, ss]) => html`
+          <${Fragment} key=${cwd}>
+            <li class="px-2.5 pt-3 pb-1 text-dim text-[10px] uppercase tracking-wider select-none">${baseName(cwd)} (${ss.length})</li>
+            ${items(ss)}
+          </${Fragment}>
+        `)
+        : items(visible)}
       ${archived.length ? html`
         <${Fragment} key="archived">
           <li class="px-2.5 pt-3 pb-1 text-dim text-[10px] uppercase tracking-wider select-none">archived (${archived.length})</li>
@@ -50,7 +53,7 @@ const SessionList = ({ sessions, current, onSelect, showArchived }) => {
 // `cls` carries the layout (width, border, background) so the caller can
 // adapt it: in-flow column on desktop, fixed overlay drawer on mobile.
 export const Sidebar = ({ cls, sessions, current, onNew, onSelect, newCwd, setNewCwd,
-                          showArchived, onToggleArchived }) => {
+                          showArchived, onToggleArchived, grouped, onToggleGrouped }) => {
   const submit = async (e) => {
     e.preventDefault();
     const c = newCwd.trim();
@@ -68,9 +71,13 @@ export const Sidebar = ({ cls, sessions, current, onNew, onSelect, newCwd, setNe
                        disabled:opacity-40 disabled:cursor-default disabled:hover:border-line">new session</button>
       </form>
       <label class="flex items-center gap-1.5 px-2.5 py-2 border-b border-line text-dim text-[11px] cursor-pointer select-none">
+        <input type="checkbox" checked=${grouped} onchange=${onToggleGrouped} />
+        group by project
+      </label>
+      <label class="flex items-center gap-1.5 px-2.5 py-2 border-b border-line text-dim text-[11px] cursor-pointer select-none">
         <input type="checkbox" checked=${showArchived} onchange=${onToggleArchived} />
         show archived
       </label>
-      <${SessionList} sessions=${sessions} current=${current} onSelect=${onSelect} showArchived=${showArchived} />
+      <${SessionList} sessions=${sessions} current=${current} onSelect=${onSelect} showArchived=${showArchived} grouped=${grouped} />
     </aside>`;
 };

@@ -51,6 +51,15 @@ const App = () => {
   // Archived sessions are fetched but hidden by default; the sidebar toggle
   // flips this (client-side split, so the 10s poll stays toggle-agnostic).
   const [showArchived, setShowArchived] = useState(false);
+  // Group the sidebar by project (cwd). On by default (matches the classic
+  // look); a flat list when off.
+  const [grouped, setGrouped] = useState(() => {
+    try { return localStorage.getItem('clown-circus-grouped') !== '0'; }
+    catch { return true; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('clown-circus-grouped', grouped ? '1' : '0'); } catch {}
+  }, [grouped]);
 
   const flashMsg = (msg) => {
     setFlash(msg);
@@ -327,7 +336,8 @@ const App = () => {
             <${Sidebar} cls="w-[280px] max-w-[85vw] md:max-w-none min-w-[220px] border-r border-line flex flex-col bg-bg shadow-xl md:shadow-none"
                        sessions=${sessions} current=${current}
                        onNew=${onNew} onSelect=${select} newCwd=${newCwd} setNewCwd=${setNewCwd}
-                       showArchived=${showArchived} onToggleArchived=${() => setShowArchived((v) => !v)} />
+                       showArchived=${showArchived} onToggleArchived=${() => setShowArchived((v) => !v)}
+                       grouped=${grouped} onToggleGrouped=${() => setGrouped((v) => !v)} />
             <div class="flex-1 bg-black/50 md:hidden" onclick=${() => setSideOpen(false)}></div>
           </div>` : null}
         <${Main} view=${view} flash=${flash} input=${input} setInput=${setInput}
