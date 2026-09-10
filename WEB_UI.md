@@ -128,11 +128,14 @@ primary interface — the UI is just one client of it.
   selected). The session status/actions no longer live here — they moved into
   the unified `Header`.
 - **`webui/util.js`** — a small module of pure, dependency-free helpers
-  (`baseName`, `parseCommand`, `modelId`, `reasoningText`, `timeAgo`,
-  `prettyArgs`, `parseArgs`, `parseTodos`, `extractTodos`), exported by
-  name and pulled in with `import { … } from './util.js'`. `parseCommand(text)`
-  parses a composer `/cmd [arg]` line (returns `null` for a plain message), and
-  `modelId(m)` normalises a `/models` entry to a plain id. `reasoningText(m)`
+  (`baseName`, `parseCommand`, `modelId`, `isVisionModel`, `reasoningText`,
+  `timeAgo`, `prettyArgs`, `parseArgs`, `parseTodos`, `extractTodos`), exported
+  by name and pulled in with `import { … } from './util.js'`. `parseCommand(text)`
+  parses a composer `/cmd [arg]` line (returns `null` for a plain message),
+  `modelId(m)` normalises a `/models` entry to a plain id, and `isVisionModel(m)`
+  decides whether an entry accepts image input — honours
+  `architecture.input_modalities` when the provider exposes it (llama.cpp),
+  otherwise assumes vision-capable. `reasoningText(m)`
   reads the assistant chain-of-thought from whichever field the provider used
   (`reasoning_content` or `reasoning`). `extractTodos(messages)`
   derives the todo markdown from the last `write_todos` tool call in the
@@ -295,10 +298,12 @@ primary interface — the UI is just one client of it.
   hover-revealed on desktop. On send, images are sent as OpenAI `ContentPart[]`
   (`{type:"image_url", image_url:{url:"data:…"}}`) alongside the text part.
   **Vision gating**: on boot, the UI builds a `visionModels` set from
-  `GET /models` (`architecture.input_modalities` includes `"image"`). The entire
-  image affordance (picker, paste handler, drop zone, thumbnail strip) is hidden
-  when the current session's model is known to be non-vision. Models not present
-  in the `/models` list are treated optimistically as vision-capable. The
+  `GET /models` via `isVisionModel()` (`webui/util.js`). Only an entry that
+  **explicitly declares modalities** (llama.cpp's `architecture.input_modalities`)
+  can be marked non-vision; providers with no such field (e.g. vLLM) — and
+  models not present in the `/models` list at all — are assumed vision-capable.
+  The entire image affordance (picker, paste handler, drop zone, thumbnail strip)
+  is hidden when the current session's model is known to be non-vision. The
   transcript renders `image_url` parts as inline `<img>` thumbnails in user
   messages.
 - **Commands** — typing a `/cmd` line in the composer dispatches a control

@@ -17,6 +17,15 @@ export const parseCommand = (text) => {
 // Normalise a /models entry ({id} | {name} | "id") to a plain id string.
 export const modelId = (m) => m?.id ?? m?.name ?? m;
 
+// Whether a /models entry accepts image input. Only llama.cpp exposes
+// modalities (architecture.input_modalities) — honour them; providers
+// without the field (e.g. vLLM) are assumed vision-capable (most recent
+// models are).
+export const isVisionModel = (m) => {
+  const modalities = m?.architecture?.input_modalities;
+  return !Array.isArray(modalities) || modalities.includes('image');
+};
+
 // The assistant chain-of-thought, whichever field the provider used (llama.cpp
 // emits `reasoning_content`, vLLM emits `reasoning`). The wire and DB keep the
 // provider's raw field verbatim — each message round-trips to the provider that

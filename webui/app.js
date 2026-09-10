@@ -2,7 +2,7 @@ import { render } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { html } from './ui.js';
 import { api, post, openSessionEvents } from './api.js';
-import { baseName, parseCommand, modelId } from './util.js';
+import { baseName, parseCommand, modelId, isVisionModel } from './util.js';
 import { fileToDataURL, prepareImageDataURL, isImageFile } from './image.js';
 import { Header } from './Header.js';
 import { Sidebar } from './Sidebar.js';
@@ -82,7 +82,7 @@ const App = () => {
           const id = modelId(m);
           if (!id) continue;
           known.add(id);
-          if (m?.architecture?.input_modalities?.includes('image')) vision.add(id);
+          if (isVisionModel(m)) vision.add(id);
         }
         setKnownModelIds(known);
         setVisionModels(vision);
