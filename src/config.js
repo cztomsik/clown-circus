@@ -38,7 +38,7 @@ const loadConfig = (argv = process.argv) => {
 
   const dbFile = resolve(str(f['db-file'], env.DB_FILE ?? `${homedir()}/.clowndb`));
 
-  return {
+  const cfg = {
     port: num(f.port, env.PORT ?? 8790),
     host: str(f.host, env.HOST ?? '127.0.0.1'),
     dbFile,
@@ -50,6 +50,9 @@ const loadConfig = (argv = process.argv) => {
     truncateGap: num(f['truncate-gap'], env.CLOWN_TRUNC_GAP ?? 100000),
     truncateBytes: num(f['truncate-bytes'], env.CLOWN_TRUNC_BYTES ?? 256),
   };
+  // Print what was actually loaded (flag > env > default) — apiKey masked.
+  console.log(`[${new Date().toISOString()}] config: ${JSON.stringify({ ...cfg, apiKey: cfg.apiKey ? '***' : null })}`);
+  return cfg;
 };
 
 // One config for the whole process — resolved from CLI flags/env/defaults at import time.
