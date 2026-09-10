@@ -154,7 +154,8 @@ primary interface — the UI is just one client of it.
   bundled or compiled locally, and all of it is served from `node_modules`
   so the UI works offline.
 - The UI is a **pure client**: every action goes through the existing REST +
-  SSE endpoints. It adds no server-side logic, routes, or dependencies.
+  SSE endpoints (the lone exception is `open in vscode`, a local `vscode://`
+  URI). It adds no server-side logic, routes, or dependencies.
 
 ## Features
 
@@ -186,9 +187,13 @@ primary interface — the UI is just one client of it.
   (`base_url · db file`, when none is), then the **model
   `<select>`**, then the theme toggle. When a session is open, a `⋮` button
   (between the summary and the model select) opens a dropdown of the session
-  **actions** (`retry`, `init`, `compact`, `undo`, `clear-tools`, `clear`,
-  `duplicate`, `archive` — which flips to `unarchive` when the open session is
-  archived — and `delete` last, separated by a rule). `duplicate` forks the
+  **actions** (`open in vscode`, `retry`, `init`, `compact`, `undo`,
+  `clear-tools`, `clear`, `duplicate`, `archive` — which flips to `unarchive`
+  when the open session is archived — and `delete` last, separated by a
+  rule). `open in vscode` is the only non-REST item: it hands the session `cwd`
+  to the local `vscode://file/` URI handler via `window.open` (the browser
+  shows its external-app prompt; VS Code must be the `vscode://` protocol
+  handler). `duplicate` forks the
   session (same `cwd` + history) and immediately opens the copy. Archiving hides the session from
   the default sidebar list (see **Sidebar**); the toggle is reflected in the
   open session's state immediately. The summary is `flex-1 min-w-0 truncate`,
@@ -314,8 +319,9 @@ primary interface — the UI is just one client of it.
   headless equivalent — `/exit`/`/quit`, `/save`/`/load`, `/continue`, `/sudo` —
   are intentionally not ported.
 - **Controls** — the session actions live in the `⋮` dropdown in the unified
-  header (see **Header**), in four logical groups (`delete` last, separated
-  by a thin rule):
+  header (see **Header**). `open in vscode` sits first and is client-side
+  only (a `vscode://file/<cwd>` URI, no REST call). The rest are in four
+  logical groups (`delete` last, separated by a thin rule):
   - **Agent actions**: `retry`, `init` — fire-and-forget (202),
     start the loop.
   - **History editing**: `compact`, `undo`, `clear-tools`, `clear` —
