@@ -25,6 +25,19 @@ const lastIndexOf = (arr, pred) => {
   return -1;
 };
 
+// Bytes of a message as the LLM sees it: the content (string, or the JSON of a
+// content-parts array — base64 image payloads included), plus tool-call JSON
+// (names + arguments) and any provider reasoning field. Used by the
+// auto-truncation gap measurement.
+const bytesOf = (m) => {
+  let n = 0;
+  if (m.content != null)
+    n += Buffer.byteLength(typeof m.content === 'string' ? m.content : JSON.stringify(m.content), 'utf8');
+  if (m.tool_calls?.length) n += Buffer.byteLength(JSON.stringify(m.tool_calls), 'utf8');
+  n += Buffer.byteLength(m.reasoning_content ?? m.reasoning ?? '', 'utf8');
+  return n;
+};
+
 
 
 // Session: the port of the `Clown` struct (src/model.zig). Owns the message
@@ -173,12 +186,14 @@ export class Session {
   // oversized tool results stubbed to `<truncated N bytes>`. The latest
   // user-assistant turn (the tail) is never trimmed.
   //
-  // One pass over the gap: it totals the gap's bytes (system prompt excluded —
-  // that is constant context, not history, so the mark is a pure ceiling on how
-  // much history to trim) and stubs each oversized tool result in a shallow
-  // copy. If the total is under the mark the copy is thrown away and
-  // this.messages is returned as-is. this.messages is never mutated, so
-  // persistence + the web UI keep the full content. Pure and idempotent.
+  // One pass over the gap: it totals the gap's bytes — the full size of each
+  // message as the LLM sees it (content, tool calls, reasoning; system prompt
+  // excluded — that is constant context, not history, so the mark is a pure
+  // ceiling on how much history to trim) — and stubs each oversized tool
+  // result in a shallow copy. If the total is under the mark the copy is
+  // thrown away and this.messages is returned as-is. this.messages is never
+  // mutated, so persistence + the web UI keep the full content. Pure and
+  // idempotent.
   truncatedMessages() {
     if (!config.autoTruncate) return this.messages;
     const li = lastIndexOf(this.messages, (m) => m.role === 'user');
@@ -191,7 +206,7 @@ export class Session {
     for (let i = 0; i < end; i++) {
       const m = out[i];
       if (m.role === 'system') continue;
-      const n = Buffer.byteLength(typeof m.content === 'string' ? m.content : String(m.content), 'utf8');
+      const n = bytesOf(m);
       total += n;
       if (m.role === 'tool') {
         toolTotal++;

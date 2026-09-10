@@ -59,10 +59,25 @@ view (the trigger simply skips that work while history is still small). No
 cadence, no reference, no ratcheting — and nothing is ever lost, so there is no
 "re-accumulation" to speak of.
 
-`gapBytes()` is `Σ Buffer.byteLength(body, 'utf8')` over the messages before the
-latest user turn. The system prompt and the latest turn are both excluded — the
-mark is purely a ceiling on *history* (tune it to how much history you want the
-model to keep reading in full).
+The gap size is `Σ bytesOf(m, 'utf8')` over the messages before the latest user
+turn, where `bytesOf` measures the message **as the LLM sees it**: the content
+(string, or the JSON of a content-parts array — base64 image payloads
+included), plus `tool_calls` JSON (names + arguments), plus any provider
+reasoning field (`reasoning_content` / `reasoning`). The system prompt and the
+latest turn are both excluded — the mark is purely a ceiling on *history*
+(tune it to how much history you want the model to keep reading in full).
+
+The gap is measured in bytes, not from the LLM's reported `usage.total_tokens`,
+on purpose:
+
+- `truncatedMessages()` runs *before* the request, so only the *previous*
+  response's usage is available ("one turn late").
+- `total_tokens` is the whole request (system prompt + tool schemas + the
+  in-flight turn) — exactly what the gap mark is meant to exclude.
+- Once truncation is active, the previous call's usage reflects the *stubbed*
+  view, so a usage-based mark would oscillate (stub → usage drops → unstub →
+  usage spikes → stub…). Measuring the never-mutated `this.messages` is
+  monotonic; usage is a moving target (and provider-dependent).
 
 ## Where it runs
 
@@ -119,12 +134,22 @@ gapEnd() {
   return i === -1 ? this.messages.length : i; // single turn -> empty gap
 }
 
+// Bytes of a message as the LLM sees it: content (string, or the JSON of a
+// content-parts array), plus tool-call JSON, plus any reasoning field.
+bytesOf(m) {
+  let n = 0;
+  if (m.content != null)
+    n += Buffer.byteLength(typeof m.content === 'string' ? m.content : JSON.stringify(m.content), 'utf8');
+  if (m.tool_calls?.length) n += Buffer.byteLength(JSON.stringify(m.tool_calls), 'utf8');
+  n += Buffer.byteLength(m.reasoning_content ?? m.reasoning ?? '', 'utf8');
+  return n;
+}
+
 gapBytes() {
   const end = this.gapEnd();
-  return this.messages.slice(0, end).reduce((n, m) =>
-    m.role === 'system' // the system prompt is constant context, not history
-      ? n
-      : n + Buffer.byteLength(typeof m.content === 'string' ? m.content : String(m.content), 'utf8'), 0);
+  return this.messages.slice(0, end)
+    .filter((m) => m.role !== 'system') // the system prompt is constant context, not history
+    .reduce((n, m) => n + bytesOf(m), 0);
 }
 ```
 
