@@ -25,19 +25,6 @@ const lastIndexOf = (arr, pred) => {
   return -1;
 };
 
-// Bytes of a message as the LLM sees it: the content (string, or the JSON of a
-// content-parts array — base64 image payloads included), plus tool-call JSON
-// (names + arguments) and any provider reasoning field. Used by the
-// auto-truncation gap measurement.
-const bytesOf = (m) => {
-  let n = 0;
-  if (m.content != null)
-    n += Buffer.byteLength(typeof m.content === 'string' ? m.content : JSON.stringify(m.content), 'utf8');
-  if (m.tool_calls?.length) n += Buffer.byteLength(JSON.stringify(m.tool_calls), 'utf8');
-  n += Buffer.byteLength(m.reasoning_content ?? m.reasoning ?? '', 'utf8');
-  return n;
-};
-
 
 
 // Session: the port of the `Clown` struct (src/model.zig). Owns the message
@@ -58,7 +45,7 @@ export class Session {
     const snap = row.snapshot ? JSON.parse(row.snapshot) : {};
     this.messages = Array.isArray(snap.messages) ? snap.messages : [];
     this.totalTokens = snap.total_tokens ?? 0;
-    if (this.messages.length === 0) this.messages = [{ role: 'system', content: buildSystemPrompt(this.cwd, config.autoTruncate) }];
+    if (this.messages.length === 0) this.messages = [{ role: 'system', content: buildSystemPrompt(this.cwd) }];
 
     this.running = false;
     this.compacting = false;
@@ -180,49 +167,8 @@ export class Session {
 
   // --- Agent loop pieces (used by loop.js) ----------------------------------
 
-  // Auto-truncation (see AUTO_TRUNCATE.md). Non-destructive to the transcript:
-  // the DB / web UI keep the full content forever; only the copy handed to the
-  // LLM has the *history gap's* (messages before the latest user turn) stale
-  // oversized tool results stubbed to `<truncated N bytes>`. The latest
-  // user-assistant turn (the tail) is never trimmed.
-  //
-  // One pass over the gap: it totals the gap's bytes — the full size of each
-  // message as the LLM sees it (content, tool calls, reasoning; system prompt
-  // excluded — that is constant context, not history, so the mark is a pure
-  // ceiling on how much history to trim) — and stubs each oversized tool
-  // result in a shallow copy. If the total is under the mark the copy is
-  // thrown away and this.messages is returned as-is. this.messages is never
-  // mutated, so persistence + the web UI keep the full content. Pure and
-  // idempotent.
-  truncatedMessages() {
-    if (!config.autoTruncate) return this.messages;
-    const li = lastIndexOf(this.messages, (m) => m.role === 'user');
-    const end = li === -1 ? this.messages.length : li; // gap = everything before the latest user turn
-    const budget = config.truncateBytes;
-    const out = this.messages.slice(); // same refs except any stubbed tool msgs
-    let total = 0;
-    let toolTotal = 0;
-    let toolKept = 0;
-    for (let i = 0; i < end; i++) {
-      const m = out[i];
-      if (m.role === 'system') continue;
-      const n = bytesOf(m);
-      total += n;
-      if (m.role === 'tool') {
-        toolTotal++;
-        if (n > budget) out[i] = { ...m, content: `<truncated ${n} bytes>` }; // original untouched
-        else toolKept++;
-      }
-    }
-    if (total > config.truncateGap) {
-      console.log(`[${new Date().toISOString()}] session=${this.id} auto-truncate: gap ${total} bytes > ${config.truncateGap} — tool results ${toolKept}/${toolTotal} kept as-is (${toolTotal - toolKept} stubbed)`);
-      return out;
-    }
-    return this.messages;
-  }
-
   async next() {
-    const messages = this.truncatedMessages(); // LLM-bound view (stubbed iff gap over mark)
+    const messages = this.messages;
     let attempts = 2; // auto_retry (1) + 1, as in the source
     while (attempts-- > 0) {
       const { message, usage } = await llm.chat({
@@ -379,7 +325,7 @@ export class Session {
 
   clear() {
     if (this.running) this.stop();
-    this.messages = [{ role: 'system', content: buildSystemPrompt(this.cwd, config.autoTruncate) }];
+    this.messages = [{ role: 'system', content: buildSystemPrompt(this.cwd) }];
     this.emit('snapshot', this.snapshot());
     this.persist();
   }

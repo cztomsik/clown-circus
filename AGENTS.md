@@ -20,7 +20,6 @@
 - **LLM**: OpenAI-compatible `/v1/chat/completions` (llama.cpp by default). Base URL from `--base-url`/`CLOWN_API` (default `http://127.0.0.1:8080`); optional `CLOWN_API_KEY` sent as Bearer.
 - **Spec**: the authoritative spec is [`SPEC.md`](SPEC.md) (~20 sections). **Note**: the projects have since **diverged** — `../clown-code/` is **no longer a reference point**; `SPEC.md` and this repo's code are the source of truth.
 - **Web UI**: a first-class feature, described authoritatively in [`WEB_UI.md`](WEB_UI.md). A set of static files served at `/` — a thin `webui/index.html` shell (Tailwind v4 via the locally-served `@tailwindcss/browser` JIT, `@theme` tokens, import-map → `/vendor/*` static mounts over `node_modules`) plus small **Preact + htm** ES modules: `app.js` is the root component (all state + side effects), with `Header/Sidebar/Main/Message/InputBar/Todos.js` for the components and `api/util/image/ui.js` for the API client, pure helpers, image helpers, and shared htm binding (full list in the Source Structure table). Pure client of the REST + SSE API: project-grouped session sidebar, model picker (`GET /models`), full control toolbar (open-in-vscode, retry, init, compact, undo, clear-tools, clear, archive, delete, stop, send), live chat over SSE, todos panel.
-- **Auto-truncation**: an on-by-default, server-side pre-process that trims what each LLM request *sees* — in the copy sent to the model, stale oversized tool results become a one-line `<truncated N bytes>` marker (disable with `--no-trunc`). Non-destructive: the stored transcript (DB + web UI) keeps the full content. Net-new to clown-circus; fully described in [`AUTO_TRUNCATE.md`](AUTO_TRUNCATE.md).
 
 ## Source Structure
 
@@ -29,7 +28,7 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 | File | Purpose |
 |------|---------|
 | `src/main.js` | Bootstrap: wire the import-time config/db/llm/tools singletons → create SessionManager → build Express app → listen + SIGINT/SIGTERM shutdown. |
-| `src/config.js` | Resolve config from CLI flags with env fallbacks, then defaults (`port`, `host`, `dbFile`, `baseUrl`, `model`, `timeoutMs`, `maxSessions`, `verbose`, `autoTruncate`, `truncateGap`, `truncateBytes`). |
+| `src/config.js` | Resolve config from CLI flags with env fallbacks, then defaults (`port`, `host`, `dbFile`, `baseUrl`, `model`, `timeoutMs`, `verbose`). |
 | `src/app.js` | Express app factory: all REST routes, the SSE endpoint, 404 fallback, and the error-mapping middleware. |
 | `src/db.js` | Thin `node:sqlite` wrapper: opens/migrates the DB (idempotent DDL + `user_version`) and exposes the helpers the manager/session use — `upsert`, `all` (startup load), `deleteRow`, `close`. Listing + project grouping are done in memory by the manager, not in SQL. |
 | `src/manager.js` | `SessionManager` registry: loads all sessions from the DB at startup (resetting `running`/`stopped` → `idle`), owns create/list/get/delete and the in-memory hot state. |
@@ -64,7 +63,6 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 - **Tools & paths**: every file/shell tool resolves relative paths against the session `cwd` (the `run_command` working dir); there is **no path sandbox**, so the agent can reach any path the server process can (matching the source, whose path-traversal guard was only a `TODO`). Tool errors are returned to the model as text (loop continues), matching the source's `tk.ai.fmt()` behavior.
 - **SSE**: one `text/event-stream` per session. Events: `snapshot`, `status`, `error`, `done`, `pong`. Each carries a monotonic `id:` (seq); reconnect with `?since=<seq>` / `Last-Event-ID` to replay (bounded ring buffer). 15s `: keep-alive` heartbeat.
 - **Agent-loop detail**: `next()` makes one LLM call with `messages` + tool schemas (`max_completion_tokens: 32768`), retries up to once on an empty choice, appends the assistant message, and returns `tool_calls`; the loop ends when a turn has no tool calls. `total_tokens` is the last response's `usage.total_tokens`.
-- **Auto-truncation (on by default)**: at the top of `Session.next()`, `truncatedMessages()` builds the LLM-bound view — if the *history gap* (bytes of messages before the latest user turn, **system prompt excluded**) exceeds `truncateGap`, every stale `role:tool` result in that gap larger than `truncateBytes` is stubbed to `<truncated N bytes>` (N = original bytes) *in that view only*. `this.messages` is never mutated, so the DB row and the web UI keep the full content; only the model sees the stub. The latest user–assistant turn is sacrosanct. `--no-trunc` returns the transcript as-is. See [`AUTO_TRUNCATE.md`](AUTO_TRUNCATE.md).
 - **Error mapping**: LLM timeout → `504 llm_timeout`; unreachable/HTTP error → `502 llm_unavailable`; unknown id → `404`; busy → `409`; malformed/missing `cwd` → `400`; bad `cwd` dir + unhandled → `500`.
 
 ## Working conventions

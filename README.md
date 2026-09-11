@@ -61,9 +61,6 @@ CLI flags take precedence over environment variables, which take precedence over
 | `--model` / `DEFAULT_MODEL` | `DEFAULT_MODEL` | `default` | Default model for new sessions |
 | `--timeout` / `CLOWN_TIMEOUT_MS` | `CLOWN_TIMEOUT_MS` | `900000` | Per-LLM-request timeout (ms) |
 | `--max-sessions` | `MAX_SESSIONS` | `0` | Optional cap on concurrent sessions (0 = unlimited) |
-| `--trunc` / `CLOWN_TRUNC` | `CLOWN_TRUNC` | `true` | Auto-truncate stale oversized tool results in the LLM-bound view (disable with `--no-trunc`) |
-| `--truncate-gap` / `CLOWN_TRUNC_GAP` | `CLOWN_TRUNC_GAP` | `100000` | History-gap byte threshold that triggers truncation |
-| `--truncate-bytes` / `CLOWN_TRUNC_BYTES` | `CLOWN_TRUNC_BYTES` | `256` | Min size of a tool result to stub (bytes) |
 | `--verbose` | — | off | Log per-session events to stdout |
 
 `CLOWN_API_KEY` (env, optional) is sent as a Bearer token on every LLM request.

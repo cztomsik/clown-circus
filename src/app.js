@@ -40,9 +40,6 @@ export const buildApp = ({ manager }) => {
       timeout_ms: config.timeoutMs,
       host: config.host,
       port: config.port,
-      auto_truncate: config.autoTruncate,
-      truncate_gap: config.truncateGap,
-      truncate_bytes: config.truncateBytes,
     }));
 
   app.get('/models', async (req, res) => {

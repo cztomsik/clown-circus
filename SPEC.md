@@ -282,7 +282,7 @@ endpoint and the static web UI (§7.8). Errors use `4xx`/`5xx` with
 |--------|-----------------|-------------|
 | `GET`  | `/health`       | Liveness probe → `{ "ok": true, "sessions": <n> }` |
 | `GET`  | `/models`       | Proxy `GET /v1/models` to the LLM (analog of `/models` command) |
-| `GET`  | `/config`       | Read-only effective server config (base_url, db_file, timeouts, truncation) |
+| `GET`  | `/config`       | Read-only effective server config (base_url, db_file, timeouts) |
 
 ### 7.2 Sessions
 
@@ -516,13 +516,6 @@ emit status=idle, done; persist(status)
   tools run. This makes the model's intent durable and visible to the client
   before any (possibly long or destructive) side effect, and keeps the DB current
   if the process dies mid-run (recoverable as far as the last persisted state).
-- **Auto-truncation.** At the very top of `next()` — immediately before the LLM
-  call — `truncatedMessages()` returns the view the LLM receives, in which stale
-  oversized *gap* tool results are stubbed to `<truncated N bytes>` (see
-  [AUTO_TRUNCATE.md](AUTO_TRUNCATE.md)). It is **non-destructive**: `this.messages`
-  (and thus the DB row and the web UI) are never mutated — the stub exists only in
-  the LLM-bound copy. It returns `this.messages` as-is under `--no-trunc` or when
-  the gap is under the mark.
 
 ### Cancellation (replacing `SIGKILL`)
 
@@ -551,10 +544,6 @@ re-composed on `clear`-style resets:
 
 Current date: <YYYY-MM-DD>
 Current working directory: <realpath of cwd>
-
-[when auto-truncation is on] Note: older (stale) tool results may be replaced
-  with `<truncated N bytes>` to bound history; re-read the file or re-run the
-  command to recover the full content.
 ```
 
 - The exact fallback chain `AGENTS.md → CLOWN.md → (none)` is preserved.
@@ -562,10 +551,6 @@ Current working directory: <realpath of cwd>
   `clear`.
 - `PREFIX.md` content is copied from the source verbatim (same guidelines), with
   the tool list updated to match the ported tools.
-- When auto-truncation is on (default), a trailing one-line note is appended
-  telling the model that stale tool results may be stubbed to
-  `<truncated N bytes>` and to re-read/re-run for the full content
-  (see [AUTO_TRUNCATE.md](AUTO_TRUNCATE.md)).
 
 ---
 
@@ -613,19 +598,10 @@ Via CLI flags and/or environment variables, resolved at startup into a
 | `--db-file` / `DB_FILE`    | `DB_FILE`        | `~/.clowndb`             | Path to the SQLite database file |
 | `--base-url` / `CLOWN_API` | `CLOWN_API`      | `http://127.0.0.1:8080`  | LLM OpenAI-compatible base URL (kept from source) |
 | `--timeout` / `CLOWN_TIMEOUT_MS` | `CLOWN_TIMEOUT_MS` | `900000` (15 min)      | Per-LLM-request timeout (matches source's `15*60`) |
-| `--trunc` / `--no-trunc` · `CLOWN_TRUNC` | `CLOWN_TRUNC` | `true`                 | Master on/off for auto-truncation (on by default; `--no-trunc` disables) |
-| `--truncate-gap` / `CLOWN_TRUNC_GAP`    | `CLOWN_TRUNC_GAP`  | `100000` (bytes)         | Run a truncation pass once the *history gap* (bytes before the latest user turn, system prompt excluded) exceeds this |
-| `--truncate-bytes` / `CLOWN_TRUNC_BYTES`| `CLOWN_TRUNC_BYTES`| `256` (bytes)          | A *gap* `role=tool` result larger than this many bytes is rewritten to `<truncated N bytes>` |
 
 - The parent directory of the DB file is created (with parents) if missing.
 - LLM auth (`Authorization` header) is passed through from an optional
   `CLOWN_API_KEY` env var, sent with every LLM request.
-- **Auto-truncation** (`--trunc`, on by default) is a server-side pre-process that
-  trims the *history* the model sees before every LLM call — non-destructive to
-  the stored transcript (the DB and web UI keep the full content). The
-  gap/threshold semantics, invariants, and verification are documented in
-  [AUTO_TRUNCATE.md](AUTO_TRUNCATE.md). The three keys are surfaced read-only in
-  `GET /config` as `auto_truncate`, `truncate_gap`, `truncate_bytes`.
 
 ---
 
@@ -671,7 +647,6 @@ clown-circus/
 ├─ SPEC.md                  # this file
 ├─ README.md
 ├─ WEB_UI.md                # web UI description (features, constraints, growth)
-├─ AUTO_TRUNCATE.md         # auto-truncation: design, semantics, invariants (server-side history bound)
 ├─ package.json             # "type": "module"; scripts: start, typecheck
 ├─ tsconfig.json            # tsc config: checkJs/allowJs/noEmit, strict:false, types:[node] (type-check only)
 ├─ .gitignore
