@@ -67,7 +67,7 @@ primary interface — the UI is just one client of it.
   session status badge + live summary (or the live config summary when no
   session is open), a **model `<select>`** (client-side: picks the model for
   the next send; see **Header**), a `⋮` dropdown holding
-  the session actions, and the theme toggle. All of this shares one row, so it
+  the session-level actions (see **Header** under Features), and the theme toggle. All of this shares one row, so it
   stays compact on mobile.
 - **`webui/Sidebar.js`** — `Sidebar` + `SessionList`/`SessionItem`: the
   project-grouped session list and the new-session form (a `cwd` input + a
@@ -189,17 +189,17 @@ primary interface — the UI is just one client of it.
   (`cwd · N tok`, when a session is open) or the **config** summary
   (`base_url · db file`, when none is), then the **model
   `<select>`**, then the theme toggle. When a session is open, a `⋮` button
-  (between the summary and the model select) opens a dropdown of the session
-  **actions** (`open in vscode`, `retry`, `retry-turn`, `init`, `compact`,
-  `undo`, `clear`, `duplicate`, `archive` — which flips to `unarchive`
-  when the open session is archived — and `delete` last, separated by a
-  rule). `open in vscode` is the only non-REST item: it hands the session `cwd`
-  to the local `vscode://file/` URI handler via `window.open` (the browser
-  shows its external-app prompt; VS Code must be the `vscode://` protocol
-  handler). `duplicate` forks the
-  session (same `cwd` + history) and immediately opens the copy. Archiving hides the session from
-  the default sidebar list (see **Sidebar**); the toggle is reflected in the
-  open session's state immediately. The summary is `flex-1 min-w-0 truncate`,
+  (between the summary and the model select) opens a dropdown of the
+  **session-level** actions only — `open in vscode`, `archive` (which flips to
+  `unarchive` when the open session is archived), and `delete` last,
+  separated by a rule. Conversation manipulation (`retry`, `retry-turn`,
+  `init`, `compact`, `undo`, `clear`, `duplicate`, `trim`) is not in the menu —
+  it lives in the composer as slash commands (see **Commands**). `open in
+  vscode` is the only non-REST item: it hands the session `cwd` to the local
+  `vscode://file/` URI handler via `window.open` (the browser shows its
+  external-app prompt; VS Code must be the `vscode://` protocol handler).
+  Archiving hides the session from the default sidebar list (see **Sidebar**);
+  the toggle is reflected in the open session's state immediately. The summary is `flex-1 min-w-0 truncate`,
   so on narrow viewports it truncates to one line instead of pushing the
   buttons off-screen. The menu closes on outside-tap (a full-viewport backdrop),
   on Escape, or when the selected session changes.
@@ -319,10 +319,10 @@ primary interface — the UI is just one client of it.
   `/stop`, `/retry`, `/retry-turn`, `/init`, `/compact`, `/clear`,
   `/trim [rounds]`, `/undo`, `/duplicate` →
   the matching `POST /sessions/:id/…` (`/undo` restores the popped message into
-  the composer; `/duplicate` opens the new fork; `/trim` is the only
-  **slash-only** command — it takes an optional `<rounds>` arg (how many
-  trailing rounds to leave untouched) that the fixed no-arg ⋮-dropdown entries
-  can't carry, so it lives in the composer: with no arg it keeps the last 5,
+  the composer; `/duplicate` opens the new fork; `/trim` takes an optional
+  `<rounds>` arg (how many trailing rounds to leave untouched) that the ⋮
+  menu's entries can't carry, so it lives in the composer: with no arg it keeps
+  the last 5,
   and a non-numeric/negative arg flashes `usage: /trim [rounds]` and keeps the
   text in the box). A command is parsed **before** the running no-op
   guard, so
@@ -333,27 +333,27 @@ primary interface — the UI is just one client of it.
   can be edited and is reported in the error banner. Source commands with no
   headless equivalent — `/exit`/`/quit`, `/save`/`/load`, `/continue`, `/sudo` —
   are intentionally not ported.
-- **Controls** — the session actions live in the `⋮` dropdown in the unified
-  header (see **Header**). `open in vscode` sits first and is client-side
-  only (a `vscode://file/<cwd>` URI, no REST call). The rest are in four
-  logical groups (`delete` last, separated by a thin rule):
-  - **Agent actions**: `retry`, `retry-turn`, `init` — fire-and-forget (202),
-    start the loop.
-  - **History editing**: `compact`, `undo`, `clear` —
-    `compact` starts the loop; the rest are synchronous and re-render the
-    snapshot after the call. `undo` restores the popped user message into the
-    composer (from the response's `undone` field) and returns focus to it, so
-    you can edit and re-send. (Transcript trimming lives in the composer as
-    `/trim [rounds]` — see **Commands** — not in this menu.)
-  - **Forking**: `duplicate` — `POST …/duplicate` creates a fork (same
-    `cwd` + history, copied verbatim unless the running source ends with
-    pending `tool_calls`, in which case the dangling tail is stripped; 201)
-    and immediately **selects the copy**, so the diverging conversation can
-    start right away — the source stays open in the sidebar.
-  - **Destructive**: `delete` (with `confirm()`).
-  Plus the composer: send (`POST …/messages`, with the model `<select>`'s
-  value as the required `model` body field — see **Header**) and `stop`. All
-  control endpoints are from SPEC §7.5.
+- **Controls** — split by surface:
+  - **Session-level** — the `⋮` dropdown in the unified header (see
+    **Header**): `open in vscode` (client-side only — a
+    `vscode://file/<cwd>` URI, no REST call), `archive`/`unarchive`, and
+    `delete` (with `confirm()`). Deliberately short: everything that edits
+    the conversation is a composer slash command, so the menu is only what
+    the composer can't reach.
+  - **Conversation** — the composer (see **Commands**): `/retry`,
+    `/retry-turn`, `/init` (fire-and-forget, 202, start the loop),
+    `/compact` (starts the loop), `/undo` (synchronous; restores the popped
+    user message into the composer from the response's `undone` field and
+    returns focus, so you can edit and re-send), `/clear`, `/trim [rounds]`,
+    and `/duplicate` (`POST …/duplicate` forks the session — same `cwd` +
+    history, copied verbatim unless the running source ends with pending
+    `tool_calls`, in which case the dangling tail is stripped; 201 — and
+    immediately **selects the copy**, so the diverging conversation can
+    start right away; the source stays open in the sidebar).
+  - **Send/stop** — the composer's send button (`POST …/messages`, with the
+    model `<select>`'s value as the required `model` body field — see
+    **Header**) and the running state's `stop`. All control endpoints are
+    from SPEC §7.5.
 - **Theme toggle** — a compact icon button in the `Header` (top-right)
   switches the `--color-*` palette between the default dark and the light
   theme by setting `data-theme` on `<html>`; the icon shows the theme it

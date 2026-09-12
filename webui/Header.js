@@ -6,19 +6,14 @@ import { baseName } from './util.js';
 // the full status text lives in the `title` tooltip.
 const dotColor = { running: 'bg-accent animate-pulse', idle: 'bg-ok', error: 'bg-err', stopped: 'bg-dim' };
 
-// The session actions that used to fill a dedicated toolbar row, now folded
-// into a ⋮ dropdown so the top bar stays a single, compact row (mobile-friendly
-// and no horizontal overflow). `delete` is kept last, separated by a rule.
+// The session-level actions in a ⋮ dropdown, so the top bar stays a single,
+// compact row (mobile-friendly, no horizontal overflow). Only things that
+// aren't reachable from the composer live here — conversation manipulation
+// (retry, undo, clear, compact, trim, …) is composer-only as slash commands.
+// `delete` is kept last, separated by a rule.
 // `archive` flips its label/key with the session's state (archive ↔ unarchive).
 const ACTIONS = [
   { key: 'open-vscode', label: 'open in vscode', title: 'open the session working directory in VS Code (vscode:// URI)' },
-  { key: 'retry', label: 'retry', title: 'strip trailing assistant/tool messages and re-run' },
-  { key: 'retry-turn', label: 'retry-turn', title: 'strip the last assistant message (and anything after it) and re-run — recovers a stuck/poisoned turn' },
-  { key: 'init', label: 'init', title: 'run the /init skill on this project' },
-  { key: 'compact', label: 'compact', title: 'summarize and replace the history' },
-  { key: 'undo', label: 'undo', title: 'pop the last message' },
-  { key: 'clear', label: 'clear', title: 'reset history to the system prompt' },
-  { key: 'duplicate', label: 'duplicate', title: 'fork into a new session with the same cwd and history' },
   { key: 'archive',
     label: (archived) => (archived ? 'unarchive' : 'archive'),
     title: (archived) => (archived ? 'restore to the default session list' : 'hide from the default session list (kept for later)') },
