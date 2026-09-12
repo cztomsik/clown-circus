@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'preact/hooks';
 import { html, BTN } from './ui.js';
+import { baseName } from './util.js';
 
-const badgeColor = { running: 'text-accent', idle: 'text-ok', error: 'text-err', stopped: 'text-dim' };
+// Status bubble (same look as the sidebar dot, incl. the pulse while running);
+// the full status text lives in the `title` tooltip.
+const dotColor = { running: 'bg-accent animate-pulse', idle: 'bg-ok', error: 'bg-err', stopped: 'bg-dim' };
 
 // The session actions that used to fill a dedicated toolbar row, now folded
 // into a ⋮ dropdown so the top bar stays a single, compact row (mobile-friendly
@@ -66,8 +69,8 @@ export const Header = ({ cfg, theme, sideOpen, onSideToggle, onThemeToggle, view
 
       ${view
         ? html`
-          <span class="py-0.5 px-2 rounded-full text-xs border border-line flex-none ${badgeColor[view.status] ?? 'text-ok'}">${view.status ?? 'idle'}</span>
-          <div class="text-dim text-xs min-w-0 flex-1 truncate">${view.cwd ?? ''} · ${view.tokens ?? 0} tok</div>
+          <span title=${view.status ?? 'idle'} class="w-2 h-2 rounded-full flex-none ${dotColor[view.status] ?? 'bg-ok'}"></span>
+          <div title=${view.cwd ?? ''} class="text-dim text-xs min-w-0 flex-1 truncate">${baseName(view.cwd ?? '')} · ${view.tokens ?? 0} tok</div>
           <button title="session actions" aria-label="session actions" aria-expanded=${menuOpen}
                   class=${`${BTN} flex-none ${menuOpen ? 'border-accent' : ''}`}
                   onclick=${() => setMenuOpen((o) => !o)}>⋮</button>`
