@@ -14,7 +14,6 @@ const ACTIONS = [
   { key: 'init', label: 'init', title: 'run the /init skill on this project' },
   { key: 'compact', label: 'compact', title: 'summarize and replace the history' },
   { key: 'undo', label: 'undo', title: 'pop the last message' },
-  { key: 'clear-tools', label: 'clear-tools', title: 'remove all tool results from history' },
   { key: 'clear', label: 'clear', title: 'reset history to the system prompt' },
   { key: 'duplicate', label: 'duplicate', title: 'fork into a new session with the same cwd and history' },
   { key: 'archive',

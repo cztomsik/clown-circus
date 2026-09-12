@@ -190,8 +190,8 @@ primary interface — the UI is just one client of it.
   (`base_url · db file`, when none is), then the **model
   `<select>`**, then the theme toggle. When a session is open, a `⋮` button
   (between the summary and the model select) opens a dropdown of the session
-  **actions** (`open in vscode`, `retry`, `init`, `compact`, `undo`,
-  `clear-tools`, `clear`, `duplicate`, `archive` — which flips to `unarchive`
+  **actions** (`open in vscode`, `retry`, `retry-turn`, `init`, `compact`,
+  `undo`, `clear`, `duplicate`, `archive` — which flips to `unarchive`
   when the open session is archived — and `delete` last, separated by a
   rule). `open in vscode` is the only non-REST item: it hands the session `cwd`
   to the local `vscode://file/` URI handler via `window.open` (the browser
@@ -316,11 +316,15 @@ primary interface — the UI is just one client of it.
   `/`, the command (lowercased, first whitespace-delimited token) is dispatched
   by `runCommand()`; otherwise it is a normal message. The commands map 1:1 to
   the §7.5 control endpoints and reuse the existing handlers (no new endpoint):
-  `/stop`, `/retry`, `/init`, `/compact`, `/clear`, `/clear-tools`, `/undo`,
-  `/duplicate` →
+  `/stop`, `/retry`, `/retry-turn`, `/init`, `/compact`, `/clear`,
+  `/trim <turns>`, `/undo`, `/duplicate` →
   the matching `POST /sessions/:id/…` (`/undo` restores the popped message into
-  the composer; `/duplicate` opens the new fork). A command is parsed **before** the running no-op guard, so
-  `/stop` and the implicit-stop commands (`/undo`, `/clear`, `/clear-tools`)
+  the composer; `/duplicate` opens the new fork; `/trim` is the only
+  **slash-only** command — it needs its `<turns>` arg, so it has no ⋮-dropdown
+  entry — and a missing/invalid `<turns>` flashes `usage: /trim <turns>` and
+  keeps the text in the box). A command is parsed **before** the running no-op
+  guard, so
+  `/stop` and the implicit-stop commands (`/undo`, `/clear`, `/trim`)
   work while a run is in flight; plain messages still no-op while running
   (type-ahead preserved). The command text is cleared on a recognized command
   (and re-filled for `/undo`); an unknown `/…` keeps the text in the box so it
@@ -331,13 +335,14 @@ primary interface — the UI is just one client of it.
   header (see **Header**). `open in vscode` sits first and is client-side
   only (a `vscode://file/<cwd>` URI, no REST call). The rest are in four
   logical groups (`delete` last, separated by a thin rule):
-  - **Agent actions**: `retry`, `init` — fire-and-forget (202),
+  - **Agent actions**: `retry`, `retry-turn`, `init` — fire-and-forget (202),
     start the loop.
-  - **History editing**: `compact`, `undo`, `clear-tools`, `clear` —
+  - **History editing**: `compact`, `undo`, `clear` —
     `compact` starts the loop; the rest are synchronous and re-render the
     snapshot after the call. `undo` restores the popped user message into the
     composer (from the response's `undone` field) and returns focus to it, so
-    you can edit and re-send.
+    you can edit and re-send. (Transcript trimming lives in the composer as
+    `/trim <turns>` — see **Commands** — not in this menu.)
   - **Forking**: `duplicate` — `POST …/duplicate` creates a fork (same
     `cwd` + history, copied verbatim unless the running source ends with
     pending `tool_calls`, in which case the dangling tail is stripped; 201)

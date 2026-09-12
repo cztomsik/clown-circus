@@ -398,22 +398,23 @@ All of these operate on a single session and map 1:1 to the original commands in
 | `POST` | `/sessions/:id/stop`       | `/stop`        | Cooperatively abort the running loop. `200` `{ "status": "stopped" }`. No-op (still `200`) if idle. |
 | `POST` | `/sessions/:id/undo`       | `/undo`        | Pop the last message from history. Returns the popped message text (if any) in `{ "undone": "..." }`. |
 | `POST` | `/sessions/:id/retry`      | `/retry`       | Strip trailing assistant/tool messages (keep last user message) and re-run. `202` when it starts a run, `409` if busy. |
+| `POST` | `/sessions/:id/retry-turn` | —              | Roll the transcript back to just before the **last assistant message** — strip that message and everything after it (any tool results it spawned and any later user nudge) — then re-run the loop from there. Unlike `/retry` (which rolls back to the last user message), this reaches a poisoned mid-turn assistant response (e.g. a truncated tool call) that is followed by a tool result + user message, which the `/retry` rollback can't get to. `202` when it starts a run, `409` if busy, `400` if there is no assistant message to retry. |
 | `POST` | `/sessions/:id/clear`      | `/clear`       | Stop + clear history (keep system message). `200`. |
-| `POST` | `/sessions/:id/clear-tools`| `/clear-tools` | Stop + drop all `role=tool` messages, keep system/user/assistant. `200`. |
+| `POST` | `/sessions/:id/trim`       | `/trim <n>`     | Trim the transcript for the first **n rounds** from the beginning (a round = a user message + the assistant/tool messages it triggers, up to the next user message): truncate any `role=tool` result longer than 1024 bytes to `[tool result truncated — was <N> bytes]` and delete both `reasoning_content` and `reasoning` from assistant messages. Everything after round n is untouched, as are user text, assistant text, and the tool-call invocations (name + arguments) — only the tool *results* and the CoT go. Idempotent (a re-run is a no-op). Body `{ "turns": n }` with `n` a positive integer — `400` otherwise. `200` `{ "turns", "truncatedResults", "reasoningRemoved" }`. |
 | `POST` | `/sessions/:id/compact`    | `/compact`     | Run the two-phase summarize-then-replace compaction (as in the source). `202` (starts a run). |
 | `POST` | `/sessions/:id/init`       | `/init`        | Convenience: send the prompt that triggers the built-in `init` skill ("Could you /init this project?"). `202`. |
 | `POST` | `/sessions/:id/duplicate`  | —              | Fork the session into a new one: same `cwd`, `model`, and archived flag; fresh id/timestamps; `last_error` cleared; a **deep copy** of the transcript (independent of the source). If the source is running and the copy ends mid-turn (an assistant `tool_calls` whose tool results have not all arrived yet — an invalid LLM transcript), that message and its partial results are stripped; a completed transcript is copied verbatim. Allowed while the source is running. `201`, returning the new session (meta + snapshot). `404` if the source is unknown. |
 | `POST` | `/sessions/:id/archive`    | —              | Mark the session as archived: kept in the DB but hidden from the default `GET /sessions` list and `/projects` counts. No body. `200` `{ "id", "archived": true }`. |
 | `POST` | `/sessions/:id/unarchive`  | —              | Restore an archived session to the default list. No body. `200` `{ "id", "archived": false }`. |
 
-Rules common to the run-starting controls (`retry`, `compact`,
+Rules common to the run-starting controls (`retry`, `retry-turn`, `compact`,
 `init`, `messages`): reject with `409` if `running` is already true. Only
 `stop` and the `archive`/`unarchive` flags are allowed while running —
 metadata-only edits that never touch the conversation — and `duplicate`
 deep-copies the transcript into an independent session (the source is never
 touched, even while it runs).
 
-`undo`/`clear`/`clear-tools` are synchronous state edits; if a run is in
+`undo`/`clear`/`trim` are synchronous state edits; if a run is in
 progress they implicitly `stop` first (matching the original, which calls
 `self.stop()` before mutating).
 
@@ -824,7 +825,7 @@ function readFile(io, ctx, args) {
 3. LLM client + agent loop + `read_file`/`run_command`/`write_todos`;
    `POST /messages`; SSE `events`.
 4. Remaining tools (`write_file`, `edit_file`, `load_skill`).
-5. Controls: `stop`, `undo`, `retry`, `clear`, `clear-tools`, `compact`,
+5. Controls: `stop`, `undo`, `retry`, `clear`, `trim`, `compact`,
    `init`.
 6. `README.md`.
 7. Minimal web UI at `/` (static Preact + htm page; see WEB_UI.md).

@@ -8,6 +8,9 @@ import { llm } from './llm.js';
 import { tools, toolSchemas } from './tools.js';
 
 const MAX_EVENTS = 200; // bounded per-session replay ring for SSE `?since`
+// trimTurns truncates a tool result (replacing its content with a marker) once
+// it exceeds this many bytes; smaller results are kept verbatim.
+const TOOL_RESULT_KEEP_BYTES = 1024;
 
 // Extract plain text from a message's content (string | ContentPart[]).
 // For arrays, concatenates text parts and drops image_url parts.
@@ -23,6 +26,19 @@ const textOf = (content) => {
 const lastIndexOf = (arr, pred) => {
   for (let i = arr.length - 1; i >= 0; i--) if (pred(arr[i])) return i;
   return -1;
+};
+
+// Exclusive boundary of the first N rounds. A "round" is a user message and all
+// the assistant/tool messages it triggers, up to (not including) the next user
+// message — so "first N rounds" is everything before the (N+1)-th user message.
+// Returns that user message's index, or messages.length when the transcript has
+// fewer than N+1 rounds (i.e. trim the whole thing).
+const roundsBoundary = (messages, n) => {
+  let seen = 0;
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i].role === 'user' && ++seen > n) return i;
+  }
+  return messages.length;
 };
 
 
@@ -330,11 +346,37 @@ export class Session {
     this.persist();
   }
 
-  clearTools() {
+  // Trim the transcript in place for the first N rounds from the beginning:
+  // truncate bulky tool results to a marker and strip the chain-of-thought
+  // (both `reasoning_content` and `reasoning`). Everything after round N is
+  // untouched, as are user text, assistant text, and the tool-call
+  // invocations (name + arguments) — only the tool *results* and the CoT go.
+  // Idempotent: a second run finds nothing left to trim. Synchronous edit —
+  // implicitly stops a running loop first (matching clear/undo).
+  trimTurns(n) {
     if (this.running) this.stop();
-    this.messages = this.messages.filter((m) => m.role !== 'tool');
+    const boundary = roundsBoundary(this.messages, n);
+    let truncatedResults = 0;
+    let reasoningRemoved = 0;
+    for (let i = 0; i < boundary; i++) {
+      const m = this.messages[i];
+      if (m.role === 'tool') {
+        if (typeof m.content === 'string'
+            && Buffer.byteLength(m.content, 'utf8') > TOOL_RESULT_KEEP_BYTES) {
+          const bytes = Buffer.byteLength(m.content, 'utf8');
+          m.content = `[tool result truncated — was ${bytes} bytes]`;
+          truncatedResults += 1;
+        }
+      } else if (m.role === 'assistant'
+                 && ('reasoning_content' in m || 'reasoning' in m)) {
+        delete m.reasoning_content;
+        delete m.reasoning;
+        reasoningRemoved += 1;
+      }
+    }
     this.emit('snapshot', this.snapshot());
     this.persist();
+    return { turns: n, truncatedResults, reasoningRemoved };
   }
 
   // Flag the session as archived (or not). A metadata-only edit: allowed while

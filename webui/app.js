@@ -200,12 +200,14 @@ const App = () => {
   // session's last-used model; with none open it also seeds new sessions.
   const onModelChange = (v) => setModel(v);
 
-  const handleAction = async (name) => {
+  const handleAction = async (name, arg) => {
     if (!current) return;
     try {
-      if (name === 'undo' || name === 'clear' || name === 'clear-tools') {
+      if (name === 'undo' || name === 'clear' || name === 'trim') {
         // synchronous history edits: re-fetch the detail and re-render.
-        const r = await post(`/sessions/${current}/${name}`);
+        // Only `trim` carries a body (the `turns` arg); the rest are no-arg.
+        const r = await post(`/sessions/${current}/${name}`,
+          name === 'trim' ? { turns: arg } : undefined);
         // Undo restores the popped user message into the composer so it can be
         // edited and re-sent.
         if (name === 'undo' && r?.undone) setInput(r.undone);
@@ -234,11 +236,12 @@ const App = () => {
 
   // Composer slash-commands (e.g. /retry), a port of the source TUI's
   // handleCommand. Parsed before the message path so a command always dispatches
-  // — including /stop and the implicit-stop commands (/undo, /clear,
-  // /clear-tools) that must work while a run is in flight. Each delegates to the
-  // existing handlers, so there is no new endpoint. Unknown commands keep the
-  // text in the box so it can be edited.
-  const runCommand = ({ name }) => {
+  // — including /stop and the implicit-stop commands (/undo, /clear, /trim)
+  // that must work while a run is in flight. Each delegates to the existing
+  // handlers, so there is no new endpoint. /trim takes a numeric `<turns>` arg;
+  // a missing/invalid arg flashes usage and keeps the text. Unknown commands
+  // keep the text in the box so it can be edited.
+  const runCommand = ({ name, arg }) => {
     switch (name) {
       case 'stop': setInput(''); void stop(); return;
       case 'undo': setInput(''); void handleAction('undo'); return;
@@ -247,7 +250,11 @@ const App = () => {
       case 'init': setInput(''); void handleAction('init'); return;
       case 'compact': setInput(''); void handleAction('compact'); return;
       case 'clear': setInput(''); void handleAction('clear'); return;
-      case 'clear-tools': setInput(''); void handleAction('clear-tools'); return;
+      case 'trim': {
+        const n = Number(arg);
+        if (!Number.isInteger(n) || n < 1) { flashMsg('usage: /trim <turns>'); return; }
+        setInput(''); void handleAction('trim', n); return;
+      }
       case 'duplicate': setInput(''); void handleAction('duplicate'); return;
       default: flashMsg(`unknown command: /${name}`);
     }
