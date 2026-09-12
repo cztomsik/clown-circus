@@ -32,15 +32,15 @@ CLOWN_API=http://127.0.0.1:8080 npm start
 Then create a session and drive it:
 
 ```bash
-# create a session rooted at some project
+# create a session rooted at some project (cwd + model are required)
 curl -s -X POST localhost:8790/sessions \
   -H 'content-type: application/json' \
-  -d '{"cwd":"/path/to/project"}'
+  -d '{"cwd":"/path/to/project","model":"llama-3"}'
 
-# send a message (202: the run is async)
+# send a message (202: the run is async); model is required on every send
 curl -s -X POST localhost:8790/sessions/<id>/messages \
   -H 'content-type: application/json' \
-  -d '{"message":"could you /init this project?"}'
+  -d '{"message":"could you /init this project?","model":"llama-3"}'
 
 # follow progress in real time (SSE)
 curl -sN localhost:8790/sessions/<id>/events
@@ -58,9 +58,7 @@ CLI flags take precedence over environment variables, which take precedence over
 | `--host` / `HOST` | `HOST` | `127.0.0.1` | Bind address (localhost by default) |
 | `--db-file` / `DB_FILE` | `DB_FILE` | `~/.clowndb` | Path to the SQLite database file |
 | `--base-url` / `CLOWN_API` | `CLOWN_API` | `http://127.0.0.1:8080` | LLM OpenAI-compatible base URL |
-| `--model` / `DEFAULT_MODEL` | `DEFAULT_MODEL` | `default` | Default model for new sessions |
 | `--timeout` / `CLOWN_TIMEOUT_MS` | `CLOWN_TIMEOUT_MS` | `900000` | Per-LLM-request timeout (ms) |
-| `--max-sessions` | `MAX_SESSIONS` | `0` | Optional cap on concurrent sessions (0 = unlimited) |
 | `--verbose` | — | off | Log per-session events to stdout |
 
 `CLOWN_API_KEY` (env, optional) is sent as a Bearer token on every LLM request.
@@ -85,20 +83,23 @@ Errors: `{ "error": { "code", "message" } }`.
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/sessions` | List as `SessionMeta[]`. Optional `?cwd=<path>` (exact match). |
-| `POST` | `/sessions` | Create. Body: `{ cwd, model? }` → `201` |
+| `POST` | `/sessions` | Create. Body: `{ cwd, model }` (both required) → `201` |
 | `GET` | `/sessions/:id` | Full session: `SessionMeta` + `snapshot` |
 | `DELETE` | `/sessions/:id` | Stop and delete (memory + DB) → `204` |
 
-`POST /sessions` body — `cwd` is required (resolved to an absolute path); `model` is optional:
+`POST /sessions` body — both `cwd` and `model` are required. `cwd` is resolved to an
+absolute path; `model` (non-empty string) is the LLM model to run and is stored as the
+session's last-used model (the web UI pre-fills its picker from it; `retry`/`init`/`compact`
+reuse it). There is no server-side default:
 
 ```json
-{ "cwd": "/abs/path", "model": "default" }
+{ "cwd": "/abs/path", "model": "llama-3" }
 ```
 
 `SessionMeta`:
 ```json
 {
-  "id": "...", "cwd": "/abs/path", "model": "default", "status": "idle",
+  "id": "...", "cwd": "/abs/path", "model": "llama-3", "status": "idle",
   "created_at": "2026-09-02T12:00:00.000Z", "last_activity": "2026-09-02T12:05:00.000Z",
   "message_count": 42, "total_tokens": 18334, "last_error": null
 }
