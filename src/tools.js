@@ -4,7 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 
-const MAX = 2 * 1024 * 1024; // 2MB cap, as in the source
+const MAX = 2 * 1024 * 1024; // 2MB cap
 const BUILTIN_INIT = readFileSync(fileURLToPath(new URL('./skills/init.md', import.meta.url)), 'utf8');
 
 const tool = (name, description, parameters, run) => ({ name, description, parameters, run });

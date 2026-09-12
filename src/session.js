@@ -51,10 +51,9 @@ const countTurns = (messages) =>
 
 
 
-// Session: the port of the `Clown` struct (src/model.zig). Owns the message
-// list, token counter, the agentic loop, an event emitter (SSE source),
-// and persistence. The fork/pipe worker is replaced by an in-process async loop
-// guarded by the `running` single-flight flag.
+// Session. Owns the message list, token counter, the agentic loop,
+// an event emitter (SSE source), and persistence. The run is an in-process
+// async loop guarded by the `running` single-flight flag.
 export class Session {
   constructor({ row }) {
     this.id = row.id;
@@ -193,7 +192,7 @@ export class Session {
 
   async next() {
     const messages = this.messages;
-    let attempts = 2; // auto_retry (1) + 1, as in the source
+    let attempts = 2; // initial attempt + 1 auto-retry
     while (attempts-- > 0) {
       const { message, usage } = await llm.chat({
         model: this.model,
@@ -253,7 +252,7 @@ export class Session {
     };
   }
 
-  // --- Operations (port of Clown methods) -----------------------------------
+  // --- Operations -----------------------------------------------------------
 
   // Append a user message and push a snapshot so the live transcript shows it
   // immediately (before the loop's first LLM turn) — same pattern as undo/clear.
@@ -404,7 +403,7 @@ export class Session {
     this.persist();
   }
 
-  // Two-phase summarize-then-replace compaction (port of compact/finishCompact).
+  // Two-phase summarize-then-replace compaction.
   // Synchronous entry point so assertIdle() propagates to the HTTP layer (409).
   compact() {
     this.assertIdle();

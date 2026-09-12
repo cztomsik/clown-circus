@@ -1,4 +1,4 @@
-// Thin OpenAI-compatible chat client (replaces tk.ai.Client).
+// Thin OpenAI-compatible chat client.
 // base_url is joined as `${baseUrl}/v1/...`. Auth via optional Bearer key.
 //
 // Node's global fetch (undici) bakes in a 300s headers/body timeout that

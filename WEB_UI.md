@@ -311,7 +311,7 @@ primary interface — the UI is just one client of it.
   transcript renders `image_url` parts as inline `<img>` thumbnails in user
   messages.
 - **Commands** — typing a `/cmd` line in the composer dispatches a control
-  instead of sending a message (a port of the source TUI's `handleCommand`). On
+  instead of sending a message. On
   Enter, `send()` runs `parseCommand()` first: if the trimmed text starts with
   `/`, the command (lowercased, first whitespace-delimited token) is dispatched
   by `runCommand()`; otherwise it is a normal message. The commands map 1:1 to
@@ -331,9 +331,7 @@ primary interface — the UI is just one client of it.
   work while a run is in flight; plain messages still no-op while running
   (type-ahead preserved). The command text is cleared on a recognized command
   (and re-filled for `/undo`); an unknown `/…` keeps the text in the box so it
-  can be edited and is reported in the error banner. Source commands with no
-  headless equivalent — `/exit`/`/quit`, `/save`/`/load`, `/continue`, `/sudo` —
-  are intentionally not ported.
+  can be edited and is reported in the error banner.
 - **Controls** — split by surface:
   - **Session-level** — the `⋮` dropdown in the unified header (see
     **Header**): `open in vscode` (client-side only — a
@@ -397,8 +395,8 @@ primary interface — the UI is just one client of it.
   lacks.
 - **Routing**: `express.static` is registered before the JSON 404 fallback;
   unknown paths must still return the JSON `404 not_found` error shape.
-- **Styling**: monospace, terminal-ish — it should feel like a client of the
-  CLI-era tool, not a SaaS dashboard. Implemented with Tailwind v4 utility
+- **Styling**: monospace, terminal-ish — it should feel like a client of a
+  headless API, not a SaaS dashboard. Implemented with Tailwind v4 utility
   classes; the colour palette is the `--color-*` tokens
   (`--color-bg`, `--color-panel`, `--color-line`, `--color-ink`, `--color-dim`,
   `--color-accent`, `--color-err`, `--color-ok`), defined once as the default

@@ -1,6 +1,6 @@
 import { LlmError } from './llm.js';
 
-// The agent loop (port of workerInner). Never throws: it converts all outcomes
+// The agent loop. Never throws: it converts all outcomes
 // into a terminal status + events. Runs to completion for a single `run`.
 export const runLoop = async (session) => {
   let status = 'idle';

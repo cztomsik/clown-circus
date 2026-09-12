@@ -240,8 +240,8 @@ const App = () => {
     } catch (err) { flashMsg(err.message); }
   };
 
-  // Composer slash-commands (e.g. /retry), a port of the source TUI's
-  // handleCommand. Parsed before the message path so a command always dispatches
+  // Composer slash-commands (e.g. /retry). Parsed before the message path so a
+  // command always dispatches
   // — including /stop and the implicit-stop commands (/undo, /clear, /trim)
   // that must work while a run is in flight. Each delegates to the existing
   // handlers, so there is no new endpoint. /trim takes an optional numeric

@@ -11,19 +11,19 @@
 
 ## Project Overview
 
-**Clown-Circus** is a **headless, multi-session** port of [`clown-code`](../clown-code/) (Zig + tokamak TUI), exposed as an **Express** HTTP server. Instead of a single terminal TUI bound to one conversation, it runs any number of independent agent **sessions** — each with its own working directory, conversation state, and running agent loop — driven over **REST + Server-Sent Events (SSE)**. All sessions and their conversation snapshots persist in a local **SQLite** file, so state survives restarts.
+**Clown-Circus** is a **headless, multi-session** agent server, exposed as an **Express** HTTP app. It runs any number of independent agent **sessions** — each with its own working directory, conversation state, and running agent loop — driven over **REST + Server-Sent Events (SSE)**. All sessions and their conversation snapshots persist in a local **SQLite** file, so state survives restarts.
 
 - **Tech stack**: Node.js 24.x, plain JavaScript (ESM, `"type": "module"`), no build step. TypeScript is a **dev-only, check-only** dependency (`tsc --noEmit`, see below) — it is never run or emitted.
 - **Run command**: `node src/main.js` (or `npm start`). No build/test toolchain; type-check via `npm run typecheck`.
 - **Dependency**: `express` (v5) for the server, plus the web UI's browser libraries (`preact`, `htm`, `marked`, `dompurify`, `@tailwindcss/browser`) as runtime deps — `src/app.js` serves their dist files under `/vendor/*` so the UI works offline (no CDN). Dev deps (check-only, never emitted): `typescript`, `@types/node`. Everything else — SQLite, crypto, http, child_process — is built into Node.
 - **Storage**: builtin **`node:sqlite`** (`DatabaseSync`), single file `~/.clowndb` by default. Emits a harmless `ExperimentalWarning`.
 - **LLM**: OpenAI-compatible `/v1/chat/completions` (llama.cpp by default). Base URL from `--base-url`/`CLOWN_API` (default `http://127.0.0.1:8080`); optional `CLOWN_API_KEY` sent as Bearer.
-- **Spec**: the authoritative spec is [`SPEC.md`](SPEC.md) (~20 sections). **Note**: the projects have since **diverged** — `../clown-code/` is **no longer a reference point**; `SPEC.md` and this repo's code are the source of truth.
+- **Spec**: the authoritative spec is [`SPEC.md`](SPEC.md) (~20 sections); `SPEC.md` and this repo's code are the source of truth.
 - **Web UI**: a first-class feature, described authoritatively in [`WEB_UI.md`](WEB_UI.md). A set of static files served at `/` — a thin `webui/index.html` shell (Tailwind v4 via the locally-served `@tailwindcss/browser` JIT, `@theme` tokens, import-map → `/vendor/*` static mounts over `node_modules`) plus small **Preact + htm** ES modules: `app.js` is the root component (all state + side effects), with `Header/Sidebar/Main/Message/InputBar/Todos.js` for the components and `api/util/image/ui.js` for the API client, pure helpers, image helpers, and shared htm binding (full list in the Source Structure table). Pure client of the REST + SSE API: project-grouped session sidebar, model picker (`GET /models`), full control toolbar (open-in-vscode, retry, init, compact, undo, clear-tools, clear, archive, delete, stop, send), live chat over SSE, todos panel.
 
 ## Source Structure
 
-The tree is deliberately flat: one file per concern, no per-feature subdirectories. `src/skills/` is the only subdirectory (mirrors the source).
+The tree is deliberately flat: one file per concern, no per-feature subdirectories. `src/skills/` is the only subdirectory.
 
 | File | Purpose |
 |------|---------|
@@ -32,14 +32,14 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 | `src/app.js` | Express app factory: all REST routes, the SSE endpoint, 404 fallback, and the error-mapping middleware. |
 | `src/db.js` | Thin `node:sqlite` wrapper: opens/migrates the DB (idempotent DDL + `user_version`) and exposes the helpers the manager/session use — `upsert`, `all` (startup load), `deleteRow`, `close`. Listing + project grouping are done in memory by the manager, not in SQL. |
 | `src/manager.js` | `SessionManager` registry: loads all sessions from the DB at startup (resetting `running`/`stopped` → `idle`), owns create/list/get/delete and the in-memory hot state. |
-| `src/session.js` | `Session` — the port of the `Clown` struct (`model.zig`). Owns messages/todos/tokens, the single-flight `running` flag, an `AbortController`, an `EventEmitter` (SSE source) with a bounded seq ring buffer, and all operations (`send/retry/undo/clear/clearTools/compact/stop/destroy`) + persistence. |
-| `src/loop.js` | `runLoop` — the agent loop (port of `workerInner`): `next()` → execute tool calls → emit snapshot → repeat; converts every outcome to a terminal status and never throws. |
+| `src/session.js` | `Session`. Owns messages/todos/tokens, the single-flight `running` flag, an `AbortController`, an `EventEmitter` (SSE source) with a bounded seq ring buffer, and all operations (`send/retry/undo/clear/clearTools/compact/stop/destroy`) + persistence. |
+| `src/loop.js` | `runLoop` — the agent loop: `next()` → execute tool calls → emit snapshot → repeat; converts every outcome to a terminal status and never throws. |
 | `src/llm.js` | OpenAI-compatible chat client: `chat()` + `listModels()`. Distinguishes stop-abort from timeout (504) / network-HTTP (502) via `LlmError.kind`. |
-| `src/prompt.js` | `buildSystemPrompt(cwd)`: `PREFIX.md` + `AGENTS.md`→`CLOWN.md` fallback (1MB cap) + date + realpath (port of `loadSystemPrompt`). |
+| `src/prompt.js` | `buildSystemPrompt(cwd)`: `PREFIX.md` + `AGENTS.md`→`CLOWN.md` fallback (1MB cap) + date + realpath. |
 | `src/tools.js` | All tools + `tools`/`toolSchemas` singletons. Relative paths resolve against the session cwd (no path sandbox). |
 | `src/errors.js` | `HttpError` + `mapError()` (thrown errors → the §7.7 status/code table). Small module added to keep the import graph cycle-free. |
-| `src/PREFIX.md` | Base system prompt with guidelines (copied verbatim from the source). |
-| `src/skills/init.md` | Built-in `/init` skill (copied from the source): explore the project and write an `AGENTS.md`. |
+| `src/PREFIX.md` | Base system prompt with guidelines. |
+| `src/skills/init.md` | Built-in `/init` skill: explore the project and write an `AGENTS.md`. |
 | `webui/index.html` | Web UI shell served at `/`. Thin page: import map (Preact/htm/marked/dompurify → `/vendor/*` routes serving `node_modules` dist files) + local Tailwind JIT script + a `#root` mount — no static UI markup. |
 | `webui/app.js` | Root Preact component: owns all state + side effects (config/models fetch, 10s poll, SSE, per-session drafts, actions) and composes the layout. No build step. |
 | `webui/Header.js` | Unified top bar: sidebar toggle, session status, model picker, and the ⋮ actions menu (open-in-vscode/retry/init/compact/undo/clear-tools/clear/archive/delete; open-in-vscode is a client-side `vscode://` URI, not a REST call). |
@@ -56,11 +56,10 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 
 ## Architecture Notes
 
-- **Diverged from the source**: `../clown-code/` (Zig) was the historical origin only. The features have already **diverged** — there is **no point looking in `../clown-code/`** anymore; this repo (and `SPEC.md`) is the source of truth. The `Worker`/`WorkerMsg`/fork/pipe machinery in `model.zig` is **removed**; its contract ("run the loop, emit snapshots, report errors") is preserved as an in-process async loop + event emitter per session.
-- **Concurrency (replaces fork/pipe)**: the agent loop is a plain `async` function on the event loop. A single-flight `running` flag per session rejects overlapping runs with `409 session_busy`. `stop` sets an `AbortController` (checked between turns and to abort the in-flight LLM `fetch` / `run_command` child) — a cooperative replacement for the source's `SIGKILL`.
+- **Concurrency**: the agent loop is a plain `async` function on the event loop. A single-flight `running` flag per session rejects overlapping runs with `409 session_busy`. `stop` sets an `AbortController` (checked between turns and to abort the in-flight LLM `fetch` / `run_command` child).
 - **Persistence**: the SQLite DB is the **system of record** — a one-row upsert on every transition (create, message, tool result, status change, error, delete), not an optional autosave. On restart, `running`/`stopped` sessions reset to `idle` (an in-flight loop can't survive).
 - **Snapshot**: the `snapshot` column stores `{ messages, total_tokens }` — the internal conversation format, persisted per session (the todo list is *not* stored — the web UI derives it from the last `write_todos` tool call in `messages`). It may evolve freely as the tool grows.
-- **Tools & paths**: every file/shell tool resolves relative paths against the session `cwd` (the `run_command` working dir); there is **no path sandbox**, so the agent can reach any path the server process can (matching the source, whose path-traversal guard was only a `TODO`). Tool errors are returned to the model as text (loop continues), matching the source's `tk.ai.fmt()` behavior.
+- **Tools & paths**: every file/shell tool resolves relative paths against the session `cwd` (the `run_command` working dir); there is **no path sandbox**, so the agent can reach any path the server process can. Tool errors are returned to the model as text (loop continues).
 - **SSE**: one `text/event-stream` per session. Events: `snapshot`, `status`, `error`, `done`, `pong`. Each carries a monotonic `id:` (seq); reconnect with `?since=<seq>` / `Last-Event-ID` to replay (bounded ring buffer). 15s `: keep-alive` heartbeat.
 - **Agent-loop detail**: `next()` makes one LLM call with `messages` + tool schemas (`max_completion_tokens: 32768`), retries up to once on an empty choice, appends the assistant message, and returns `tool_calls`; the loop ends when a turn has no tool calls. `total_tokens` is the last response's `usage.total_tokens`.
 - **Error mapping**: LLM timeout → `504 llm_timeout`; unreachable/HTTP error → `502 llm_unavailable`; unknown id → `404`; busy → `409`; malformed/missing `cwd` → `400`; bad `cwd` dir + unhandled → `500`.
@@ -71,4 +70,4 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 - **No test framework.** Verify by running the server and exercising the API (e.g. `node src/main.js --port 8899 --db-file /tmp/x.clowndb`, then `curl`). Keep the default DB `~/.clowndb` clean by using a throwaway `--db-file` during dev.
 - **Code style** (see SPEC §15): ESM import/export only; `async`/`await` (no `.then`); arrow fns assigned to `const`; `const` > `let` > never `var`; terse (early returns, spread, optional chaining, template literals).
 - **Config precedence**: CLI flag > env var > default.
-- **Localhost by default** (`127.0.0.1`), no auth — single-user local tool, same posture as `clown-code`.
+- **Localhost by default** (`127.0.0.1`), no auth — single-user local tool.

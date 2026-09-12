@@ -1,10 +1,9 @@
 # Clown-Circus
 
-A **headless, multi-session** port of [`clown-code`](../clown-code/) (Zig + tokamak TUI)
-exposed as an **Express** HTTP server. Instead of a single terminal TUI bound to one
-conversation, Clown-Circus manages any number of independent agent **sessions** — each with
-its own working directory, conversation state, and running agent loop — all driven over
-**REST + Server-Sent Events**. Every session and its full conversation snapshot are persisted
+A **headless, multi-session** port of [`clown-code`](../clown-code/) exposed as an
+**Express** HTTP server. Clown-Circus manages any number of independent agent
+**sessions** — each with its own working directory, conversation state, and
+running agent loop — all driven over **REST + Server-Sent Events**. Every session and its full conversation snapshot are persisted
 in a local **SQLite** database, so state survives restarts.
 
 - **Target runtime**: Node.js 24.x, plain JavaScript (ESM). No build step.
@@ -119,7 +118,7 @@ A project is just a distinct `cwd`. Selecting one ≈ `GET /sessions?cwd=<path>`
 |---|---|---|
 | `POST` | `/sessions/:id/messages` | Append a user message, start the loop → `202 { id, status }`. `409` if busy. |
 
-### Controls (port of the TUI slash-commands)
+### Controls
 
 | Method | Path | Cmd | Behavior |
 |---|---|---|---|
@@ -184,13 +183,13 @@ src/
 ├─ app.js        # Express app (all routes + SSE)
 ├─ db.js         # node:sqlite wrapper (open, migrate, queries)
 ├─ manager.js    # SessionManager registry (load, create, list, delete, persist)
-├─ session.js    # Session (port of model.zig Clown)
-├─ loop.js       # agent loop (port of workerInner)
+├─ session.js    # Session (messages, run loop, SSE events, persistence)
+├─ loop.js       # agent loop
 ├─ llm.js        # OpenAI-compatible chat client
-├─ prompt.js     # system-prompt composition (port of loadSystemPrompt)
-├─ tools.js      # tools + registration (port of tools.zig)
+├─ prompt.js     # system-prompt composition
+├─ tools.js      # tools + registration
 ├─ errors.js     # HttpError + error mapping
-├─ PREFIX.md     # base system prompt (copied from source)
+├─ PREFIX.md     # base system prompt
 └─ skills/init.md
 ```
 
@@ -215,6 +214,6 @@ See [`WEB_UI.md`](WEB_UI.md) for details.
 
 ## Security notes
 
-- Binds to `127.0.0.1` by default; single-user local tool (no auth), same posture as `clown-code`.
-- No path sandbox: file/shell tools can reach any path the server process can (matches `clown-code`, which only had a `TODO` for path-traversal checks). The trust boundary is the local user plus the `127.0.0.1` bind.
+- Binds to `127.0.0.1` by default; single-user local tool (no auth).
+- No path sandbox: file/shell tools can reach any path the server process can. The trust boundary is the local user plus the `127.0.0.1` bind.
 - The LLM key is never logged; request bodies are not logged.

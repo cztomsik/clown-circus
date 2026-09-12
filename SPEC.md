@@ -1,28 +1,22 @@
 # Clown-Circus — Specification
 
-A **headless, multi-session** port of [`clown-code`](../clown-code/) exposed as an
-**Express-based HTTP server**. Instead of a single terminal TUI bound to one
-conversation, Clown-Circus manages any number of independent agent **sessions**,
-each with its own working directory, conversation state, and running agent loop,
-all driven over REST + Server-Sent Events. All sessions and their conversation
-state are persisted in a local **SQLite** database.
+A **headless, multi-session** agent server built on **Express**. Clown-Circus
+manages any number of independent agent **sessions**, each with its own working
+directory, conversation state, and running agent loop, all driven over REST +
+Server-Sent Events. All sessions and their conversation state are persisted in a
+local **SQLite** database.
 
-- **Historical origin**: `../clown-code/` (Zig + tokamak TUI). **Note**: the
-  projects have since **diverged** — Clown-Circus is its own thing now, and
-  `../clown-code/` is **no longer a reference point**. Don't go look there for
-  behavior; this spec (and the code) is authoritative.
 - **Target runtime**: the currently installed **Node.js 24.x** (`v24.14.1`),
   plain JavaScript (ESM). No build step.
 - **Storage**: the builtin **`node:sqlite`** module (no external DB server).
-- **No TUI, no terminal, no fork/pipe.** Everything that was a keypress or TUI
-  command becomes an HTTP endpoint.
+- **No TUI, no terminal.** Everything is an HTTP endpoint.
 
 ---
 
 ## 1. Goals
 
-- Port the **agent core** of Clown-Code (system-prompt composition, agentic
-  tool loop, tools, compaction, retry/undo) to JavaScript.
+- Implement the **agent core** (system-prompt composition, agentic tool loop,
+  tools, compaction, retry/undo) in JavaScript.
 - Run **many sessions concurrently** in a single long-lived server process.
 - **Persist every session** (metadata + full conversation snapshot) in a local
   SQLite database using Node's builtin `node:sqlite`, so state survives restarts.
@@ -34,9 +28,6 @@ state are persisted in a local **SQLite** database.
   description.
 - Support a **"projects" view**: sessions are grouped by their working directory,
   and `/sessions` can be filtered by path.
-- Keep behavior faithful to the original: the same tool set and the same
-  prompt-composition rules.
-
 ## 2. Non-Goals
 
 - No terminal client.
@@ -49,31 +40,23 @@ state are persisted in a local **SQLite** database.
 
 ---
 
-## 3. Relationship to Clown-Code
+## 3. Key Design Decisions
 
-> **Diverged.** Clown-Code was the historical origin of this project, but the
-> features have already diverged enough that there is **no point looking in
-> `../clown-code/`** anymore. Treat this spec and the code in this repo as the
-> single source of truth; the table below is history, not a contract to keep
-> honoring.
+| Concern       | Choice |
+|---------------|--------|
+| Frontend      | Web UI served at `/` (Tailwind v4, project-grouped sidebar, model picker, full controls — see WEB_UI.md); headless API stays primary |
+| Process model | In-process async loop, one active run per session |
+| Sessions      | Many, each a `Session` object in a registry |
+| Commands      | REST endpoints |
+| Streaming     | SSE event stream per session |
+| Persistence   | SQLite DB (`~/.clowndb`), one row per session, always written |
+| CWD           | Per-session `cwd` (stored per row) |
+| Tools         | `src/tools.js` |
+| System prompt | `PREFIX.md` + `AGENTS.md`/`CLOWN.md` (loaded per session cwd) |
 
-| Concern                | Clown-Code (source)                     | Clown-Circus (this port)                          |
-|------------------------|------------------------------------------|---------------------------------------------------|
-| Frontend               | tokamak TUI (`src/tui.zig`)              | Web UI served at `/` (Tailwind v4, project-grouped sidebar, model picker, full controls — see WEB_UI.md); headless API stays primary |
-| Process model          | fork-based worker + pipe                 | In-process async loop, one active run per session  |
-| Sessions               | Exactly one, bound to the process        | Many, each a `Session` object in a registry        |
-| Commands (`/stop` etc.)| TUI slash-commands                       | REST endpoints                                     |
-| Streaming to user      | TUI re-render each tick                  | SSE event stream per session                       |
-| Persistence            | `session-*.json` in cwd (manual `/save`) | SQLite DB (`~/.clowndb`), one row per session, always written |
-| CWD                    | Server process cwd                       | Per-session `cwd` (stored per row)                 |
-| Tools                  | `src/tools.zig`                          | `src/tools.js` (behavior preserved)                |
-| System prompt          | `PREFIX.md` + `AGENTS.md`/`CLOWN.md`     | Same (loaded per session cwd)                      |
-
-The `Worker` / `WorkerMsg` / pipe machinery in `src/model.zig` is **removed**.
-Its observable contract — "run the agent loop, emit snapshots, report errors" —
-is preserved as an async loop plus event emitter per session. The manual
-`session-*.json` file save/load is **replaced** by the SQLite store, which is
-the sole system of record.
+The agent loop's contract per session — "run the agent loop, emit snapshots,
+report errors" — is implemented as an async loop plus event emitter. The
+SQLite store is the sole system of record.
 
 ---
 
@@ -116,30 +99,27 @@ Components (each is a flat file under `src/`):
 - **`manager.js` (SessionManager)** — the multi-session registry. Loads all
   sessions from SQLite into memory at startup, and coordinates create/list/
   retrieve/destroy + persist-on-change. Owns IDs and lifecycle.
-- **`session.js` (Session)** — the port of the `Clown` struct (`src/model.zig`).
-  Owns the message list, token counter, the agentic loop, and an event
-  emitter. Replaces the fork/pipe worker with an in-process async loop guarded
-  by a single-flight flag so only one run executes at a time.
-- **`loop.js`** — the agent loop (port of `workerInner`), shared by sessions.
-- **`tools.js`** — the port of `src/tools.zig`. Each tool is a named function
-  with a JSON-schema description (surfaced to the model) and typed args.
-- **`llm.js`** — a thin OpenAI-compatible chat client (replaces `tk.ai.Client`),
-  used by the agent loop.
-- **`prompt.js`** — composes the system prompt (replaces `loadSystemPrompt`).
+- **`session.js` (Session)** — owns the message list, token counter, the
+  agentic loop, and an event emitter. The run is an in-process async loop
+  guarded by a single-flight flag so only one run executes at a time.
+- **`loop.js`** — the agent loop, shared by sessions.
+- **`tools.js`** — all tools. Each tool is a named function with a
+  JSON-schema description (surfaced to the model) and typed args.
+- **`llm.js`** — a thin OpenAI-compatible chat client, used by the agent loop.
+- **`prompt.js`** — composes the system prompt.
 
-### Concurrency model (replacing the fork/pipe worker)
+### Concurrency model
 
-Clown-Code forks a child because the TUI must stay responsive while the blocking
-agent loop runs. In a Node server the equivalent constraint is: **do not block
-the event loop** and **do not let two runs of the same session interleave**.
+The core constraints: **do not block the event loop** and **do not let two
+runs of the same session interleave**.
 
 - The agent loop is a plain `async` function: `send(prompt)` → append user
   message → run loop (`while (turn = await next()) { await acceptAll(turn) }`).
 - Each `Session` has `running: boolean`. `send`/`retry`/`compact`
   reject (HTTP 409) if `running` is already true unless the caller issues
-  `stop` first. This is the direct analogue of "worker != null → busy".
+  `stop` first.
 - `stop` sets a cooperative cancellation token (an `AbortController`) checked
-  between turns (replacing `SIGKILL` of the fork). Long-running tool calls
+  between turns. Long-running tool calls
   (e.g. `run_command`) are aborted via the shared `AbortSignal`.
 - Sessions are independent; a slow session never blocks others.
 - **SQLite writes are synchronous** (`node:sqlite` `DatabaseSync`) and small
@@ -388,20 +368,20 @@ Body: `{ "message": "help me fix the tests", "model": "llama-3" }` or
   or wait).
 - `404` if the session does not exist.
 
-### 7.5 Session controls (port of the TUI slash-commands)
+### 7.5 Session controls
 
-All of these operate on a single session and map 1:1 to the original commands in
-`src/tui.zig` `handleCommand`.
+All of these operate on a single session. The `Slash cmd` column is the web
+UI's composer command that dispatches the same action.
 
-| Method | Path                       | Original cmd   | Behavior |
+| Method | Path                       | Slash cmd      | Behavior |
 |--------|----------------------------|----------------|----------|
 | `POST` | `/sessions/:id/stop`       | `/stop`        | Cooperatively abort the running loop. `200` `{ "status": "stopped" }`. No-op (still `200`) if idle. |
 | `POST` | `/sessions/:id/undo`       | `/undo`        | Pop the last message from history. Returns the popped message text (if any) in `{ "undone": "..." }`. |
 | `POST` | `/sessions/:id/retry`      | `/retry`       | Strip trailing assistant/tool messages (keep last user message) and re-run. `202` when it starts a run, `409` if busy. |
-| `POST` | `/sessions/:id/retry-turn` | —              | Roll the transcript back to just before the **last assistant message** — strip that message and everything after it (any tool results it spawned and any later user nudge) — then re-run the loop from there. Unlike `/retry` (which rolls back to the last user message), this reaches a poisoned mid-turn assistant response (e.g. a truncated tool call) that is followed by a tool result + user message, which the `/retry` rollback can't get to. `202` when it starts a run, `409` if busy, `400` if there is no assistant message to retry. |
+| `POST` | `/sessions/:id/retry-turn` | `/retry-turn`  | Roll the transcript back to just before the **last assistant message** — strip that message and everything after it (any tool results it spawned and any later user nudge) — then re-run the loop from there. Unlike `/retry` (which rolls back to the last user message), this reaches a poisoned mid-turn assistant response (e.g. a truncated tool call) that is followed by a tool result + user message, which the `/retry` rollback can't get to. `202` when it starts a run, `409` if busy, `400` if there is no assistant message to retry. |
 | `POST` | `/sessions/:id/clear`      | `/clear`       | Stop + clear history (keep system message). `200`. |
 | `POST` | `/sessions/:id/trim`       | `/trim [n]`     | Trim the transcript, **keeping the last n turns untouched**: in every turn *before* the kept tail, truncate any `role=tool` result longer than 1024 bytes to `[tool result truncated — was <N> bytes]` and delete both `reasoning_content` and `reasoning` from assistant messages. A turn is an assistant message + the tool messages it triggers (one model call + its results); the kept tail is everything from the (total-n+1)-th assistant message on. Keying on assistant turns (not user rounds) is what makes this useful for agentic transcripts, where a single user request is one round packed with many tool-calling turns — only trimming within that round frees the tokens the tool results occupy. The kept tail is untouched, as are user text, assistant text, and the tool-call invocations (name + arguments) — only the tool *results* and the CoT go. `n` may exceed the turn count (a no-op) or be `0` (trim everything). Idempotent (a re-run is a no-op). Body `{ "keep": n }` with `n` a non-negative integer — `400` otherwise. `200` `{ "keep", "trimmed", "truncatedResults", "reasoningRemoved" }` (`trimmed` = number of turns trimmed). |
-| `POST` | `/sessions/:id/compact`    | `/compact`     | Run the two-phase summarize-then-replace compaction (as in the source). `202` (starts a run). |
+| `POST` | `/sessions/:id/compact`    | `/compact`     | Run the two-phase summarize-then-replace compaction. `202` (starts a run). |
 | `POST` | `/sessions/:id/init`       | `/init`        | Convenience: send the prompt that triggers the built-in `init` skill ("Could you /init this project?"). `202`. |
 | `POST` | `/sessions/:id/duplicate`  | —              | Fork the session into a new one: same `cwd`, `model`, and archived flag; fresh id/timestamps; `last_error` cleared; a **deep copy** of the transcript (independent of the source). If the source is running and the copy ends mid-turn (an assistant `tool_calls` whose tool results have not all arrived yet — an invalid LLM transcript), that message and its partial results are stripped; a completed transcript is copied verbatim. Allowed while the source is running. `201`, returning the new session (meta + snapshot). `404` if the source is unknown. |
 | `POST` | `/sessions/:id/archive`    | —              | Mark the session as archived: kept in the DB but hidden from the default `GET /sessions` list and `/projects` counts. No body. `200` `{ "id", "archived": true }`. |
@@ -415,8 +395,7 @@ deep-copies the transcript into an independent session (the source is never
 touched, even while it runs).
 
 `undo`/`clear`/`trim` are synchronous state edits; if a run is in
-progress they implicitly `stop` first (matching the original, which calls
-`self.stop()` before mutating).
+progress they implicitly `stop` first.
 
 ### 7.6 Events (SSE)
 
@@ -424,15 +403,14 @@ progress they implicitly `stop` first (matching the original, which calls
 |--------|-------------------------------|-------------|
 | `GET`  | `/sessions/:id/events`        | Server-Sent Events stream of session activity |
 
-This is the headless replacement for the TUI re-render loop. Clients connect
-with `Accept: text/event-stream` (e.g. a browser `EventSource`) and receive
+Clients connect with `Accept: text/event-stream` (e.g. a browser `EventSource`) and receive
 incremental updates in real time.
 
 Event types (SSE `event:` field):
 
 | Event      | Data (JSON)                              | Emitted when |
 |------------|------------------------------------------|--------------|
-| `snapshot` | `Snapshot`                               | After each agentic turn / tool batch (replaces the per-tick snapshot the TUI consumed) |
+| `snapshot` | `Snapshot`                               | After each agentic turn / tool batch |
 | `status`   | `{ "status": "running"\|"idle"\|"error"\|"stopped" }` | On state transitions |
 | `error`    | `{ "message": "..." }`                   | On a loop error |
 | `done`     | `{ "total_tokens": n }`                  | When a run completes |
@@ -450,9 +428,8 @@ Event types (SSE `event:` field):
   destroyed (server sends a final `status: stopped` + close).
 - Heartbeat: an SSE comment line (`: keep-alive`) every 15s to keep proxies open.
 
-> **Rationale**: a single SSE stream per session keeps clients simple and matches
-> the "server pushes rendered state" model of the TUI. WebSockets are a
-> non-goal; SSE is sufficient for one-way server→client streaming.
+> **Rationale**: a single SSE stream per session keeps clients simple. WebSockets
+> are a non-goal; SSE is sufficient for one-way server→client streaming.
 
 ### 7.7 Errors
 
@@ -486,7 +463,7 @@ and the current gaps it is expected to grow into — lives in
 
 ---
 
-## 8. Agent Loop (port of `workerInner`)
+## 8. Agent Loop
 
 The core loop, once `send` is called, is:
 
@@ -518,7 +495,7 @@ emit status=idle, done; persist(status)
   before any (possibly long or destructive) side effect, and keeps the DB current
   if the process dies mid-run (recoverable as far as the last persisted state).
 
-### Cancellation (replacing `SIGKILL`)
+### Cancellation
 
 `stop` calls `session.abortController.abort()`. The loop:
 1. Cancels any in-flight LLM `fetch` (via the shared `AbortSignal`).
@@ -526,18 +503,17 @@ emit status=idle, done; persist(status)
 3. Checks the signal at the top of each turn and between tool calls.
 
 Because the loop is cooperative, a tool call that ignores the signal is the only
-thing that can delay a stop. This is a deliberate, safer trade-off versus the
-source's process kill.
+thing that can delay a stop.
 
 ---
 
-## 9. System Prompt (port of `loadSystemPrompt`)
+## 9. System Prompt
 
 Composed **per session, from the session's `cwd`**, at session creation and
 re-composed on `clear`-style resets:
 
 ```
-<PREFIX.md>                       (from ./src/PREFIX.md, copied from the source)
+<PREFIX.md>                       (from ./src/PREFIX.md)
 
 <AGENTS.md>                       (from cwd, up to 1MB) if present,
   else <CLOWN.md>                 (from cwd, up to 1MB) if present,
@@ -547,11 +523,11 @@ Current date: <YYYY-MM-DD>
 Current working directory: <realpath of cwd>
 ```
 
-- The exact fallback chain `AGENTS.md → CLOWN.md → (none)` is preserved.
+- The exact fallback chain is `AGENTS.md → CLOWN.md → (none)`.
 - The system message is `messages[0]` and is the only message retained by
   `clear`.
-- `PREFIX.md` content is copied from the source verbatim (same guidelines), with
-  the tool list updated to match the ported tools.
+- `PREFIX.md` supplies the base guidelines; its tool list matches the
+  registered tools.
 
 ---
 
@@ -597,8 +573,8 @@ Via CLI flags and/or environment variables, resolved at startup into a
 | `--port` / `PORT`          | `PORT`           | `8790`                   | HTTP listen port |
 | `--host` / `HOST`          | `HOST`           | `127.0.0.1`              | Bind address (localhost default for safety) |
 | `--db-file` / `DB_FILE`    | `DB_FILE`        | `~/.clowndb`             | Path to the SQLite database file |
-| `--base-url` / `CLOWN_API` | `CLOWN_API`      | `http://127.0.0.1:8080`  | LLM OpenAI-compatible base URL (kept from source) |
-| `--timeout` / `CLOWN_TIMEOUT_MS` | `CLOWN_TIMEOUT_MS` | `900000` (15 min)      | Per-LLM-request timeout (matches source's `15*60`) |
+| `--base-url` / `CLOWN_API` | `CLOWN_API`      | `http://127.0.0.1:8080`  | LLM OpenAI-compatible base URL |
+| `--timeout` / `CLOWN_TIMEOUT_MS` | `CLOWN_TIMEOUT_MS` | `900000` (15 min)      | Per-LLM-request timeout |
 
 - The parent directory of the DB file is created (with parents) if missing.
 - LLM auth (`Authorization` header) is passed through from an optional
@@ -606,26 +582,25 @@ Via CLI flags and/or environment variables, resolved at startup into a
 
 ---
 
-## 12. Tools (port of `src/tools.zig`)
+## 12. Tools
 
-Each tool is registered with a **snake_case name** (matching the source's tool
-naming convention), a one-line description, a JSON-Schema for args, and an
-implementation. Relative paths resolve against the session's `cwd` (the same
-directory `run_command` runs in). There is **no path sandbox**: the agent may
-read, write, and execute anywhere the server process can reach — matching the
-source, whose only path-traversal note was an unimplemented `TODO`.
+Each tool is registered with a **snake_case name**, a one-line description, a
+JSON-Schema for args, and an implementation. Relative paths resolve against
+the session's `cwd` (the same directory `run_command` runs in). There is
+**no path sandbox**: the agent may read, write, and execute anywhere the
+server process can reach.
 
-| Tool            | Args                                            | Ported from | Notes |
-|-----------------|--------------------------------------------------|-------------|-------|
-| `read_file`     | `path`, `raw?: bool`                             | `readFile`  | Line-number prefix `N:content` unless `raw`. 2MB limit. UTF-8 validated. |
-| `write_file`    | `path`, `content`                                | `writeFile` | Creates parent dirs. |
-| `edit_file`     | `path`, `old_content`, `new_content`, `replace_all?: bool` | `editFile` | Exact-match replace; errors on 0 or >1 matches unless `replace_all`. Exact-string semantics kept (the source evaluated line-range/sed edits and rejected them). |
-| `run_command`   | `command`, `cwd?: string`                        | `runCommand`| Runs `sh -c`; captures stdout+stderr (2MB limits); abortable on stop. |
-| `write_todos`  | `content: string (markdown)`                   | `writeTodos`| No-op: the tool call's presence in the transcript IS the todo list (the web UI derives it from messages). Returns `Todos updated`. |
-| `load_skill`    | `skill_name`                                     | `loadSkill` | Built-in `init` first, else `skills/<name>.md` in cwd (path-validated). |
+| Tool            | Args                                            | Notes |
+|-----------------|--------------------------------------------------|-------|
+| `read_file`     | `path`, `raw?: bool`                             | Line-number prefix `N:content` unless `raw`. 2MB limit. UTF-8 validated. |
+| `write_file`    | `path`, `content`                                | Creates parent dirs. |
+| `edit_file`     | `path`, `old_content`, `new_content`, `replace_all?: bool` | Exact-match replace; errors on 0 or >1 matches unless `replace_all`. Exact-string semantics only (no line-range/sed edits). |
+| `run_command`   | `command`, `cwd?: string`                        | Runs `sh -c`; captures stdout+stderr (2MB limits); abortable on stop. |
+| `write_todos`  | `content: string (markdown)`                   | No-op: the tool call's presence in the transcript IS the todo list (the web UI derives it from messages). Returns `Todos updated`. |
+| `load_skill`    | `skill_name`                                     | Built-in `init` first, else `skills/<name>.md` in cwd (path-validated). |
 
 Tool result values are returned to the model as text (strings / structured
-values serialized to JSON), matching the source's `tk.ai.fmt()` behaviour.
+values serialized to JSON).
 
 ### Tool context
 
@@ -670,14 +645,14 @@ clown-circus/
    ├─ app.js                # express app factory (all routes wired here)
    ├─ db.js                 # node:sqlite wrapper: connection, migration, queries
    ├─ manager.js            # SessionManager registry (loads from DB, persists changes)
-   ├─ session.js            # Session (port of model.zig Clown)
-   ├─ loop.js               # agent loop (port of workerInner)
+   ├─ session.js            # Session
+   ├─ loop.js               # agent loop
    ├─ llm.js                # OpenAI-compatible chat client
-   ├─ prompt.js             # system-prompt composition (port of loadSystemPrompt)
-   ├─ tools.js              # all tools + registerAllTools (port of tools.zig)
-   ├─ PREFIX.md             # base system prompt (copied from source)
+   ├─ prompt.js             # system-prompt composition
+   ├─ tools.js              # all tools + registration
+   ├─ PREFIX.md             # base system prompt
    └─ skills/
-      └─ init.md            # built-in init skill (copied from source)
+      └─ init.md            # built-in init skill
 ```
 
 The tree is deliberately flat: one file per concern, no per-feature
@@ -696,8 +671,7 @@ subdirectories.
   installed major (24) so behavior is stable for our purposes.
 - **Express 5** for the HTTP layer (per requirement).
 - **`node:fs/promises`**, **`node:child_process`** (`spawn` with `AbortSignal`)
-  for tools. No shell injection — `run_command` uses `sh -c` explicitly, same as
-  the source.
+  for tools. No shell injection — `run_command` uses `sh -c` explicitly.
 - **Native `fetch`** for LLM calls (OpenAI-compatible), with `AbortSignal` for
   timeout + stop. Startup patches the built-in global dispatcher
   (`globalThis[Symbol.for('undici.globalDispatcher.1')]`, no dependency) to set
@@ -774,14 +748,13 @@ function readFile(io, ctx, args) {
 - Bind to `127.0.0.1` by default; the server is not assumed to be public.
 - **No path sandbox**: file and shell tools resolve relative paths against the
   session `cwd` and otherwise run with the server process's own permissions, so
-  the agent can reach any path it can address (matching the source, whose
-  path-traversal guard was only an unimplemented `TODO`). The trust boundary is
+  the agent can reach any path it can address. The trust boundary is
   the local user plus the `127.0.0.1` bind.
 - `run_command` runs with the session `cwd` as the working directory; no
   privilege escalation.
 - **DB isolation**: the SQLite file defaults to `~/.clowndb` (user-scoped).
   No cross-user access by default; `0600` on the file is recommended.
-- No auth by design (single-user, local tool) — same posture as Clown-Code.
+- No auth by design (single-user, local tool).
 - LLM key never logged; request bodies are not logged by default.
 
 ---
@@ -795,7 +768,7 @@ function readFile(io, ctx, args) {
   DB), emitted as an `error` SSE event, and the session returns to `idle` so it
   stays reusable.
 - Structured logging (timestamp, session id, event) to stdout. A `--verbose`
-  flag mirrors the source's debug logging (`src/log.zig`).
+  flag enables debug logging.
 - The `node:sqlite` `ExperimentalWarning` is expected and not treated as an
   error.
 
@@ -808,11 +781,10 @@ function readFile(io, ctx, args) {
 - External database server or any non-SQLite storage.
 - Multi-process / concurrent-writer access to the same DB file (single writer).
 - Session TTL / garbage collection (sessions persist in the DB until deleted).
-- Writing per-session `session-*.json` files into project dirs (SQLite is the
-  sole system of record).
+- File-based session exports (SQLite is the sole system of record).
 - Changes to the LLM provider protocol beyond OpenAI-compatible chat.
-- The two-phase **auto**-compact (still *planned* in the source): only the
-  **manual** compact endpoint (§7.5) is in scope for v1.
+- The two-phase **auto**-compact: only the **manual** compact endpoint (§7.5)
+  is in scope for v1.
 
 ---
 

@@ -1,4 +1,4 @@
-# Clown-Code System Prompt
+# Clown-Circus System Prompt
 
 You are a helpful AI coding assistant with access to file system and shell commands.
 
