@@ -15,9 +15,10 @@ const isWide = () => window.matchMedia('(min-width: 768px)').matches;
 // localStorage key for a session's composer draft.
 const inputKey = (id) => `clown-circus-input-${id}`;
 
-// Default for /trim when no round count is typed: keep this many trailing
-// rounds untouched (everything before is trimmed). A web-UI convenience — the
-// REST endpoint still requires an explicit `keep`.
+// Default for /trim when no turn count is typed: keep this many trailing
+// turns (assistant LLM calls, each with its tool results) untouched —
+// everything before is trimmed. A web-UI convenience — the REST endpoint
+// still requires an explicit `keep`.
 const TRIM_KEEP_DEFAULT = 5;
 
 // Attachment id. crypto.randomUUID() is only exposed in *secure* contexts
@@ -244,10 +245,10 @@ const App = () => {
   // — including /stop and the implicit-stop commands (/undo, /clear, /trim)
   // that must work while a run is in flight. Each delegates to the existing
   // handlers, so there is no new endpoint. /trim takes an optional numeric
-  // `<rounds>` arg (how many trailing rounds to leave untouched); with no arg it
-  // keeps the last TRIM_KEEP_DEFAULT. A non-numeric/negative arg flashes usage
-  // and keeps the text. Unknown commands keep the text in the box so it can be
-  // edited.
+  // `<turns>` arg (how many trailing turns — assistant LLM calls, each with its
+  // tool results — to leave untouched); with no arg it keeps the last
+  // TRIM_KEEP_DEFAULT. A non-numeric/negative arg flashes usage and keeps the
+  // text. Unknown commands keep the text in the box so it can be edited.
   const runCommand = ({ name, arg }) => {
     switch (name) {
       case 'stop': setInput(''); void stop(); return;
@@ -259,7 +260,7 @@ const App = () => {
       case 'clear': setInput(''); void handleAction('clear'); return;
       case 'trim': {
         const n = arg === '' ? TRIM_KEEP_DEFAULT : Number(arg);
-        if (!Number.isInteger(n) || n < 0) { flashMsg(`usage: /trim [rounds] — keep the last n (default ${TRIM_KEEP_DEFAULT})`); return; }
+        if (!Number.isInteger(n) || n < 0) { flashMsg(`usage: /trim [turns] — keep the last n (default ${TRIM_KEEP_DEFAULT})`); return; }
         setInput(''); void handleAction('trim', n); return;
       }
       case 'duplicate': setInput(''); void handleAction('duplicate'); return;

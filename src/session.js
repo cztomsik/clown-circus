@@ -28,22 +28,26 @@ const lastIndexOf = (arr, pred) => {
   return -1;
 };
 
-// Exclusive boundary of the first N rounds. A "round" is a user message and all
-// the assistant/tool messages it triggers, up to (not including) the next user
-// message — so "first N rounds" is everything before the (N+1)-th user message.
-// Returns that user message's index, or messages.length when the transcript has
-// fewer than N+1 rounds (i.e. trim the whole thing).
-const roundsBoundary = (messages, n) => {
+// Exclusive boundary of the first N turns. A "turn" is an assistant message and
+// the tool messages it triggers (one model call + its results) — the natural
+// unit of work in an agentic transcript, where a single user request drives many
+// such turns. (Same notion of "turn" the web UI uses for an assistant LLM call.)
+// "First N turns" is everything before the (N+1)-th assistant message. Returns
+// that assistant message's index, or messages.length when the transcript has
+// fewer than N+1 turns (i.e. trim the whole thing). Keying on assistant (not
+// user) messages keeps the boundary on a turn seam, so a trimmed turn's tool
+// results are never orphaned from the call that produced them.
+const turnBoundary = (messages, n) => {
   let seen = 0;
   for (let i = 0; i < messages.length; i++) {
-    if (messages[i].role === 'user' && ++seen > n) return i;
+    if (messages[i].role === 'assistant' && ++seen > n) return i;
   }
   return messages.length;
 };
 
-// Number of rounds = number of user messages (each user message starts a round).
-const countRounds = (messages) =>
-  messages.reduce((a, m) => a + (m.role === 'user' ? 1 : 0), 0);
+// Number of turns = number of assistant messages (each starts a turn).
+const countTurns = (messages) =>
+  messages.reduce((a, m) => a + (m.role === 'assistant' ? 1 : 0), 0);
 
 
 
@@ -350,20 +354,24 @@ export class Session {
     this.persist();
   }
 
-  // Trim the transcript in place, keeping the last `k` rounds untouched: in
-  // every round *before* the kept tail, truncate bulky tool results to a marker
+  // Trim the transcript in place, keeping the last `k` turns untouched: in
+  // every turn *before* the kept tail, truncate bulky tool results to a marker
   // and strip the chain-of-thought (both `reasoning_content` and `reasoning`).
-  // A round is a user message + the assistant/tool messages it triggers; the
-  // kept tail is everything from the (total-k+1)-th user message on. As always
-  // only tool *results* and the CoT go — user text, assistant text, and the
+  // A turn is an assistant message + the tool messages it triggers (one model
+  // call + its results); the kept tail is everything from the (total-k+1)-th
+  // assistant message on. Keying on assistant turns (not user rounds) is what
+  // makes this useful for agentic transcripts, where a single user request is
+  // one round packed with many tool-calling turns — trimming within that round
+  // is the only way to free the tokens the tool results occupy. As always only
+  // tool *results* and the CoT go — user text, assistant text, and the
   // tool-call invocations (name + arguments) are preserved, even in trimmed
-  // rounds. `k` may exceed the round count (a no-op) or be 0 (trim everything).
+  // turns. `k` may exceed the turn count (a no-op) or be 0 (trim everything).
   // Idempotent: a second run finds nothing left to trim. Synchronous edit —
   // implicitly stops a running loop first (matching clear/undo).
   trimKeep(k) {
     if (this.running) this.stop();
-    const n = Math.max(0, countRounds(this.messages) - k); // rounds to trim
-    const boundary = roundsBoundary(this.messages, n);
+    const n = Math.max(0, countTurns(this.messages) - k); // turns to trim
+    const boundary = turnBoundary(this.messages, n);
     let truncatedResults = 0;
     let reasoningRemoved = 0;
     for (let i = 0; i < boundary; i++) {

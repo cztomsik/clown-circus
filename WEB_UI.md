@@ -317,13 +317,14 @@ primary interface — the UI is just one client of it.
   by `runCommand()`; otherwise it is a normal message. The commands map 1:1 to
   the §7.5 control endpoints and reuse the existing handlers (no new endpoint):
   `/stop`, `/retry`, `/retry-turn`, `/init`, `/compact`, `/clear`,
-  `/trim [rounds]`, `/undo`, `/duplicate` →
+  `/trim [turns]`, `/undo`, `/duplicate` →
   the matching `POST /sessions/:id/…` (`/undo` restores the popped message into
   the composer; `/duplicate` opens the new fork; `/trim` takes an optional
-  `<rounds>` arg (how many trailing rounds to leave untouched) that the ⋮
+  `<turns>` arg (how many trailing turns — assistant LLM calls, each with its
+  tool results — to leave untouched) that the ⋮
   menu's entries can't carry, so it lives in the composer: with no arg it keeps
   the last 5,
-  and a non-numeric/negative arg flashes `usage: /trim [rounds]` and keeps the
+  and a non-numeric/negative arg flashes `usage: /trim [turns]` and keeps the
   text in the box). A command is parsed **before** the running no-op
   guard, so
   `/stop` and the implicit-stop commands (`/undo`, `/clear`, `/trim`)
@@ -344,7 +345,7 @@ primary interface — the UI is just one client of it.
     `/retry-turn`, `/init` (fire-and-forget, 202, start the loop),
     `/compact` (starts the loop), `/undo` (synchronous; restores the popped
     user message into the composer from the response's `undone` field and
-    returns focus, so you can edit and re-send), `/clear`, `/trim [rounds]`,
+    returns focus, so you can edit and re-send), `/clear`, `/trim [turns]`,
     and `/duplicate` (`POST …/duplicate` forks the session — same `cwd` +
     history, copied verbatim unless the running source ends with pending
     `tool_calls`, in which case the dangling tail is stripped; 201 — and
