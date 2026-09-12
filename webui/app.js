@@ -15,6 +15,11 @@ const isWide = () => window.matchMedia('(min-width: 768px)').matches;
 // localStorage key for a session's composer draft.
 const inputKey = (id) => `clown-circus-input-${id}`;
 
+// Default for /trim when no round count is typed: keep this many trailing
+// rounds untouched (everything before is trimmed). A web-UI convenience — the
+// REST endpoint still requires an explicit `keep`.
+const TRIM_KEEP_DEFAULT = 5;
+
 // Attachment id. crypto.randomUUID() is only exposed in *secure* contexts
 // (https / localhost); a phone that reaches the server over a LAN IP is not,
 // so fall back to a non-crypto id. It only needs to be unique among the
@@ -205,9 +210,9 @@ const App = () => {
     try {
       if (name === 'undo' || name === 'clear' || name === 'trim') {
         // synchronous history edits: re-fetch the detail and re-render.
-        // Only `trim` carries a body (the `turns` arg); the rest are no-arg.
+        // Only `trim` carries a body (the `keep` arg); the rest are no-arg.
         const r = await post(`/sessions/${current}/${name}`,
-          name === 'trim' ? { turns: arg } : undefined);
+          name === 'trim' ? { keep: arg } : undefined);
         // Undo restores the popped user message into the composer so it can be
         // edited and re-sent.
         if (name === 'undo' && r?.undone) setInput(r.undone);
@@ -238,9 +243,11 @@ const App = () => {
   // handleCommand. Parsed before the message path so a command always dispatches
   // — including /stop and the implicit-stop commands (/undo, /clear, /trim)
   // that must work while a run is in flight. Each delegates to the existing
-  // handlers, so there is no new endpoint. /trim takes a numeric `<turns>` arg;
-  // a missing/invalid arg flashes usage and keeps the text. Unknown commands
-  // keep the text in the box so it can be edited.
+  // handlers, so there is no new endpoint. /trim takes an optional numeric
+  // `<rounds>` arg (how many trailing rounds to leave untouched); with no arg it
+  // keeps the last TRIM_KEEP_DEFAULT. A non-numeric/negative arg flashes usage
+  // and keeps the text. Unknown commands keep the text in the box so it can be
+  // edited.
   const runCommand = ({ name, arg }) => {
     switch (name) {
       case 'stop': setInput(''); void stop(); return;
@@ -251,8 +258,8 @@ const App = () => {
       case 'compact': setInput(''); void handleAction('compact'); return;
       case 'clear': setInput(''); void handleAction('clear'); return;
       case 'trim': {
-        const n = Number(arg);
-        if (!Number.isInteger(n) || n < 1) { flashMsg('usage: /trim <turns>'); return; }
+        const n = arg === '' ? TRIM_KEEP_DEFAULT : Number(arg);
+        if (!Number.isInteger(n) || n < 0) { flashMsg(`usage: /trim [rounds] — keep the last n (default ${TRIM_KEEP_DEFAULT})`); return; }
         setInput(''); void handleAction('trim', n); return;
       }
       case 'duplicate': setInput(''); void handleAction('duplicate'); return;

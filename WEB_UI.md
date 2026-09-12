@@ -317,12 +317,14 @@ primary interface — the UI is just one client of it.
   by `runCommand()`; otherwise it is a normal message. The commands map 1:1 to
   the §7.5 control endpoints and reuse the existing handlers (no new endpoint):
   `/stop`, `/retry`, `/retry-turn`, `/init`, `/compact`, `/clear`,
-  `/trim <turns>`, `/undo`, `/duplicate` →
+  `/trim [rounds]`, `/undo`, `/duplicate` →
   the matching `POST /sessions/:id/…` (`/undo` restores the popped message into
   the composer; `/duplicate` opens the new fork; `/trim` is the only
-  **slash-only** command — it needs its `<turns>` arg, so it has no ⋮-dropdown
-  entry — and a missing/invalid `<turns>` flashes `usage: /trim <turns>` and
-  keeps the text in the box). A command is parsed **before** the running no-op
+  **slash-only** command — it takes an optional `<rounds>` arg (how many
+  trailing rounds to leave untouched) that the fixed no-arg ⋮-dropdown entries
+  can't carry, so it lives in the composer: with no arg it keeps the last 5,
+  and a non-numeric/negative arg flashes `usage: /trim [rounds]` and keeps the
+  text in the box). A command is parsed **before** the running no-op
   guard, so
   `/stop` and the implicit-stop commands (`/undo`, `/clear`, `/trim`)
   work while a run is in flight; plain messages still no-op while running
@@ -342,7 +344,7 @@ primary interface — the UI is just one client of it.
     snapshot after the call. `undo` restores the popped user message into the
     composer (from the response's `undone` field) and returns focus to it, so
     you can edit and re-send. (Transcript trimming lives in the composer as
-    `/trim <turns>` — see **Commands** — not in this menu.)
+    `/trim [rounds]` — see **Commands** — not in this menu.)
   - **Forking**: `duplicate` — `POST …/duplicate` creates a fork (same
     `cwd` + history, copied verbatim unless the running source ends with
     pending `tool_calls`, in which case the dangling tail is stripped; 201)

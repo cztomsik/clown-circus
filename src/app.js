@@ -132,10 +132,10 @@ export const buildApp = ({ manager }) => {
 
   app.post('/sessions/:id/trim', (req, res) => {
     const s = manager.require(req.params.id);
-    const n = Number(req.body?.turns);
-    if (!Number.isInteger(n) || n < 1)
-      throw new HttpError(400, 'bad_request', 'turns must be a positive integer');
-    res.json(s.trimTurns(n));
+    const keep = Number(req.body?.keep);
+    if (!Number.isInteger(keep) || keep < 0)
+      throw new HttpError(400, 'bad_request', 'keep must be a non-negative integer');
+    res.json(s.trimKeep(keep));
   });
 
   app.post('/sessions/:id/compact', session((s, res) => {

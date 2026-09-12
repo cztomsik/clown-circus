@@ -8,7 +8,7 @@ import { llm } from './llm.js';
 import { tools, toolSchemas } from './tools.js';
 
 const MAX_EVENTS = 200; // bounded per-session replay ring for SSE `?since`
-// trimTurns truncates a tool result (replacing its content with a marker) once
+// trimKeep truncates a tool result (replacing its content with a marker) once
 // it exceeds this many bytes; smaller results are kept verbatim.
 const TOOL_RESULT_KEEP_BYTES = 1024;
 
@@ -40,6 +40,10 @@ const roundsBoundary = (messages, n) => {
   }
   return messages.length;
 };
+
+// Number of rounds = number of user messages (each user message starts a round).
+const countRounds = (messages) =>
+  messages.reduce((a, m) => a + (m.role === 'user' ? 1 : 0), 0);
 
 
 
@@ -346,15 +350,19 @@ export class Session {
     this.persist();
   }
 
-  // Trim the transcript in place for the first N rounds from the beginning:
-  // truncate bulky tool results to a marker and strip the chain-of-thought
-  // (both `reasoning_content` and `reasoning`). Everything after round N is
-  // untouched, as are user text, assistant text, and the tool-call
-  // invocations (name + arguments) — only the tool *results* and the CoT go.
+  // Trim the transcript in place, keeping the last `k` rounds untouched: in
+  // every round *before* the kept tail, truncate bulky tool results to a marker
+  // and strip the chain-of-thought (both `reasoning_content` and `reasoning`).
+  // A round is a user message + the assistant/tool messages it triggers; the
+  // kept tail is everything from the (total-k+1)-th user message on. As always
+  // only tool *results* and the CoT go — user text, assistant text, and the
+  // tool-call invocations (name + arguments) are preserved, even in trimmed
+  // rounds. `k` may exceed the round count (a no-op) or be 0 (trim everything).
   // Idempotent: a second run finds nothing left to trim. Synchronous edit —
   // implicitly stops a running loop first (matching clear/undo).
-  trimTurns(n) {
+  trimKeep(k) {
     if (this.running) this.stop();
+    const n = Math.max(0, countRounds(this.messages) - k); // rounds to trim
     const boundary = roundsBoundary(this.messages, n);
     let truncatedResults = 0;
     let reasoningRemoved = 0;
@@ -376,7 +384,7 @@ export class Session {
     }
     this.emit('snapshot', this.snapshot());
     this.persist();
-    return { turns: n, truncatedResults, reasoningRemoved };
+    return { keep: k, trimmed: n, truncatedResults, reasoningRemoved };
   }
 
   // Flag the session as archived (or not). A metadata-only edit: allowed while
