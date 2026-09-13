@@ -86,8 +86,9 @@ Errors: `{ "error": { "code", "message" } }`.
 | `GET` | `/sessions/:id` | Full session: `SessionMeta` + `snapshot` |
 | `DELETE` | `/sessions/:id` | Stop and delete (memory + DB) → `204` |
 
-`POST /sessions` body — both `cwd` and `model` are required. `cwd` is resolved to an
-absolute path; `model` (non-empty string) is the LLM model to run and is stored as the
+`POST /sessions` body — both `cwd` and `model` are required. `cwd` **must** be an
+absolute path (relative → `400` `bad_request`); `model` (non-empty string) is the LLM
+model to run and is stored as the
 session's last-used model (the web UI pre-fills its picker from it; `retry`/`init`/`compact`
 reuse it). There is no server-side default:
 
@@ -100,17 +101,9 @@ reuse it). There is no server-side default:
 {
   "id": "...", "cwd": "/abs/path", "model": "llama-3", "status": "idle",
   "created_at": "2026-09-02T12:00:00.000Z", "last_activity": "2026-09-02T12:05:00.000Z",
-  "message_count": 42, "total_tokens": 18334, "last_error": null
+  "message_count": 42, "total_tokens": 18334, "last_error": null, "archived": false
 }
 ```
-
-### Projects
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/projects` | Unique working directories: `[{ "cwd", "sessions" }]` |
-
-A project is just a distinct `cwd`. Selecting one ≈ `GET /sessions?cwd=<path>`.
 
 ### Messages
 

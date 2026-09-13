@@ -151,7 +151,7 @@ primary interface — the UI is just one client of it.
   empty/unknown type — iOS Safari reports no MIME for a pasted image, so the
   real validation is the decode in `prepareImageDataURL`). Pure DOM, no
   Preact — kept separate from the no-DOM `util.js`.
-- Bundled at server startup (consistent with SPEC §14). The modules are plain
+- Bundled at server startup (consistent with SPEC §7.7). The modules are plain
   static files in `webui/`; esbuild bundles `webui/app.tsx` + its deps
   (**Preact (+ `jsx-runtime`) + marked + DOMPurify + the Tailwind browser
   JIT**) into
