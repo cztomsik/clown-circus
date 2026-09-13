@@ -8,7 +8,6 @@ import { llm } from './llm.js';
 
 const HEARTBEAT_MS = 15000;
 const WEBUI_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'webui');
-const NM = join(dirname(fileURLToPath(import.meta.url)), '..', 'node_modules');
 
 // Build the Express app (all routes wired here).
 export const buildApp = ({ manager }) => {
@@ -16,9 +15,6 @@ export const buildApp = ({ manager }) => {
   app.use(express.json({ limit: '25mb' }));
   app.disable('x-powered-by');
   app.use(express.static(WEBUI_DIR)); // web UI at / (see WEB_UI.md)
-
-  // In-browser Tailwind JIT, served from node_modules (offline, no CDN).
-  app.use('/vendor/tailwind', express.static(join(NM, '@tailwindcss/browser/dist')));
 
   const sseFrame = (res, rec) =>
     res.write(`id: ${rec.seq}\nevent: ${rec.event}\ndata: ${JSON.stringify(rec.data)}\n\n`);

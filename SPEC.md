@@ -446,7 +446,7 @@ Event types (SSE `event:` field):
 ### 7.8 Web UI
 
 A web UI is served at `GET /` from `webui/` (via `express.static`): a thin
-`index.html` shell (Tailwind v4 via the locally-served `@tailwindcss/browser`
+`index.html` shell (Tailwind v4 via the bundled `@tailwindcss/browser`
 JIT, and a single `#root` mount) plus a set of small **Preact + htm** ES
 modules — `app.js` holds the root component (all state + side effects), with
 component modules (`Header.js`, `Sidebar.js`, `Main.js`, `Message.js`,
@@ -457,9 +457,10 @@ dependencies. At server startup, esbuild (a runtime dependency, run in
 `src/main.js`) bundles `webui/app.js` + its deps from `node_modules` into
 `webui/vendor/bundle.js` (served at `/vendor/bundle.js`, the only
 `<script>` in the shell); a background watch keeps it fresh, and it is
-disposed on shutdown. Tailwind stays unbundled (served at
-`/vendor/tailwind/index.global.js`). No network CDNs — the UI works fully
-offline.
+disposed on shutdown. The Tailwind browser JIT is in the same bundle
+(`webui/app.js` imports `@tailwindcss/browser` first, so the JIT is installed
+before the UI renders). No network CDNs, no `node_modules` static mounts —
+the UI works fully offline.
 
 The authoritative description of the UI — features, constraints/invariants,
 and the current gaps it is expected to grow into — lives in
@@ -689,12 +690,11 @@ subdirectories.
 - Minimal dependencies: `express` for the server, `esbuild` for bundling the
   web UI at startup, plus the web UI's browser libraries (`preact`, `htm`,
   `marked`, `dompurify`, `@tailwindcss/browser`). All of those are
-  `dependencies` because they are consumed at runtime — esbuild bundles the
-  browser libraries into `webui/vendor/bundle.js` from `node_modules`, and
-  `src/app.js` still serves the Tailwind JIT at
-  `/vendor/tailwind/index.global.js` (offline, no CDN); the server imports
-  only `esbuild` of them as code. Everything else (SQLite, crypto, http,
-  child_process) is built into Node.
+  `dependencies` because they are consumed at runtime — esbuild bundles them
+  into `webui/vendor/bundle.js` from `node_modules` (offline, no CDN, no
+  `node_modules` static mounts); the server imports only `esbuild` of them as
+  code. Everything else (SQLite, crypto, http, child_process) is built into
+  Node.
 - **TypeScript (dev-only, check-only)**: `typescript` and `@types/node` are
   dev dependencies used *solely* to type-check the plain-JS codebase — they
   never emit and are not part of the runtime or build. (The web UI's

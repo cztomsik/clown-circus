@@ -1,3 +1,8 @@
+// Browser-side Tailwind v4 JIT: processes the <style type="text/tailwindcss">
+// block in index.html and watches the DOM for new classes (Preact renders).
+// Bundled in here (first import, so it runs before the UI renders); it is a
+// side-effect IIFE, not an ESM module.
+import '@tailwindcss/browser';
 import { render } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { html } from './ui.js';
