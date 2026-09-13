@@ -1,14 +1,15 @@
 import { randomUUID } from 'node:crypto';
-import { Session } from './session.js';
-import { HttpError } from './errors.js';
-import { config } from './config.js';
-import { db } from './db.js';
+import { Session } from './session.ts';
+import { HttpError } from './errors.ts';
+import { config } from './config.ts';
+import { db } from './db.ts';
 
 // SessionManager: the multi-session registry. Loads every session from the DB
 // into memory at startup (resetting any in-flight status to idle), and owns
 // create/list/get/delete + persist-on-change. The in-memory map is the hot
 // state; the DB mirrors it as the system of record.
 export class SessionManager {
+  sessions: Map<string, Session>;
   constructor() {
     this.sessions = new Map();
     this._load();
@@ -87,8 +88,7 @@ export class SessionManager {
   // `includeArchived` (default false): when true, archived sessions are included
   // in the result; when false, only non-archived sessions are returned. Mirrors
   // the `?archived` flag on `GET /sessions`.
-  /** @param {{ cwd?: string, includeArchived?: boolean }} o */
-  list({ cwd, includeArchived = false } = {}) {
+  list({ cwd, includeArchived = false }: { cwd?: string; includeArchived?: boolean } = {}) {
     return [...this.sessions.values()]
       .filter((s) => (!cwd || s.cwd === cwd) && (includeArchived || !s.archived))
       .sort((a, b) => (a.lastActivity < b.lastActivity ? 1 : -1))

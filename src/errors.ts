@@ -1,7 +1,9 @@
 // HTTP error type + mapping of thrown errors to the §7.7 table.
 
 export class HttpError extends Error {
-  constructor(status, code, message) {
+  status: number;
+  code: string;
+  constructor(status: number, code: string, message: string) {
     super(message);
     this.status = status;
     this.code = code;

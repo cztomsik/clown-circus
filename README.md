@@ -6,9 +6,9 @@ A **headless, multi-session** port of [`clown-code`](../clown-code/) exposed as 
 running agent loop — all driven over **REST + Server-Sent Events**. Every session and its full conversation snapshot are persisted
 in a local **SQLite** database, so state survives restarts.
 
-- **Target runtime**: Node.js 24.x, plain JavaScript (ESM). No build step.
+- **Target runtime**: Node.js 24.x, TypeScript (`.ts`, ESM). The server has no build step (Node strips the types at runtime).
 - **Storage**: the builtin `node:sqlite` module. No external DB server.
-- **Only dependency**: `express`.
+- **Dependencies**: `express` for the server; `esbuild` + the web UI's browser libraries (`preact`, `marked`, `dompurify`, `@tailwindcss/browser`) — esbuild inlines them all into `webui/vendor/bundle.js` at startup, so the UI works offline (no CDN).
 - **LLM**: any OpenAI-compatible `/v1/chat/completions` endpoint (llama.cpp by default).
 
 See [`SPEC.md`](SPEC.md) for the full specification.
@@ -122,16 +122,21 @@ A project is just a distinct `cwd`. Selecting one ≈ `GET /sessions?cwd=<path>`
 
 | Method | Path | Cmd | Behavior |
 |---|---|---|---|
-| `POST` | `/sessions/:id/stop` | `/stop` | Abort the running loop → `200 { status }`. No-op if idle. |
-| `POST` | `/sessions/:id/undo` | `/undo` | Pop the last exchange → `200 { undone }`. |
-| `POST` | `/sessions/:id/retry` | `/retry` | Drop trailing assistant/tool, re-run → `202` / `409`. |
-| `POST` | `/sessions/:id/clear` | `/clear` | Stop + clear history (keep system) + clear todos → `200`. |
-| `POST` | `/sessions/:id/clear-tools` | `/clear-tools` | Stop + drop all `role=tool` messages → `200`. |
-| `POST` | `/sessions/:id/compact` | `/compact` | Two-phase summarize-then-replace → `202`. |
-| `POST` | `/sessions/:id/init` | `/init` | Send the `/init` prompt → `202`. |
+| `POST` | `/sessions/:id/stop` | `/stop` | Abort the running loop → `200 { status }`. No-op if idle; the only control allowed mid-run. |
+| `POST` | `/sessions/:id/undo` | `/undo` | Stop (if running) + drop trailing assistant/tool and the last user message → `200 { undone }` (its text; the web UI re-fills it in the composer). |
+| `POST` | `/sessions/:id/retry` | `/retry` | Drop trailing assistant/tool, re-run → `202` / `409` if busy. |
+| `POST` | `/sessions/:id/retry-turn` | `/retry-turn` | Roll back to just before the last assistant message (and its tool results), re-run → `202` / `409`; `400` if there is no assistant message. |
+| `POST` | `/sessions/:id/clear` | `/clear` | Stop (if running) + reset history to the system prompt → `200`. |
+| `POST` | `/sessions/:id/trim` | `/trim <keep>` | Truncate bulky tool results + chain-of-thought in older turns, keep the last `keep` turns → `200 { keep, trimmed, truncatedResults, reasoningRemoved }`; `400` if `keep` is not a non-negative integer. |
+| `POST` | `/sessions/:id/compact` | `/compact` | Two-phase summarize-then-replace → `202` / `409`. |
+| `POST` | `/sessions/:id/init` | `/init` | Send the `/init` prompt → `202` / `409`. |
+| `POST` | `/sessions/:id/archive` | ⋮ menu | Metadata only: hide from the default session list (kept for later) → `200 { id, archived }`. Allowed mid-run. |
+| `POST` | `/sessions/:id/unarchive` | ⋮ menu | Restore to the default session list → `200 { id, archived }`. Allowed mid-run. |
+| `POST` | `/sessions/:id/duplicate` | `/duplicate` | Fork: a new session with the same `cwd`/`model` and a deep-copied transcript (settled to a valid turn seam) → `201` with the new session. |
 
-Run-starting controls reject with `409` while a run is active. `stop` is the only control
-allowed mid-run.
+Run-starting controls (`retry`, `retry-turn`, `compact`, `init`) reject with `409` while a
+run is active. `stop` (and the metadata-only `archive`/`unarchive`) are allowed mid-run;
+`undo`/`clear`/`trim` implicitly stop a running loop first.
 
 ### Events (SSE)
 
@@ -178,36 +183,40 @@ There is **no path sandbox**: the agent may read, write, and execute anywhere th
 
 ```
 src/
-├─ main.js       # bootstrap: config, DB, manager, app, listen
-├─ config.js     # flag + env resolution
-├─ app.js        # Express app (all routes + SSE)
-├─ db.js         # node:sqlite wrapper (open, migrate, queries)
-├─ manager.js    # SessionManager registry (load, create, list, delete, persist)
-├─ session.js    # Session (messages, run loop, SSE events, persistence)
-├─ loop.js       # agent loop
-├─ llm.js        # OpenAI-compatible chat client
-├─ prompt.js     # system-prompt composition
-├─ tools.js      # tools + registration
-├─ errors.js     # HttpError + error mapping
+├─ main.ts       # bootstrap: config, DB, manager, app, listen
+├─ config.ts     # flag + env resolution
+├─ app.ts        # Express app (all routes + SSE)
+├─ db.ts         # node:sqlite wrapper (open, migrate, queries)
+├─ manager.ts    # SessionManager registry (load, create, list, delete, persist)
+├─ session.ts    # Session (messages, run loop, SSE events, persistence)
+├─ loop.ts       # agent loop
+├─ llm.ts        # OpenAI-compatible chat client
+├─ prompt.ts     # system-prompt composition
+├─ tools.ts      # tools + registration
+├─ errors.ts     # HttpError + error mapping
 ├─ PREFIX.md     # base system prompt
 └─ skills/init.md
 ```
 
-`webui/` — the static web UI served at `/` (Preact + htm, no build step;
-browser libraries served locally from `node_modules` under `/vendor/*`):
+`webui/` — the web UI served at `/` (Preact JSX (`.tsx`) modules + a few
+`.js` helpers; esbuild bundles it into `vendor/bundle.js` at server startup):
 
 ```
 webui/
-├─ index.html    # page shell: import map → /vendor/* + local Tailwind JIT + #root mount
-├─ app.js        # root component: all state + side effects
-├─ Header.js     # top bar (toggle, status, model picker, actions menu)
-├─ Sidebar.js    # project-grouped session list + new-session form
-├─ Main.js       # right-hand pane (error banner, todos, transcript, composer)
-├─ Message.js    # transcript rendering (user/assistant/tool, reasoning)
-├─ InputBar.js   # composer (textarea, send/stop, slash cmds, image attach)
-├─ Todos.js      # floating collapsible todo panel
-├─ api.js        # REST + SSE client (no DOM)
-└─ util.js       # pure helpers; image.js (image read/downscale); ui.js (h binding + tokens)
+├─ index.html     # page shell: Tailwind v4 @theme tokens + #root mount + /vendor/bundle.js
+├─ app.tsx        # root Preact component (bundle entry): all state + side effects
+├─ Header.tsx     # top bar (toggle, status, model picker, theme, actions menu)
+├─ Sidebar.tsx    # project-grouped session list + new-session form
+├─ Main.tsx       # right-hand pane (error banner, todos, transcript, composer)
+├─ Message.tsx    # transcript rendering (user/assistant/tool, reasoning)
+├─ toolcall.tsx   # per-tool argument views (collapsible tool-call bodies)
+├─ InputBar.tsx   # composer (textarea, send/stop, slash cmds, image attach)
+├─ Todos.tsx      # floating collapsible todo panel
+├─ api.js         # REST + SSE client (no Preact/DOM)
+├─ util.js        # pure helpers (no DOM/Preact)
+├─ image.js       # client-side image helpers (FileReader read, canvas downscale)
+├─ md.js          # Markdown component (marked + DOMPurify)
+└─ ui.js          # shared Tailwind class tokens (BTN, PRE)
 ```
 
 See [`WEB_UI.md`](WEB_UI.md) for details.

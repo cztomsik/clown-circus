@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 
 // Parse `--flag value` and `--flag=value` pairs out of process.argv.
 const parseFlags = (argv) => {
-  const flags = {};
+  const flags: Record<string, any> = {};
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (!a.startsWith('--')) continue;

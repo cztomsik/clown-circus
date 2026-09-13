@@ -1,11 +1,11 @@
 import { EventEmitter } from 'node:events';
-import { buildSystemPrompt } from './prompt.js';
-import { runLoop } from './loop.js';
-import { HttpError } from './errors.js';
-import { config } from './config.js';
-import { db } from './db.js';
-import { llm } from './llm.js';
-import { tools, toolSchemas } from './tools.js';
+import { buildSystemPrompt } from './prompt.ts';
+import { runLoop } from './loop.ts';
+import { HttpError } from './errors.ts';
+import { config } from './config.ts';
+import { db } from './db.ts';
+import { llm } from './llm.ts';
+import { tools, toolSchemas } from './tools.ts';
 
 const MAX_EVENTS = 200; // bounded per-session replay ring for SSE `?since`
 // trimKeep truncates a tool result (replacing its content with a marker) once
@@ -55,6 +55,23 @@ const countTurns = (messages) =>
 // an event emitter (SSE source), and persistence. The run is an in-process
 // async loop guarded by the `running` single-flight flag.
 export class Session {
+  id: string;
+  cwd: string;
+  model: string;
+  status: string;
+  createdAt: string;
+  lastActivity: string;
+  lastError: string | null;
+  archived: boolean;
+  messages: any[];
+  totalTokens: number;
+  running: boolean;
+  compacting: boolean;
+  abortController: AbortController | null;
+  emitter: EventEmitter;
+  seq: number;
+  events: any[];
+
   constructor({ row }) {
     this.id = row.id;
     this.cwd = row.cwd;
@@ -188,7 +205,7 @@ export class Session {
     this.emitter.emit('end');
   }
 
-  // --- Agent loop pieces (used by loop.js) ----------------------------------
+  // --- Agent loop pieces (used by loop.ts) ----------------------------------
 
   async next() {
     const messages = this.messages;
@@ -266,7 +283,7 @@ export class Session {
   // `model` (optional) is the model the client wants for this run: it is pinned
   // for the whole run and persisted as the session's "last used" model, which is
   // what the web UI pre-fills the picker from (and what retry/init/compact reuse).
-  send(text, model) {
+  send(text, model = undefined) {
     this.assertIdle();
     if (model) {
       this.model = model;

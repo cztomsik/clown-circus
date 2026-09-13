@@ -7,8 +7,9 @@ Server-Sent Events. All sessions and their conversation state are persisted in a
 local **SQLite** database.
 
 - **Target runtime**: the currently installed **Node.js 24.x** (`v24.14.1`),
-  plain JavaScript (ESM). The server has no build step; the web UI's
-  `.tsx` modules are bundled by esbuild at startup (§7.8).
+  TypeScript (`.ts`, ESM). The server has no build step — Node strips the
+  types at runtime; the web UI's `.tsx` modules are bundled by esbuild at
+  startup (§7.8).
 - **Storage**: the builtin **`node:sqlite`** module (no external DB server).
 - **No TUI, no terminal.** Everything is an HTTP endpoint.
 
@@ -53,7 +54,7 @@ local **SQLite** database.
 | Streaming     | SSE event stream per session |
 | Persistence   | SQLite DB (`~/.clowndb`), one row per session, always written |
 | CWD           | Per-session `cwd` (stored per row) |
-| Tools         | `src/tools.js` |
+| Tools         | `src/tools.ts` |
 | System prompt | `PREFIX.md` + `AGENTS.md`/`CLOWN.md` (loaded per session cwd) |
 
 The agent loop's contract per session — "run the agent loop, emit snapshots,
@@ -66,7 +67,7 @@ SQLite store is the sole system of record.
 
 ```
                          ┌──────────────────────────────────────────────┐
-                         │              Express app (app.js)             │
+                         │              Express app (app.ts)             │
                          │                                              │
    HTTP clients ───────▶ │  REST routes  ──▶  SessionManager             │
    (REST + SSE)          │                    │                          │
@@ -94,21 +95,21 @@ SQLite store is the sole system of record.
 
 Components (each is a flat file under `src/`):
 
-- **`db.js`** — thin wrapper over `node:sqlite`. Owns the connection, runs the
+- **`db.ts`** — thin wrapper over `node:sqlite`. Owns the connection, runs the
   schema migration, and exposes the query helpers the manager/session actually
   use: `upsert`, `all` (startup load), `deleteRow`, and `close`. Listing and
   project grouping are done in memory by the `SessionManager`, not in SQL.
-- **`manager.js` (SessionManager)** — the multi-session registry. Loads all
+- **`manager.ts` (SessionManager)** — the multi-session registry. Loads all
   sessions from SQLite into memory at startup, and coordinates create/list/
   retrieve/destroy + persist-on-change. Owns IDs and lifecycle.
-- **`session.js` (Session)** — owns the message list, token counter, the
+- **`session.ts` (Session)** — owns the message list, token counter, the
   agentic loop, and an event emitter. The run is an in-process async loop
   guarded by a single-flight flag so only one run executes at a time.
-- **`loop.js`** — the agent loop, shared by sessions.
-- **`tools.js`** — all tools. Each tool is a named function with a
+- **`loop.ts`** — the agent loop, shared by sessions.
+- **`tools.ts`** — all tools. Each tool is a named function with a
   JSON-schema description (surfaced to the model) and typed args.
-- **`llm.js`** — a thin OpenAI-compatible chat client, used by the agent loop.
-- **`prompt.js`** — composes the system prompt.
+- **`llm.ts`** — a thin OpenAI-compatible chat client, used by the agent loop.
+- **`prompt.ts`** — composes the system prompt.
 
 ### Concurrency model
 
@@ -456,7 +457,7 @@ component modules (`Header.tsx`, `Sidebar.tsx`, `Main.tsx`, `Message.tsx`,
 §13). It is a **pure client**
 of the API in this section — it adds no server logic, routes, or
 dependencies. At server startup, esbuild (a runtime dependency, run in
-`src/main.js`) bundles `webui/app.tsx` + its deps from `node_modules` into
+`src/main.ts`) bundles `webui/app.tsx` + its deps from `node_modules` into
 `webui/vendor/bundle.js` (served at `/vendor/bundle.js`, the only
 `<script>` in the shell; JSX compiles via `jsx: automatic` +
 `jsxImportSource: preact` → `preact/jsx-runtime`); a background watch keeps
@@ -559,7 +560,7 @@ Current working directory: <realpath of cwd>
 
 ### 10.2 Migration
 
-On startup, `db.js` runs idempotent DDL (`CREATE TABLE IF NOT EXISTS`,
+On startup, `db.ts` runs idempotent DDL (`CREATE TABLE IF NOT EXISTS`,
 `CREATE INDEX IF NOT EXISTS`) against the *current* schema, then applies
 versioned migrations gated on the `user_version` pragma. Fresh DBs are born
 matching the current version (the DDL already carries every column) and only
@@ -633,7 +634,7 @@ clown-circus/
 ├─ README.md
 ├─ WEB_UI.md                # web UI description (features, constraints, growth)
 ├─ package.json             # "type": "module"; scripts: start, typecheck
-├─ tsconfig.json            # tsc config: checkJs/allowJs/noEmit, strict:false, types:[node] (type-check only)
+├─ tsconfig.json            # tsc config: checkJs/allowJs/noEmit/allowImportingTsExtensions, strict:false, types:[node] (type-check only)
 ├─ .gitignore
 ├─ webui/
 │  ├─ index.html            # web UI shell served at / (loads /vendor/bundle.js + #root)
@@ -652,16 +653,16 @@ clown-circus/
 │  ├─ InputBar.tsx          # composer (textarea + send/stop + image attachments)
 │  └─ Todos.tsx             # floating todo panel
 └─ src/
-   ├─ main.js               # bootstrap: bundle web UI (esbuild + watch), parse config, open DB, build app, listen
-   ├─ config.js             # Config resolution (flags + env)
-   ├─ app.js                # express app factory (all routes wired here)
-   ├─ db.js                 # node:sqlite wrapper: connection, migration, queries
-   ├─ manager.js            # SessionManager registry (loads from DB, persists changes)
-   ├─ session.js            # Session
-   ├─ loop.js               # agent loop
-   ├─ llm.js                # OpenAI-compatible chat client
-   ├─ prompt.js             # system-prompt composition
-   ├─ tools.js              # all tools + registration
+   ├─ main.ts               # bootstrap: bundle web UI (esbuild + watch), parse config, open DB, build app, listen
+   ├─ config.ts             # Config resolution (flags + env)
+   ├─ app.ts                # express app factory (all routes wired here)
+   ├─ db.ts                 # node:sqlite wrapper: connection, migration, queries
+   ├─ manager.ts            # SessionManager registry (loads from DB, persists changes)
+   ├─ session.ts            # Session
+   ├─ loop.ts               # agent loop
+   ├─ llm.ts                # OpenAI-compatible chat client
+   ├─ prompt.ts             # system-prompt composition
+   ├─ tools.ts              # all tools + registration
    ├─ PREFIX.md             # base system prompt
    └─ skills/
       └─ init.md            # built-in init skill
@@ -675,11 +676,12 @@ subdirectories.
 
 ## 14. Technology Choices
 
-- **Node.js 24.x** (the currently installed runtime, `v24.14.1`). Plain
-  **JavaScript (ESM, `type: "module"`)** — the only TypeScript is the web UI's
-  untyped **JSX (`.tsx`) modules**. The only build step
-  is esbuild bundling the web UI at server startup (see §7.8) — the server
-  itself runs directly with `node src/main.js`.
+- **Node.js 24.x** (the currently installed runtime, `v24.14.1`). The server
+  is **TypeScript (`.ts`, ESM, `type: "module"`)** that Node runs directly via
+  its built-in type stripping; the web UI is untyped **JSX (`.tsx`) modules**.
+  The only build step is esbuild bundling the web UI at server startup
+  (see §7.8) — the server itself needs none and runs directly with
+  `node src/main.ts`.
 - **`node:sqlite`** (builtin) for storage. Available without a flag in Node 24;
   it currently emits an `ExperimentalWarning` — harmless, and we pin to the
   installed major (24) so behavior is stable for our purposes.
@@ -703,24 +705,26 @@ subdirectories.
   code. Everything else (SQLite, crypto, http, child_process) is built into
   Node.
 - **TypeScript (dev-only, check-only)**: `typescript` and `@types/node` are
-  dev dependencies used *solely* to type-check the JS/TSX codebase — they
-  never emit and are not part of the runtime or build. (The web UI's
-  libraries double as type sources: `webui/*` imports them as bare
-  specifiers, so `tsc --noEmit` resolves them from the same packages esbuild
-  bundles; the generated `webui/vendor/` is excluded from the tsconfig.) Run
-  with `npm run typecheck` (i.e. `tsc --noEmit`), configured in `tsconfig.json`:
-  `checkJs` + `allowJs` + `noEmit` with `strict: false`, plus `types: ["node"]`,
+  dev dependencies used *solely* to type-check the server's `.ts` and the web
+  UI's `.js`/`.tsx` — they never emit and are not part of the runtime or build
+  (the server's `.ts` is run by Node's built-in type stripping, not `tsc`).
+  (The web UI's libraries double as type sources: `webui/*` imports them as
+  bare specifiers, so `tsc --noEmit` resolves them from the same packages
+  esbuild bundles; the generated `webui/vendor/` is excluded from the
+  tsconfig.) Run with `npm run typecheck` (i.e. `tsc --noEmit`), configured in
+  `tsconfig.json`: `checkJs` + `allowJs` + `noEmit` +
+  `allowImportingTsExtensions` with `strict: false`, plus `types: ["node"]`,
   and `jsx: "react-jsx"` + `jsxImportSource: "preact"` for the web UI's `.tsx`
-  modules
-  (the native `tsc` does not auto-include `@types` the way the JS compiler does).
-  Both **`src/`** and **`webui/`** are type-clean (the SSE `onmessage`
-  handler is cast to `MessageEvent` in `webui/api.js`).
+  modules (the native `tsc` does not auto-include `@types` the way the JS
+  compiler does). Both **`src/`** and **`webui/`** are type-clean (the SSE
+  `onmessage` handler is cast to `MessageEvent` in `webui/api.js`).
 
 ---
 
 ## 15. Code Style
 
-House style for the codebase — modern, idiomatic, **terse** JavaScript. These
+House style for the codebase — modern, idiomatic, **terse** TypeScript
+(server `.ts`) and JavaScript/JSX (web UI). These
 are conventions, not lint-enforced. Keep the code clean under `npm run typecheck`
 (`tsc --noEmit`, see §14) even though it is not lint-gated.
 
@@ -808,7 +812,7 @@ function readFile(io, ctx, args) {
 
 ## 19. Milestones (suggested build order)
 
-1. Scaffold ESM/Express; config; `db.js` (open + migrate); `/health`, `/config`,
+1. Scaffold ESM/Express; config; `db.ts` (open + migrate); `/health`, `/config`,
    `/models`.
 2. `SessionManager` + `Session` shell (load-from-DB at startup, persist on
    change); `GET/POST/DELETE /sessions` with `?cwd` filter; `GET /projects`.

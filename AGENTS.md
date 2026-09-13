@@ -13,8 +13,8 @@
 
 **Clown-Circus** is a **headless, multi-session** agent server, exposed as an **Express** HTTP app. It runs any number of independent agent **sessions** — each with its own working directory, conversation state, and running agent loop — driven over **REST + Server-Sent Events (SSE)**. All sessions and their conversation snapshots persist in a local **SQLite** file, so state survives restarts.
 
-- **Tech stack**: Node.js 24.x. The **server** is plain JavaScript (ESM, `"type": "module"`); the **web UI** is Preact **JSX (`.tsx`)** modules that esbuild bundles at startup (the only build step). TypeScript is a **dev-only, check-only** dependency (`tsc --noEmit`, see below) — it is never run or emitted.
-- **Run command**: `node src/main.js` (or `npm start`). esbuild bundles the web UI automatically at startup; type-check via `npm run typecheck`.
+- **Tech stack**: Node.js 24.x. The **server** is TypeScript (`.ts`, ESM, `"type": "module"`) that Node runs directly via its built-in type stripping (no build step); the **web UI** is Preact **JSX (`.tsx`)** modules that esbuild bundles at startup (the only build step). `tsc` is a **dev-only, check-only** dependency (`tsc --noEmit`, see below) — it is never run or emitted.
+- **Run command**: `node src/main.ts` (or `npm start`). esbuild bundles the web UI automatically at startup; type-check via `npm run typecheck`.
 - **Dependency**: `express` (v5) for the server, `esbuild` for bundling the web UI at startup, plus the web UI's browser libraries (`preact`, `marked`, `dompurify`, `@tailwindcss/browser`) as runtime deps — esbuild inlines them all into `webui/vendor/bundle.js` from `node_modules` so the UI works offline (no CDN, no `node_modules` static mounts). Dev deps (check-only, never emitted): `typescript`, `@types/node`. Everything else — SQLite, crypto, http, child_process — is built into Node.
 - **Storage**: builtin **`node:sqlite`** (`DatabaseSync`), single file `~/.clowndb` by default. Emits a harmless `ExperimentalWarning`.
 - **LLM**: OpenAI-compatible `/v1/chat/completions` (llama.cpp by default). Base URL from `--base-url`/`CLOWN_API` (default `http://127.0.0.1:8080`); optional `CLOWN_API_KEY` sent as Bearer.
@@ -27,17 +27,17 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 
 | File | Purpose |
 |------|---------|
-| `src/main.js` | Bootstrap: wire the import-time config/db/llm/tools singletons → create SessionManager → build Express app → listen + SIGINT/SIGTERM shutdown. |
-| `src/config.js` | Resolve config from CLI flags with env fallbacks, then defaults (`port`, `host`, `dbFile`, `baseUrl`, `model`, `timeoutMs`, `verbose`). |
-| `src/app.js` | Express app factory: all REST routes, the SSE endpoint, 404 fallback, and the error-mapping middleware. |
-| `src/db.js` | Thin `node:sqlite` wrapper: opens/migrates the DB (idempotent DDL + `user_version`) and exposes the helpers the manager/session use — `upsert`, `all` (startup load), `deleteRow`, `close`. Listing + project grouping are done in memory by the manager, not in SQL. |
-| `src/manager.js` | `SessionManager` registry: loads all sessions from the DB at startup (resetting `running`/`stopped` → `idle`), owns create/list/get/delete and the in-memory hot state. |
-| `src/session.js` | `Session`. Owns messages/todos/tokens, the single-flight `running` flag, an `AbortController`, an `EventEmitter` (SSE source) with a bounded seq ring buffer, and all operations (`send/retry/retryTurn/undo/clear/trim/compact/init/stop/destroy`) + persistence. |
-| `src/loop.js` | `runLoop` — the agent loop: `next()` → execute tool calls → emit snapshot → repeat; converts every outcome to a terminal status and never throws. |
-| `src/llm.js` | OpenAI-compatible chat client: `chat()` + `listModels()`. Distinguishes stop-abort from timeout (504) / network-HTTP (502) via `LlmError.kind`. |
-| `src/prompt.js` | `buildSystemPrompt(cwd)`: `PREFIX.md` + `AGENTS.md`→`CLOWN.md` fallback (1MB cap) + date + realpath. |
-| `src/tools.js` | All tools + `tools`/`toolSchemas` singletons. Relative paths resolve against the session cwd (no path sandbox). |
-| `src/errors.js` | `HttpError` + `mapError()` (thrown errors → the §7.7 status/code table). Small module added to keep the import graph cycle-free. |
+| `src/main.ts` | Bootstrap: wire the import-time config/db/llm/tools singletons → create SessionManager → build Express app → listen + SIGINT/SIGTERM shutdown. |
+| `src/config.ts` | Resolve config from CLI flags with env fallbacks, then defaults (`port`, `host`, `dbFile`, `baseUrl`, `model`, `timeoutMs`, `verbose`). |
+| `src/app.ts` | Express app factory: all REST routes, the SSE endpoint, 404 fallback, and the error-mapping middleware. |
+| `src/db.ts` | Thin `node:sqlite` wrapper: opens/migrates the DB (idempotent DDL + `user_version`) and exposes the helpers the manager/session use — `upsert`, `all` (startup load), `deleteRow`, `close`. Listing + project grouping are done in memory by the manager, not in SQL. |
+| `src/manager.ts` | `SessionManager` registry: loads all sessions from the DB at startup (resetting `running`/`stopped` → `idle`), owns create/list/get/delete and the in-memory hot state. |
+| `src/session.ts` | `Session`. Owns messages/todos/tokens, the single-flight `running` flag, an `AbortController`, an `EventEmitter` (SSE source) with a bounded seq ring buffer, and all operations (`send/retry/retryTurn/undo/clear/trim/compact/init/stop/destroy`) + persistence. |
+| `src/loop.ts` | `runLoop` — the agent loop: `next()` → execute tool calls → emit snapshot → repeat; converts every outcome to a terminal status and never throws. |
+| `src/llm.ts` | OpenAI-compatible chat client: `chat()` + `listModels()`. Distinguishes stop-abort from timeout (504) / network-HTTP (502) via `LlmError.kind`. |
+| `src/prompt.ts` | `buildSystemPrompt(cwd)`: `PREFIX.md` + `AGENTS.md`→`CLOWN.md` fallback (1MB cap) + date + realpath. |
+| `src/tools.ts` | All tools + `tools`/`toolSchemas` singletons. Relative paths resolve against the session cwd (no path sandbox). |
+| `src/errors.ts` | `HttpError` + `mapError()` (thrown errors → the §7.7 status/code table). Small module added to keep the import graph cycle-free. |
 | `src/PREFIX.md` | Base system prompt with guidelines. |
 | `src/skills/init.md` | Built-in `/init` skill: explore the project and write an `AGENTS.md`. |
 | `webui/index.html` | Web UI shell served at `/`. Thin page: Tailwind v4 `@theme` tokens + a `<style type="text/tailwindcss">` block, a `#root` mount, and `<script type="module" src="/vendor/bundle.js">` — no static UI markup. |
@@ -68,8 +68,8 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 
 ## Working conventions
 
-- **Type-check**: `npm run typecheck` (i.e. `tsc --noEmit`, config in `tsconfig.json`: `checkJs`+`allowJs`+`noEmit`, `strict:false`, `types:["node"]`). Dev deps `typescript`/`@types/node` are check-only — never emitted (the web UI's libraries are runtime deps that esbuild bundles into `webui/vendor/bundle.js`, and which `tsc` resolves for the bare imports in `webui/*.{js,tsx}`). **Current state: clean** — both `src/` and `webui/` pass with no errors (the SSE `onmessage` handler is cast to `MessageEvent` in `webui/api.js`).
-- **No test framework.** Verify by running the server and exercising the API (e.g. `node src/main.js --port 8899 --db-file /tmp/x.clowndb`, then `curl`). Keep the default DB `~/.clowndb` clean by using a throwaway `--db-file` during dev.
+- **Type-check**: `npm run typecheck` (i.e. `tsc --noEmit`, config in `tsconfig.json`: `checkJs`+`allowJs`+`noEmit`+`allowImportingTsExtensions`, `strict:false`, `types:["node"]`). `src/` is `.ts` (type-checked directly); `webui/` mixes `.js`+`.tsx` (checked via `checkJs`/`allowJs`). Dev deps `typescript`/`@types/node` are check-only — never emitted (the web UI's libraries are runtime deps that esbuild bundles into `webui/vendor/bundle.js`, and which `tsc` resolves for the bare imports in `webui/*.{js,tsx}`). **Current state: clean** — both `src/` and `webui/` pass with no errors (the SSE `onmessage` handler is cast to `MessageEvent` in `webui/api.js`).
+- **No test framework.** Verify by running the server and exercising the API (e.g. `node src/main.ts --port 8899 --db-file /tmp/x.clowndb`, then `curl`). Keep the default DB `~/.clowndb` clean by using a throwaway `--db-file` during dev.
 - **Code style** (see SPEC §15): ESM import/export only; `async`/`await` (no `.then`); arrow fns assigned to `const`; `const` > `let` > never `var`; terse (early returns, spread, optional chaining, template literals).
 - **Config precedence**: CLI flag > env var > default.
 - **Localhost by default** (`127.0.0.1`), no auth — single-user local tool.

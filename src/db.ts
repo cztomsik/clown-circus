@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { config } from './config.js';
+import { config } from './config.ts';
 
 const SCHEMA_VERSION = 2;
 

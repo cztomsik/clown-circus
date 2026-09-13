@@ -1,4 +1,4 @@
-import { LlmError } from './llm.js';
+import { LlmError } from './llm.ts';
 
 // The agent loop. Never throws: it converts all outcomes
 // into a terminal status + events. Runs to completion for a single `run`.

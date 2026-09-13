@@ -12,7 +12,7 @@ primary interface — the UI is just one client of it.
 ## What it is
 
 - **`webui/index.html`** — a thin page shell, served at `GET /` via
-  `express.static` in `src/app.js`. The `<head>` holds a
+  `express.static` in `src/app.ts`. The `<head>` holds a
   `<style type="text/tailwindcss">` block, and styling is **Tailwind CSS v4**
   via the `@tailwindcss/browser` JIT (bundled into `/vendor/bundle.js` — see
   **esbuild bundle**) with the colour palette as
@@ -27,7 +27,7 @@ primary interface — the UI is just one client of it.
   `<body>` contains only a single `<div id="root">` mount point plus
   `<script type="module" src="/vendor/bundle.js">` — no static UI markup (the
   whole UI is rendered by Preact at runtime).
-- **esbuild bundle** — `src/main.js` runs an esbuild build (runtime
+- **esbuild bundle** — `src/main.ts` runs an esbuild build (runtime
   `dependency`, not dev-only) **at server startup**: entry `webui/app.tsx`,
   `bundle: true`, `format: esm`, `target: es2022`, `jsx: automatic` +
   `jsxImportSource: preact` (JSX compiles to `preact/jsx-runtime`), outfile

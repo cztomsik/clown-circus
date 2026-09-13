@@ -8,7 +8,7 @@
 // own timeoutMs (-> LlmError 'timeout') or a user stop (-> 'aborted') can end
 // a request.
 
-import { config } from './config.js';
+import { config } from './config.ts';
 
 // Disables undici's 300s headers/body timeouts on the builtin global
 // dispatcher, so only our own AbortController (timeout + stop) can end a
@@ -32,9 +32,10 @@ const patchGlobalDispatcher = () => {
 };
 
 export class LlmError extends Error {
-  constructor(kind, message) {
+  kind: string; // 'aborted' | 'timeout' | 'unavailable' | 'http'
+  constructor(kind: string, message?: string) {
     super(message ?? kind);
-    this.kind = kind; // 'aborted' | 'timeout' | 'unavailable' | 'http'
+    this.kind = kind;
   }
 }
 
@@ -42,7 +43,7 @@ const createLlm = () => {
   patchGlobalDispatcher();
 
   const headers = () => {
-    const h = { 'content-type': 'application/json' };
+    const h: Record<string, string> = { 'content-type': 'application/json' };
     if (config.apiKey) h.authorization = `Bearer ${config.apiKey}`;
     return h;
   };
@@ -57,7 +58,7 @@ const createLlm = () => {
     signal?.addEventListener('abort', onStop);
     const timer = setTimeout(() => ctrl.abort('timeout'), timeoutMs);
 
-    const body = { model, messages, max_completion_tokens: maxCompletionTokens };
+    const body: Record<string, any> = { model, messages, max_completion_tokens: maxCompletionTokens };
     if (tools?.length) body.tools = tools;
 
     let res;

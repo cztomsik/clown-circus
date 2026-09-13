@@ -2,10 +2,10 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as esbuild from 'esbuild';
-import { config } from './config.js';
-import { db } from './db.js';
-import { SessionManager } from './manager.js';
-import { buildApp } from './app.js';
+import { config } from './config.ts';
+import { db } from './db.ts';
+import { SessionManager } from './manager.ts';
+import { buildApp } from './app.ts';
 
 const WEBUI_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'webui');
 

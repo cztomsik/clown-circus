@@ -2,9 +2,9 @@ import express from 'express';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { statSync } from 'node:fs';
-import { HttpError, mapError } from './errors.js';
-import { config } from './config.js';
-import { llm } from './llm.js';
+import { HttpError, mapError } from './errors.ts';
+import { config } from './config.ts';
+import { llm } from './llm.ts';
 
 const HEARTBEAT_MS = 15000;
 const WEBUI_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'webui');

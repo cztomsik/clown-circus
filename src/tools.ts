@@ -10,7 +10,7 @@ const BUILTIN_INIT = readFileSync(fileURLToPath(new URL('./skills/init.md', impo
 const tool = (name, description, parameters, run) => ({ name, description, parameters, run });
 
 // JSON-schema shorthands (emit the same `parameters` as a literal object schema).
-const S = (vals) => ({ type: 'string', ...(vals ? { enum: vals } : {}) });
+const S = (vals?) => ({ type: 'string', ...(vals ? { enum: vals } : {}) });
 const B = () => ({ type: 'boolean' });
 const obj = (properties, required) => ({ type: 'object', properties, required });
 
