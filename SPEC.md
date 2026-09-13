@@ -31,6 +31,9 @@ local **SQLite** database.
   description.
 - Support a **"projects" view**: sessions are grouped by their working directory,
   and `/sessions` can be filtered by path.
+
+---
+
 ## 2. Non-Goals
 
 - No terminal client.
@@ -54,8 +57,8 @@ local **SQLite** database.
 | Streaming     | SSE event stream per session |
 | Persistence   | SQLite DB (`~/.clowndb`), one row per session, always written |
 | CWD           | Per-session `cwd` (stored per row) |
-| Tools         | `src/tools.ts` |
-| System prompt | `PREFIX.md` + `AGENTS.md`/`CLOWN.md` (loaded per session cwd) |
+| Tools         | Built-in tool set (§12) |
+| System prompt | Base prompt + project instructions file, composed per session cwd (§9) |
 
 The agent loop's contract per session — "run the agent loop, emit snapshots,
 report errors" — is implemented as an async loop plus event emitter. The
@@ -67,7 +70,7 @@ SQLite store is the sole system of record.
 
 ```
                          ┌──────────────────────────────────────────────┐
-                         │              Express app (app.ts)             │
+                         │                 Express app                  │
                          │                                              │
    HTTP clients ───────▶ │  REST routes  ──▶  SessionManager             │
    (REST + SSE)          │                    │                          │
@@ -93,42 +96,22 @@ SQLite store is the sole system of record.
                           (llama.cpp, default http://127.0.0.1:8080)
 ```
 
-Components (each is a flat file under `src/`):
-
-- **`db.ts`** — thin wrapper over `node:sqlite`. Owns the connection, runs the
-  schema migration, and exposes the query helpers the manager/session actually
-  use: `upsert`, `all` (startup load), `deleteRow`, and `close`. Listing and
-  project grouping are done in memory by the `SessionManager`, not in SQL.
-- **`manager.ts` (SessionManager)** — the multi-session registry. Loads all
-  sessions from SQLite into memory at startup, and coordinates create/list/
-  retrieve/destroy + persist-on-change. Owns IDs and lifecycle.
-- **`session.ts` (Session)** — owns the message list, token counter, the
-  agentic loop, and an event emitter. The run is an in-process async loop
-  guarded by a single-flight flag so only one run executes at a time.
-- **`loop.ts`** — the agent loop, shared by sessions.
-- **`tools.ts`** — all tools. Each tool is a named function with a
-  JSON-schema description (surfaced to the model) and typed args.
-- **`llm.ts`** — a thin OpenAI-compatible chat client, used by the agent loop.
-- **`prompt.ts`** — composes the system prompt.
+Component responsibilities live one-file-per-concern under `src/` — the file
+list is in [AGENTS.md](AGENTS.md) (Source Structure).
 
 ### Concurrency model
 
 The core constraints: **do not block the event loop** and **do not let two
 runs of the same session interleave**.
 
-- The agent loop is a plain `async` function: `send(prompt)` → append user
-  message → run loop (`while (turn = await next()) { await acceptAll(turn) }`).
-- Each `Session` has `running: boolean`. `send`/`retry`/`compact`
-  reject (HTTP 409) if `running` is already true unless the caller issues
-  `stop` first.
-- `stop` sets a cooperative cancellation token (an `AbortController`) checked
-  between turns. Long-running tool calls
-  (e.g. `run_command`) are aborted via the shared `AbortSignal`.
+- The agent loop is an in-process `async` loop; each `Session` has a
+  single-flight `running` flag. Run-starting calls (`send`/`retry`/`compact`,
+  §7.4–§7.5) reject (HTTP 409) while `running` is true unless the caller
+  issues `stop` first.
+- `stop` is cooperative cancellation: the loop checks the abort signal between
+  turns and between tool calls, and in-flight LLM fetches / `run_command`
+  child processes are aborted via the shared signal.
 - Sessions are independent; a slow session never blocks others.
-- **SQLite writes are synchronous** (`node:sqlite` `DatabaseSync`) and small
-  (one row upsert per state change), so they do not meaningfully block the
-  event loop. Writes happen on the main thread; the DB is single-writer by
-  design (one process owns the file).
 
 ---
 
@@ -136,35 +119,13 @@ runs of the same session interleave**.
 
 ### 5.1 Snapshot (conversation content)
 
-The per-session conversation content, persisted as JSON in the `snapshot` column.
-It is an internal format and may evolve freely as the tool grows.
-
-```js
-// Todos
-// string   // user-visible markdown; the checkbox convention lives in PREFIX.md
-
-// ContentPart (OpenAI shape; used for multimodal messages)
-// { type: "text", text: string }
-// { type: "image_url", image_url: { url: string } }   // data-URL (base64)
-
-// Message
-// {
-//   role: "system" | "user" | "assistant" | "tool",
-//   content: string | ContentPart[],
-//   tool_calls?: [ { id, type: "function", function: { name, arguments } } ], // assistant
-//   tool_call_id?: string,   // tool-result messages reference a call
-//   name?: string            // tool name for role=tool
-// }
-
-// Snapshot  (stored as a JSON string in the `snapshot` column)
-// { messages: Message[], total_tokens: number }
-```
-
-> **Multimodal note**: `content` is a plain `string` for text-only messages
-> (the common case). A user message that carries images is an array of
-> `ContentPart` (OpenAI shape); the array may contain zero or more `image_url`
-> parts plus a `text` part. The snapshot is the system of record and may evolve
-> freely, so no DB migration is required.
+The per-session conversation content, persisted as a JSON string in the
+`snapshot` column: `{ messages, total_tokens }`. `messages` follows the
+OpenAI chat shape (`role`; `content` as a string or an array of content parts;
+`tool_calls` on assistant messages; `tool_call_id` on tool-result messages).
+A user message carrying images is an array of content parts with base64
+data-URLs. It is an internal format and may evolve freely as the tool grows —
+no DB migration is required.
 
 ### 5.2 SQLite schema
 
@@ -192,8 +153,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_cwd ON sessions (cwd);
 > the DB and stay in the in-memory registry, but are excluded from the default
 > `GET /sessions` list and the `/projects` counts (§7.2, §7.3). Adding the
 > column to a v1 database is the v2 migration (`ALTER TABLE ... ADD COLUMN`,
-> §10.2). No index: low-cardinality flag on a small local table, and the
-> manager filters in memory anyway.
+> §10.2).
 
 ### 5.3 Runtime model
 
@@ -248,7 +208,7 @@ cannot survive a restart.
 
 ### ID scheme
 
-UUIDv4 (`crypto.randomUUID()`), generated by the server. Stable and unique in
+UUIDv4, generated by the server. Stable and unique in
 the DB. Clients persist the `id` to address a session across requests/restarts.
 
 ---
@@ -330,10 +290,9 @@ endpoint and the static web UI (§7.8). Errors use `4xx`/`5xx` with
 |--------|--------------|-------------|
 | `GET`  | `/projects`  | "Projects" view: unique working directories across all sessions |
 
-A project is simply a distinct `cwd`. This is derived directly from the DB
-(non-archived sessions only, so a project whose sessions are all archived does
-not surface): `SELECT cwd, COUNT(*) AS sessions FROM sessions GROUP BY cwd
-ORDER BY cwd`.
+A project is simply a distinct `cwd`. It is derived from the non-archived
+sessions (so a project whose sessions are all archived does not surface),
+each with a session count, ordered by path.
 
 Response:
 
@@ -381,9 +340,9 @@ UI's composer command that dispatches the same action.
 | `POST` | `/sessions/:id/stop`       | `/stop`        | Cooperatively abort the running loop. `200` `{ "status": "stopped" }`. No-op (still `200`) if idle. |
 | `POST` | `/sessions/:id/undo`       | `/undo`        | Pop the last message from history. Returns the popped message text (if any) in `{ "undone": "..." }`. |
 | `POST` | `/sessions/:id/retry`      | `/retry`       | Strip trailing assistant/tool messages (keep last user message) and re-run. `202` when it starts a run, `409` if busy. |
-| `POST` | `/sessions/:id/retry-turn` | `/retry-turn`  | Roll the transcript back to just before the **last assistant message** — strip that message and everything after it (any tool results it spawned and any later user nudge) — then re-run the loop from there. Unlike `/retry` (which rolls back to the last user message), this reaches a poisoned mid-turn assistant response (e.g. a truncated tool call) that is followed by a tool result + user message, which the `/retry` rollback can't get to. `202` when it starts a run, `409` if busy, `400` if there is no assistant message to retry. |
+| `POST` | `/sessions/:id/retry-turn` | `/retry-turn`  | Like `/retry`, but rolls back to just before the **last assistant message** (stripping it, any tool results it spawned, and anything after) instead of the last user message — reaching a poisoned mid-turn response that the `/retry` rollback can't get to. `202` when it starts a run, `409` if busy, `400` if there is no assistant message to retry. |
 | `POST` | `/sessions/:id/clear`      | `/clear`       | Stop + clear history (keep system message). `200`. |
-| `POST` | `/sessions/:id/trim`       | `/trim [n]`     | Trim the transcript, **keeping the last n turns untouched**: in every turn *before* the kept tail, truncate any `role=tool` result longer than 1024 bytes to `[tool result truncated — was <N> bytes]` and delete both `reasoning_content` and `reasoning` from assistant messages. A turn is an assistant message + the tool messages it triggers (one model call + its results); the kept tail is everything from the (total-n+1)-th assistant message on. Keying on assistant turns (not user rounds) is what makes this useful for agentic transcripts, where a single user request is one round packed with many tool-calling turns — only trimming within that round frees the tokens the tool results occupy. The kept tail is untouched, as are user text, assistant text, and the tool-call invocations (name + arguments) — only the tool *results* and the CoT go. `n` may exceed the turn count (a no-op) or be `0` (trim everything). Idempotent (a re-run is a no-op). Body `{ "keep": n }` with `n` a non-negative integer — `400` otherwise. `200` `{ "keep", "trimmed", "truncatedResults", "reasoningRemoved" }` (`trimmed` = number of turns trimmed). |
+| `POST` | `/sessions/:id/trim`       | `/trim [n]`     | Trim the transcript, **keeping the last n assistant turns untouched**: in every earlier turn, truncate long `role=tool` results and delete assistant reasoning. User text, assistant text, and tool-call invocations (name + arguments) are untouched. `n` may exceed the turn count (a no-op) or be `0` (trim everything); idempotent. Body `{ "keep": n }` with `n` a non-negative integer — `400` otherwise. `200` `{ "keep", "trimmed", "truncatedResults", "reasoningRemoved" }`. |
 | `POST` | `/sessions/:id/compact`    | `/compact`     | Run the two-phase summarize-then-replace compaction. `202` (starts a run). |
 | `POST` | `/sessions/:id/init`       | `/init`        | Convenience: send the prompt that triggers the built-in `init` skill ("Could you /init this project?"). `202`. |
 | `POST` | `/sessions/:id/duplicate`  | —              | Fork the session into a new one: same `cwd`, `model`, and archived flag; fresh id/timestamps; `last_error` cleared; a **deep copy** of the transcript (independent of the source). If the source is running and the copy ends mid-turn (an assistant `tool_calls` whose tool results have not all arrived yet — an invalid LLM transcript), that message and its partial results are stripped; a completed transcript is copied verbatim. Allowed while the source is running. `201`, returning the new session (meta + snapshot). `404` if the source is unknown. |
@@ -447,25 +406,15 @@ Event types (SSE `event:` field):
 
 ### 7.8 Web UI
 
-A web UI is served at `GET /` from `webui/` (via `express.static`): a thin
-`index.html` shell (Tailwind v4 via the bundled `@tailwindcss/browser`
-JIT, and a single `#root` mount) plus a set of small **Preact JSX** (`.tsx`)
-modules — `app.tsx` holds the root component (all state + side effects), with
-component modules (`Header.tsx`, `Sidebar.tsx`, `Main.tsx`, `Message.tsx`,
-`InputBar.tsx`, `Todos.tsx`, `toolcall.tsx`) and non-component helpers
-(`api.js`, `util.js`, `image.js`, `md.js`, `ui.js`; the full file list is in
-[AGENTS.md](AGENTS.md)). It is a **pure client**
-of the API in this section — it adds no server logic, routes, or
-dependencies. At server startup, esbuild (a runtime dependency, run in
-`src/main.ts`) bundles `webui/app.tsx` + its deps from `node_modules` into
-`webui/vendor/bundle.js` (served at `/vendor/bundle.js`, the only
-`<script>` in the shell; JSX compiles via `jsx: automatic` +
-`jsxImportSource: preact` → `preact/jsx-runtime`); a background watch keeps
-it fresh, and it is disposed on shutdown. The Tailwind browser JIT is in the
-same bundle (`webui/app.tsx` imports `@tailwindcss/browser` first, so the JIT
-is installed
-before the UI renders). No network CDNs, no `node_modules` static mounts —
-the UI works fully offline.
+A web UI is served at `GET /` from `webui/`: a thin `index.html` shell
+(Tailwind v4, a single `#root` mount) plus a set of small **Preact JSX**
+(`.tsx`) modules and helpers (the file list is in [AGENTS.md](AGENTS.md)).
+At server startup, esbuild bundles the modules and their browser dependencies
+(from `node_modules`) into `webui/vendor/bundle.js`, the only `<script>` in
+the shell; a background watch keeps it fresh. No network CDNs, no
+`node_modules` static mounts — the UI works fully offline. It is a **pure
+client** of the API in this section — it adds no server logic, routes, or
+dependencies.
 
 The authoritative description of the UI — features, constraints/invariants,
 and the current gaps it is expected to grow into — lives in
@@ -560,7 +509,7 @@ Current working directory: <realpath of cwd>
 
 ### 10.2 Migration
 
-On startup, `db.ts` runs idempotent DDL (`CREATE TABLE IF NOT EXISTS`,
+On startup the server runs idempotent DDL (`CREATE TABLE IF NOT EXISTS`,
 `CREATE INDEX IF NOT EXISTS`) against the *current* schema, then applies
 versioned migrations gated on the `user_version` pragma. Fresh DBs are born
 matching the current version (the DDL already carries every column) and only
@@ -628,48 +577,22 @@ Each tool invocation receives a `ToolContext`:
 
 ## 13. Technology Choices
 
-- **Node.js 24.x** (the currently installed runtime, `v24.14.1`). The server
-  is **TypeScript (`.ts`, ESM, `type: "module"`)** that Node runs directly via
-  its built-in type stripping; the web UI is untyped **JSX (`.tsx`) modules**.
-  The only build step is esbuild bundling the web UI at server startup
-  (see §7.8) — the server itself needs none and runs directly with
-  `node src/main.ts`.
-- **`node:sqlite`** (builtin) for storage. Available without a flag in Node 24;
-  it currently emits an `ExperimentalWarning` — harmless, and we pin to the
-  installed major (24) so behavior is stable for our purposes.
-- **Express 5** for the HTTP layer (per requirement).
-- **`node:fs/promises`**, **`node:child_process`** (`spawn` with `AbortSignal`)
-  for tools. No shell injection — `run_command` uses `sh -c` explicitly.
-- **Native `fetch`** for LLM calls (OpenAI-compatible), with `AbortSignal` for
-  timeout + stop. Startup patches the built-in global dispatcher
-  (`globalThis[Symbol.for('undici.globalDispatcher.1')]`, no dependency) to set
-  `headersTimeout`/`bodyTimeout` to `0`: undici bakes in a 300s headers/body
-  timeout that cannot be overridden via `fetch` init options and would kill
-  slow non-streaming turns with an opaque `"fetch failed"` error.
-- **SSE** via a minimal helper over the Express response (no heavy deps).
-- **`node:crypto.randomUUID`** for session ids.
-- Minimal dependencies: `express` for the server, `esbuild` for bundling the
-  web UI at startup, plus the web UI's browser libraries (`preact`,
-  `marked`, `dompurify`, `@tailwindcss/browser`). All of those are
-  `dependencies` because they are consumed at runtime — esbuild bundles them
-  into `webui/vendor/bundle.js` from `node_modules` (offline, no CDN, no
-  `node_modules` static mounts); the server imports only `esbuild` of them as
-  code. Everything else (SQLite, crypto, http, child_process) is built into
-  Node.
-- **TypeScript (dev-only, check-only)**: `typescript` and `@types/node` are
-  dev dependencies used *solely* to type-check the server's `.ts` and the web
-  UI's `.js`/`.tsx` — they never emit and are not part of the runtime or build
-  (the server's `.ts` is run by Node's built-in type stripping, not `tsc`).
-  (The web UI's libraries double as type sources: `webui/*` imports them as
-  bare specifiers, so `tsc --noEmit` resolves them from the same packages
-  esbuild bundles; the generated `webui/vendor/` is excluded from the
-  tsconfig.) Run with `npm run typecheck` (i.e. `tsc --noEmit`), configured in
-  `tsconfig.json`: `checkJs` + `allowJs` + `noEmit` +
-  `allowImportingTsExtensions` with `strict: false`, plus `types: ["node"]`,
-  and `jsx: "react-jsx"` + `jsxImportSource: "preact"` for the web UI's `.tsx`
-  modules (the native `tsc` does not auto-include `@types` the way the JS
-  compiler does). Both **`src/`** and **`webui/`** are type-clean (the SSE
-  `onmessage` handler is cast to `MessageEvent` in `webui/api.js`).
+- **Node.js 24.x** (the currently installed runtime). The server is
+  **TypeScript (`.ts`, ESM)** run directly by Node's built-in type stripping
+  (`node src/main.ts` — no build step); the web UI is untyped JSX (`.tsx`)
+  modules bundled by esbuild at startup (§7.8).
+- **`node:sqlite`** (builtin) for storage — no external server, no npm
+  dependency. It currently emits an `ExperimentalWarning` (harmless; see §15).
+- **Express 5** for the HTTP layer; **SSE** via a minimal helper over the
+  Express response.
+- **Native `fetch`** for LLM calls (OpenAI-compatible), with an abort signal
+  for timeout + stop.
+- **`node:child_process`** for `run_command` (abortable child process).
+- Minimal dependencies: `express`, `esbuild`, and the web UI's browser
+  libraries (`preact`, `marked`, `dompurify`, `@tailwindcss/browser`) —
+  everything else is built into Node. `typescript` + `@types/node` are
+  dev-only and check-only (`npm run typecheck` → `tsc --noEmit`, config in
+  `tsconfig.json`); they never emit and are not part of the runtime or build.
 
 ---
 
