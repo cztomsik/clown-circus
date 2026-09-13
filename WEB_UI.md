@@ -1,8 +1,8 @@
 # Clown-Circus — Web UI
 
 The web UI is a **first-class part of Clown-Circus**. It is minimal today (a
-thin shell page plus a small set of Preact ES modules, bundled at server
-startup by esbuild) and is
+thin shell page plus a small set of Preact **JSX** (`.tsx`) modules, bundled
+at server startup by esbuild) and is
 expected to grow;
 this file is the authoritative
 description of what the UI is, what it uses, and the constraints it must keep
@@ -19,7 +19,7 @@ primary interface — the UI is just one client of it.
   `--color-*` tokens in an `@theme` block (the default **dark** theme). It also
   holds a plain `<style>` block with the **light** palette (overriding the same
   tokens under `:root[data-theme="light"]`), the `dot-bounce` keyframes behind
-  the transcript's working indicator (see `webui/Message.js`), the `.md`
+  the transcript's working indicator (see `webui/Message.tsx`), the `.md`
   typography rules behind Markdown message rendering (see `webui/md.js`), and
   a tiny
   inline `<script>` that
@@ -28,23 +28,24 @@ primary interface — the UI is just one client of it.
   `<script type="module" src="/vendor/bundle.js">` — no static UI markup (the
   whole UI is rendered by Preact at runtime).
 - **esbuild bundle** — `src/main.js` runs an esbuild build (runtime
-  `dependency`, not dev-only) **at server startup**: entry `webui/app.js`,
-  `bundle: true`, `format: esm`, `target: es2022`, outfile
+  `dependency`, not dev-only) **at server startup**: entry `webui/app.tsx`,
+  `bundle: true`, `format: esm`, `target: es2022`, `jsx: automatic` +
+  `jsxImportSource: preact` (JSX compiles to `preact/jsx-runtime`), outfile
   `webui/vendor/bundle.js`. An initial blocking build runs before `listen`,
   then `ctx.watch()` (no await) keeps the bundle fresh in the background as
-  `webui/*.js` changes; `ctx.dispose()` runs on shutdown. The modules keep
-  bare imports (`import { h } from "preact"`, `import { useState } from
-  "preact/hooks"`, `import htm from "htm"`, `import { marked } from "marked"`,
+  `webui/*.{js,tsx}` changes; `ctx.dispose()` runs on shutdown. The modules
+  keep bare imports (`import { render } from "preact"`, `import { useState }
+  from "preact/hooks"`, `import { marked } from "marked"`,
   `import DOMPurify from "dompurify"`); esbuild resolves and inlines them from
   `node_modules` at build time — **no network, fully offline**. The Tailwind
-  browser JIT is in the bundle too: `webui/app.js`'s first line is
+  browser JIT is in the bundle too: `webui/app.tsx`'s first line is
   `import "@tailwindcss/browser"` (a side-effect IIFE, not ESM), so the JIT is
   installed before the UI renders. The packages
   are real `dependencies` in `package.json`: esbuild bundles them at runtime,
   and `tsc --noEmit` resolves the bare imports for the check-only type
   declarations. `webui/vendor/` is generated output (git-ignored, excluded
   from the tsconfig).
-- **`webui/app.js`** — the entry module (bundled to
+- **`webui/app.tsx`** — the entry module (bundled to
   `webui/vendor/bundle.js`, served at `/vendor/bundle.js`). Holds **only**
   the stateful `App`
   root component and its mount: all state and side effects live here as
@@ -53,29 +54,26 @@ primary interface — the UI is just one client of it.
   the send/stop/undo/delete handlers plus the composer `/cmd` dispatch
   (`runCommand`) — then it composes the presentational
   modules below and mounts into `#root` via Preact's `render`. Markup is
-  written with **htm** bound to Preact's `h` through the shared `html`
-  (see `ui.js`).
-- **`webui/ui.js`** — the one shared **`htm`→`h`** binding
-  (`export const html = htm.bind(h)`) plus the shared Tailwind class tokens
-  (`BTN`, `PRE`). Every component module imports `html` (and, where needed,
-  `BTN`/`PRE`) from here, so the 3-line binding prelude lives in exactly one
-  place instead of being repeated per file.
+  plain **Preact JSX** (`.tsx`, automatic runtime → `preact/jsx-runtime`;
+  esbuild does the transform — no `h`/`htm` prelude anywhere).
+- **`webui/ui.js`** — the shared Tailwind class tokens
+  (`BTN`, `PRE`). Component modules import them where needed.
 - **`webui/api.js`** — all client → server traffic, kept apart from the
-  components (no DOM, no Preact, no htm): the JSON `api()`/`post()` REST helpers
+  components (no DOM, no Preact, no JSX): the JSON `api()`/`post()` REST helpers
   and `openSessionEvents(id, handlers)`, which opens the per-session SSE
   `EventSource`, fans its events out to a `{snapshot, status, done,
   error}` handler map (each `data` JSON-parsed), swallows connection failures,
   and returns a `close()` used as the effect cleanup.
-- **`webui/Header.js`** — the **unified top bar**: sidebar toggle, brand, the
+- **`webui/Header.tsx`** — the **unified top bar**: sidebar toggle, brand, the
   session status badge + live summary (or the live config summary when no
   session is open), a **model `<select>`** (client-side: picks the model for
   the next send; see **Header**), a `⋮` dropdown holding
   the session-level actions (see **Header** under Features), and the theme toggle. All of this shares one row, so it
   stays compact on mobile.
-- **`webui/Sidebar.js`** — `Sidebar` + `SessionList`/`SessionItem`: the
+- **`webui/Sidebar.tsx`** — `Sidebar` + `SessionList`/`SessionItem`: the
   project-grouped session list and the new-session form (a `cwd` input + a
   "new session" button; the model is picked in the header's select).
-- **`webui/Message.js`** — `Messages` + `Message` (and the `Pre` leaf): the flat
+- **`webui/Message.tsx`** — `Messages` + `Message` (and the `Pre` leaf): the flat
   transcript, roles distinguished by colour/weight/tint, plus the `Working`
   indicator (three staggered-bouncing dim dots, optionally labelling the
   in-flight tool, and a live elapsed-time clock) shown after the last message
@@ -84,7 +82,7 @@ primary interface — the UI is just one client of it.
   "pinned"** near the bottom (within 80px); once scrolled up, incoming
   snapshots leave the view alone and a floating bottom-centre `↓ latest` pill
   smooth-scrolls back down and re-pins. `Messages` is keyed by session id
-  (in `Main.js`), so a session switch remounts it and lands at the bottom of
+  (in `Main.tsx`), so a session switch remounts it and lands at the bottom of
   the new transcript.
   User and assistant **text** renders through the `Markdown` component
   (`webui/md.js`); reasoning, system and tool content stay plain `<pre>`.
@@ -98,9 +96,9 @@ primary interface — the UI is just one client of it.
   (re-parsing on each SSE snapshot is cheap at transcript scale). Typography
   lives in the `.md` rules in `index.html`, which reference the `--color-*`
   tokens so theming is free.
-- **`webui/toolcall.js`** — bespoke rendering of a tool **call** (the
+- **`webui/toolcall.tsx`** — bespoke rendering of a tool **call** (the
   arguments only; the tool **result** stays a plain dim `<pre>` in
-  `Message.js`). One view per registered tool: `read_file`/`write_file`/
+  `Message.tsx`). One view per registered tool: `read_file`/`write_file`/
   `edit_file` show the path (`edit_file` as a stacked red-gutter old over
   green-gutter new diff), `run_command` as a `$`-prompt line (+ cwd),
   `write_todos` as a count + the parsed checkbox list, and `load_skill` as the
@@ -108,7 +106,7 @@ primary interface — the UI is just one client of it.
   or an unparseable `arguments` string fall back to the generic pretty-JSON
   `<pre>`) and `toolCallTitle(name, args)` (the short collapsed-summary title,
   or `null` when the tool has none).
-- **`webui/Todos.js`** — the live todo panel: a **collapsible, floating**
+- **`webui/Todos.tsx`** — the live todo panel: a **collapsible, floating**
   overlay anchored top-right inside the main pane (`<main>` is `relative`;
   the panel is `absolute`, semi-transparent `bg-panel/95` + backdrop blur,
   `z-20`). It renders only while a `write_todos` tool call is found in the
@@ -122,11 +120,11 @@ primary interface — the UI is just one client of it.
   in the header,
   while any non-checkbox lines are shown as-is (dim). When there are no
   checkbox lines at all the raw string is shown preformatted.
-- **`webui/InputBar.js`** — the composer; owns its `useRef`/`useLayoutEffect`
+- **`webui/InputBar.tsx`** — the composer; owns its `useRef`/`useLayoutEffect`
   autofocus and its `SEND_BTN` class string. Handles the image attachment
   affordance (file picker, paste, drag-drop, thumbnail strip) gated on the
   current model's vision capability.
-- **`webui/Main.js`** — the right-hand pane: composes `ErrorBox`, `Todos`,
+- **`webui/Main.tsx`** — the right-hand pane: composes `ErrorBox`, `Todos`,
   `Messages`, and `InputBar` (or a "select a session" placeholder when none is
   selected). The session status/actions no longer live here — they moved into
   the unified `Header`.
@@ -154,8 +152,9 @@ primary interface — the UI is just one client of it.
   real validation is the decode in `prepareImageDataURL`). Pure DOM, no
   Preact — kept separate from the no-DOM `util.js`.
 - Bundled at server startup (consistent with SPEC §14). The modules are plain
-  static files in `webui/`; esbuild bundles `webui/app.js` + its deps
-  (**Preact + htm + marked + DOMPurify + the Tailwind browser JIT**) into
+  static files in `webui/`; esbuild bundles `webui/app.tsx` + its deps
+  (**Preact (+ `jsx-runtime`) + marked + DOMPurify + the Tailwind browser
+  JIT**) into
   `webui/vendor/bundle.js` from `node_modules` at startup (see **esbuild
   bundle** above). Nothing is fetched from a network CDN, so the UI works
   offline.
@@ -249,7 +248,7 @@ primary interface — the UI is just one client of it.
   additionally show `tool_calls` as collapsible dim
   lines (native `<details>`) whose **call** is rendered per tool (a short
   `tool  path`-style summary title plus a bespoke argument view — see
-  `webui/toolcall.js` — e.g. a stacked red/green diff for `edit_file`, a
+  `webui/toolcall.tsx` — e.g. a stacked red/green diff for `edit_file`, a
   `$`-prompt for `run_command`, the parsed list for `write_todos`; unknown
   tools fall back to pretty-JSON) and whose **result** stays a plain dim
   `<pre>`; a turn that carries the provider's chain-of-thought
@@ -272,7 +271,7 @@ primary interface — the UI is just one client of it.
   immediately on `done`/`error`/`stop`. Todos rendered from the last `write_todos` tool call found
   in the session's messages (derived client-side via `extractTodos`; best-effort
   checkbox parsing) in a collapsible floating panel overlaying the
-  transcript (top-right of the main pane; see `webui/Todos.js`).
+  transcript (top-right of the main pane; see `webui/Todos.tsx`).
 - **Live updates** — browser `EventSource` on `GET /sessions/:id/events`:
   - `snapshot` → re-render messages (todos derived from them), token count
   - `status` → update badge, swap send↔stop, refresh the sidebar
@@ -370,27 +369,27 @@ primary interface — the UI is just one client of it.
   `webui/` and is served as-is by `express.static`; the only bundled asset is
   the esbuild output `webui/vendor/bundle.js` (rebuilt at every startup +
   background watch — see **esbuild bundle** above). The runtime libraries
-  (Preact, htm, marked, DOMPurify, the Tailwind browser JIT) are all inlined
+  (Preact, marked, DOMPurify, the Tailwind browser JIT) are all inlined
   from `node_modules` by esbuild — no `node_modules` static mounts remain.
   Nothing is fetched from a network CDN, so the UI works fully
   offline; upgrading a UI library means bumping the version in `package.json`
   + `npm install` (esbuild resolves each package's standard ESM entry).
 - **No un-sanitised HTML injection**: LLM output is untrusted. All content is
-  rendered as Preact text (htm template interpolations become text nodes /
+  rendered as Preact text (JSX expressions become text nodes /
   `textContent`) **except** user/assistant message text, which `webui/md.js`
   parses as Markdown and injects via `dangerouslySetInnerHTML` — and only
   *after* DOMPurify sanitisation (with the link / `javascript:`-URL hooks).
   `md.js` is the sole `dangerouslySetInnerHTML` in the UI; new HTML injection
   must not be added, and Markdown output must keep flowing through the same
   sanitizer.
-- **htm void elements must self-close.** `htm` has no list of HTML void
-  elements — in a template a tag is closed only by an explicit `/>` or a
-  matching `</tag>`. So void elements (today `<input>`; and if ever added
-  `<img>`/`<br>`/`<hr>`) must be written `<input … />`. A bare `<input …>` is
-  treated as an *open* tag, so every sibling after it is re-parented inside it
-  and the whole subtree's structure (including sibling `class`es) is silently
-  clobbered — this is what once broke the Sidebar (the model `<select>`, the
-  "new session" `<button>`, and the `aside`'s `class` all vanished).
+- **JSX void elements must self-close.** In `.tsx` a tag is closed only by an
+  explicit `/>` or a matching `</tag>` (esbuild's JSX parser), so void
+  elements (today `<input>`; and if ever added `<img>`/`<br>`/`<hr>` — `<img>`
+  is already used self-closed in `Message.tsx`) must be written
+  `<input … />`. A bare `<input …>` is a **compile error** (missing closing
+  tag), caught by esbuild at build time — unlike the old htm era, where the
+  same slip silently re-parented every following sibling and clobbered the
+  subtree's structure (once the Sidebar's `<select>`, button, and `class`).
   `<textarea>` and `<select>` are *not* void; they keep their `</textarea>` /
   `</select>` closers.
 - **The API is the ceiling.** Everything the UI does must be reproducible

@@ -1,10 +1,3 @@
-import { h } from 'preact';
-import htm from 'htm';
-
-// One shared htm→h binding for every component module (no build step, so there
-// is no bundler to inject it — a single module owns it and the rest import it).
-export const html = htm.bind(h);
-
 // Shared Tailwind class tokens. Every utility references var(--color-*), so
 // flipping <html data-theme> recolours them automatically.
 // py-2 below md (touch): taller tap targets; desktop keeps the compact py.

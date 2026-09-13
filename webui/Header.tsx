@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks';
-import { html, BTN } from './ui.js';
+import { BTN } from './ui.js';
 import { baseName } from './util.js';
 
 // Status bubble (same look as the sidebar dot, incl. the pulse while running);
@@ -55,42 +55,45 @@ export const Header = ({ cfg, theme, sideOpen, onSideToggle, onThemeToggle, view
     title: typeof a.title === 'function' ? a.title(!!view?.archived) : a.title,
   }));
 
-  return html`
+  return (
     <header class="relative flex items-center gap-2 px-3 py-2 border-b border-line">
-      <button title="toggle sidebar" aria-label="toggle sidebar" aria-pressed=${sideOpen}
-              class=${`${BTN} flex-none ${sideOpen ? 'border-accent' : ''}`}
-              onclick=${onSideToggle}>☰</button>
+      <button title="toggle sidebar" aria-label="toggle sidebar" aria-pressed={sideOpen}
+              class={`${BTN} flex-none ${sideOpen ? 'border-accent' : ''}`}
+              onClick={onSideToggle}>☰</button>
       <h1 class="text-[15px] m-0 text-accent flex-none hidden sm:block">clown-circus</h1>
 
-      ${view
-        ? html`
-          <span title=${view.status ?? 'idle'} class="w-2 h-2 rounded-full flex-none ${dotColor[view.status] ?? 'bg-ok'}"></span>
-          <div title=${view.cwd ?? ''} class="text-dim text-xs min-w-0 flex-1 truncate">${baseName(view.cwd ?? '')} · ${view.tokens ?? 0} tok</div>
-          <button title="session actions" aria-label="session actions" aria-expanded=${menuOpen}
-                  class=${`${BTN} flex-none ${menuOpen ? 'border-accent' : ''}`}
-                  onclick=${() => setMenuOpen((o) => !o)}>⋮</button>`
-        : html`
-          <div class="text-dim text-xs min-w-0 flex-1 truncate">${cfg}</div>`}
+      {view
+        ? (<>
+          <span title={view.status ?? 'idle'} class={`w-2 h-2 rounded-full flex-none ${dotColor[view.status] ?? 'bg-ok'}`}></span>
+          <div title={view.cwd ?? ''} class="text-dim text-xs min-w-0 flex-1 truncate">{baseName(view.cwd ?? '')} · {view.tokens ?? 0} tok</div>
+          <button title="session actions" aria-label="session actions" aria-expanded={menuOpen}
+                  class={`${BTN} flex-none ${menuOpen ? 'border-accent' : ''}`}
+                  onClick={() => setMenuOpen((o) => !o)}>⋮</button>
+        </>)
+        : <div class="text-dim text-xs min-w-0 flex-1 truncate">{cfg}</div>}
 
-      <select title="model" aria-label="model" value=${model} onchange=${(e) => onModelChange(e.target.value)}
+      <select title="model" aria-label="model" value={model} onChange={(e: any) => onModelChange(e.target.value)}
               class="text-ink bg-panel border border-line rounded py-1.5 md:py-1 px-2 focus:outline-none focus:border-accent flex-none w-32 max-w-[36vw]">
-        ${models.map((m) => html`<option key=${m} value=${m}>${m}</option>`)}
+        {models.map((m) => <option key={m} value={m}>{m}</option>)}
       </select>
-      <!-- Icon = the theme it switches TO (same semantics as the old "→ x" label). -->
-      <button title=${theme === 'dark' ? 'switch to the light theme' : 'switch to the dark theme'} aria-label="toggle theme"
-              class=${`${BTN} flex-none`} onclick=${onThemeToggle}>${theme === 'dark' ? '☀' : '🌙'}</button>
+      {/* Icon = the theme it switches TO (same semantics as the old "→ x" label). */}
+      <button title={theme === 'dark' ? 'switch to the light theme' : 'switch to the dark theme'} aria-label="toggle theme"
+              class={`${BTN} flex-none`} onClick={onThemeToggle}>{theme === 'dark' ? '☀' : '🌙'}</button>
 
-      ${menuOpen && view ? html`
-        <div class="fixed inset-0 z-40" onclick=${() => setMenuOpen(false)}></div>
+      {menuOpen && view ? (<>
+        <div class="fixed inset-0 z-40" onClick={() => setMenuOpen(false)}></div>
         <div class="absolute right-2 top-full z-50 mt-1 min-w-[180px] flex flex-col bg-panel border border-line rounded shadow-xl py-1">
-          ${resolved.map((a) => html`
-            <button key=${a.key} title=${a.title}
+          {resolved.map((a) => (
+            <button key={a.key} title={a.title}
                     class="text-left text-ink text-xs py-1.5 px-3.5 cursor-pointer hover:bg-bg"
-                    onclick=${() => run(a.key)}>${a.label}</button>`)}
+                    onClick={() => run(a.key)}>{a.label}</button>
+          ))}
           <div class="h-px bg-line my-1"></div>
           <button title="delete this session"
                   class="text-left text-err text-xs py-1.5 px-3.5 cursor-pointer hover:bg-bg"
-                  onclick=${() => { setMenuOpen(false); onDel(); }}>delete</button>
-        </div>` : null}
-    </header>`;
+                  onClick={() => { setMenuOpen(false); onDel(); }}>delete</button>
+        </div>
+      </>) : null}
+    </header>
+  );
 };

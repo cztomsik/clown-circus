@@ -1,5 +1,5 @@
 // All client → server traffic (REST + SSE) lives here, apart from the Preact
-// components. No DOM, no Preact, no htm.
+// components. No DOM, no Preact, no JSX.
 
 // JSON REST helper: throws Error(message) on a non-2xx body (message taken from
 // the server's { error: { message } } shape when present).

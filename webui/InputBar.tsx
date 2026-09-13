@@ -1,5 +1,4 @@
 import { useRef, useLayoutEffect, useState } from 'preact/hooks';
-import { html } from './ui.js';
 
 const SEND_BTN = 'text-ink bg-panel border border-line rounded py-1.5 px-2 cursor-pointer hover:border-accent disabled:opacity-40 disabled:cursor-default disabled:hover:border-line';
 
@@ -19,9 +18,9 @@ export const InputBar = ({ running, current, value, onInput, onKey, onSend, onSt
   // Pull file objects out of a paste or drop event. items → getAsFile() is the
   // reliable path on iOS Safari (where clipboardData.files can be empty for a
   // pasted image); fall back to the files collection for everything else.
-  const extractFiles = (dt) => {
+  const extractFiles = (dt: any) => {
     const fromItems = Array.from(dt?.items ?? [])
-      .map((it) => (it.kind === 'file' ? it.getAsFile() : null))
+      .map((it: any) => (it.kind === 'file' ? it.getAsFile() : null))
       .filter(Boolean);
     return fromItems.length ? fromItems : Array.from(dt?.files ?? []);
   };
@@ -40,41 +39,45 @@ export const InputBar = ({ running, current, value, onInput, onKey, onSend, onSt
 
   const onFileChange = (e) => { onAddFiles(Array.from(e.target.files ?? [])); e.target.value = ''; };
 
-  return html`
+  return (
     <div class="flex flex-col gap-1.5 border-t border-line px-3 py-2.5"
-         ${visionCapable ? html`ondragenter=${onDragEnter} ondragleave=${onDragLeave} ondragover=${onDragOver} ondrop=${onDrop}` : null}>
-      <!-- Thumbnail strip (only when there are attachments) -->
-      ${attachments.length ? html`
+         {...(visionCapable ? { onDragEnter, onDragLeave, onDragOver, onDrop } : {})}>
+      {/* Thumbnail strip (only when there are attachments) */}
+      {attachments.length ? (
         <div class="flex flex-wrap gap-1.5">
-          ${attachments.map((a) => html`
-            <div key=${a.id} class="relative group w-16 h-16 border border-line rounded overflow-hidden">
-              <img src=${a.dataUrl} alt=${a.name} class="w-full h-full object-cover" />
-              <!-- Hover-gated only on desktop: touch devices never fire :hover,
-                   so below md the × is always visible. -->
+          {attachments.map((a) => (
+            <div key={a.id} class="relative group w-16 h-16 border border-line rounded overflow-hidden">
+              <img src={a.dataUrl} alt={a.name} class="w-full h-full object-cover" />
+              {/* Hover-gated only on desktop: touch devices never fire :hover,
+                  so below md the × is always visible. */}
               <button class="absolute top-0.5 right-0.5 w-6 h-6 flex items-center justify-center bg-black/60 text-white text-xs rounded-full transition-opacity cursor-pointer md:opacity-0 md:group-hover:opacity-100"
-                      onclick=${() => onRemoveAttachment(a.id)}>×</button>
-            </div>`)}
-        </div>` : null}
-      <!-- Composer row: textarea + buttons -->
+                      onClick={() => onRemoveAttachment(a.id)}>×</button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {/* Composer row: textarea + buttons */}
       <div class="flex gap-2">
-        <!-- field-sizing:content grows the box with its text; capped at ~1/3 of
+        {/* field-sizing:content grows the box with its text; capped at ~1/3 of
              the viewport height, after which it scrolls internally. While running
              the box looks disabled (faded) but stays enabled so you keep focus and
-             can type ahead; Enter is a no-op until the run ends. -->
-        <textarea ref=${ref} value=${value} oninput=${onInput} onkeydown=${onKey} onpaste=${visionCapable ? onPaste : null}
+             can type ahead; Enter is a no-op until the run ends. */}
+        <textarea ref={ref} value={value} onInput={onInput} onKeyDown={onKey} onPaste={visionCapable ? onPaste : null}
                   placeholder="message (Enter to send, / for commands)"
-                  class=${`flex-1 [field-sizing:content] min-h-[5rem] max-h-[33dvh] overflow-y-auto text-ink bg-panel border border-line rounded py-1.5 px-2 focus:outline-none focus:border-accent transition-opacity ${running ? 'opacity-50' : ''} ${dragOver ? 'border-accent bg-accent/5' : ''}`}></textarea>
+                  class={`flex-1 [field-sizing:content] min-h-[5rem] max-h-[33dvh] overflow-y-auto text-ink bg-panel border border-line rounded py-1.5 px-2 focus:outline-none focus:border-accent transition-opacity ${running ? 'opacity-50' : ''} ${dragOver ? 'border-accent bg-accent/5' : ''}`}></textarea>
         <div class="flex flex-col gap-1.5">
-          ${visionCapable ? html`
-            <!-- sr-only (not display:none): iOS Safari won't open the picker
-                 from a programmatic .click() on a display:none file input. -->
-            <input ref=${fileRef} type="file" accept="image/*" multiple class="sr-only" onchange=${onFileChange} />
-            <button disabled=${running} class=${SEND_BTN + ' text-sm'}
+          {visionCapable ? (<>
+            {/* sr-only (not display:none): iOS Safari won't open the picker
+                 from a programmatic .click() on a display:none file input. */}
+            <input ref={fileRef} type="file" accept="image/*" multiple class="sr-only" onChange={onFileChange} />
+            <button disabled={running} class={`${SEND_BTN} text-sm`}
                     title="attach image"
-                    onclick=${() => fileRef.current?.click()}>📎</button>` : null}
-          <button disabled=${running} class=${SEND_BTN} onclick=${onSend}>send</button>
-          ${running ? html`<button class=${SEND_BTN} onclick=${onStop}>stop</button>` : null}
+                    onClick={() => fileRef.current?.click()}>📎</button>
+          </>) : null}
+          <button disabled={running} class={SEND_BTN} onClick={onSend}>send</button>
+          {running ? <button class={SEND_BTN} onClick={onStop}>stop</button> : null}
         </div>
       </div>
-    </div>`;
+    </div>
+  );
 };

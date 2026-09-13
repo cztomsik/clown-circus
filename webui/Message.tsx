@@ -1,10 +1,10 @@
 import { useRef, useState, useEffect, useLayoutEffect } from 'preact/hooks';
-import { html, PRE } from './ui.js';
+import { PRE } from './ui.js';
 import { prettyArgs, parseArgs, reasoningText } from './util.js';
-import { ToolCall, toolCallTitle } from './toolcall.js';
+import { ToolCall, toolCallTitle } from './toolcall';
 import { Markdown } from './md.js';
 
-const Pre = ({ text, cls = PRE }) => html`<pre class=${cls}>${text ?? ''}</pre>`;
+const Pre = ({ text, cls = PRE }) => <pre class={cls}>{text ?? ''}</pre>;
 
 const firstLine = (s, n = 120) => {
   const l = (s ?? '').split('\n')[0];
@@ -43,7 +43,7 @@ const buildBlocks = (messages) => {
 // One collapsible call+result pair. The summary shows a short, bounded per-tool
 // title (e.g. `edit_file src/foo.js`) plus a first-line preview of the result,
 // so a large payload can't stretch the collapsed line. The body stacks the call
-// — rendered by ToolCall (webui/toolcall.js) with a bespoke view per tool, or
+// — rendered by ToolCall (webui/toolcall.tsx) with a bespoke view per tool, or
 // the generic pretty-JSON <pre> for unknown ones — above the result, which keeps
 // the original args/result distinction (bg-line tint vs bg-bg tint). A call
 // without a result (e.g. a duplicate of a running session, which strips a
@@ -53,37 +53,39 @@ const ToolPair = ({ tc, result }) => {
   const raw = prettyArgs(tc.function.arguments);
   const args = parseArgs(tc.function.arguments);
   const title = toolCallTitle(name, args) ?? `${name}(${firstLine(raw, 80)})`;
-  return html`
+  return (
     <details class="border-l-2 border-line/60 open:bg-panel/70 open:rounded-r-md">
       <summary class="py-1 px-2.5 text-dim text-xs cursor-pointer select-none break-words hover:text-ink/70">
-        ${title}${result ? html` <span class="opacity-60">— ${firstLine(result.content)}</span>` : null}
+        {title} {result ? <span class="opacity-60">— {firstLine(result.content)}</span> : null}
       </summary>
       <div class="p-1.5 space-y-1">
-        <${ToolCall} name=${name} args=${args} raw=${raw} />
-        ${result ? html`
-          <pre class="m-0 px-2 py-1.5 text-dim text-xs whitespace-pre-wrap break-words rounded bg-bg/80">${result.content ?? ''}</pre>` : null}
+        <ToolCall name={name} args={args} raw={raw} />
+        {result ? <pre class="m-0 px-2 py-1.5 text-dim text-xs whitespace-pre-wrap break-words rounded bg-bg/80">{result.content ?? ''}</pre> : null}
       </div>
-    </details>`;
+    </details>
+  );
 };
 
 // The model's chain-of-thought, when the provider emits reasoning on an
 // assistant turn (llama.cpp: `reasoning_content`, vLLM: `reasoning`). Rendered
 // collapsed + dim/italic so it reads as secondary to the visible response.
-const Reasoning = ({ text }) => html`
+const Reasoning = ({ text }) => (
   <details class="border-l-2 border-line/50 open:bg-panel/40 open:rounded-r-md">
     <summary class="py-1 px-2.5 text-dim/70 text-xs italic cursor-pointer select-none hover:text-dim">reasoning</summary>
-    <${Pre} text=${text} cls="m-0 px-2.5 pb-1.5 pt-0.5 text-dim text-xs italic whitespace-pre-wrap break-words" />
-  </details>`;
+    <Pre text={text} cls="m-0 px-2.5 pb-1.5 pt-0.5 text-dim text-xs italic whitespace-pre-wrap break-words" />
+  </details>
+);
 
 // Assistant turn: optional reasoning + text, followed by its tool-call pairs.
 const AssistantBlock = ({ m, pairs }) => {
   const r = reasoningText(m);
-  return html`
+  return (
     <div>
-      ${r ? html`<${Reasoning} text=${r} />` : null}
-      ${m.content ? html`<${Markdown} text=${m.content} />` : null}
-      ${pairs.map((p, i) => html`<${ToolPair} key=${p.tc.id ?? i} tc=${p.tc} result=${p.result} />`)}
-    </div>`;
+      {r ? <Reasoning text={r} /> : null}
+      {m.content ? <Markdown text={m.content} /> : null}
+      {pairs.map((p, i) => <ToolPair key={p.tc.id ?? i} tc={p.tc} result={p.result} />)}
+    </div>
+  );
 };
 
 // Roles are distinguished by colour / weight / tint instead of boxed cards:
@@ -93,33 +95,36 @@ const AssistantBlock = ({ m, pairs }) => {
 // inconsistent edit — the fallback keeps it visible).
 const Message = ({ m }) => {
   if (m.role === 'system') {
-    return html`
+    return (
       <details class="border-l-2 border-line pl-2.5">
         <summary class="py-0.5 text-dim/70 text-xs italic cursor-pointer select-none">system</summary>
-        <${Pre} text=${m.content} cls="m-0 pt-1.5 pb-1 text-dim text-xs italic whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto" />
-      </details>`;
+        <Pre text={m.content} cls="m-0 pt-1.5 pb-1 text-dim text-xs italic whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto" />
+      </details>
+    );
   }
   if (m.role === 'tool') {
     const first = firstLine(m.content);
-    return html`
+    return (
       <details class="border-l-2 border-line/60 open:bg-panel/70 open:rounded-r-md">
-        <summary class="py-1 px-2.5 text-dim text-xs cursor-pointer select-none hover:text-ink/70">tool result — ${first}</summary>
-        <${Pre} text=${m.content} cls="m-0 pt-0.5 pb-1.5 px-2.5 text-dim text-xs whitespace-pre-wrap break-words" />
-      </details>`;
+        <summary class="py-1 px-2.5 text-dim text-xs cursor-pointer select-none hover:text-ink/70">tool result — {first}</summary>
+        <Pre text={m.content} cls="m-0 pt-0.5 pb-1.5 px-2.5 text-dim text-xs whitespace-pre-wrap break-words" />
+      </details>
+    );
   }
   const isUser = m.role === 'user';
   const content = m.content;
   const cls = isUser ? 'font-medium text-accent' : undefined;
   const r = reasoningText(m);
-  return html`
-    <div class=${isUser ? 'border-l-2 border-accent bg-accent/10 rounded-r-md pl-3 pr-2 py-1.5' : ''}>
-      ${r ? html`<${Reasoning} text=${r} />` : null}
-      ${Array.isArray(content)
+  return (
+    <div class={isUser ? 'border-l-2 border-accent bg-accent/10 rounded-r-md pl-3 pr-2 py-1.5' : ''}>
+      {r ? <Reasoning text={r} /> : null}
+      {Array.isArray(content)
         ? content.map((part, i) => part.type === 'text'
-            ? html`<${Markdown} key=${i} text=${part.text} cls=${cls} />`
-            : html`<img key=${i} src=${part.image_url?.url} alt="attachment" class="max-h-64 max-w-full rounded border border-line my-1" />`)
-        : content ? html`<${Markdown} text=${content} cls=${cls} />` : null}
-    </div>`;
+            ? <Markdown key={i} text={part.text} cls={cls} />
+            : <img key={i} src={part.image_url?.url} alt="attachment" class="max-h-64 max-w-full rounded border border-line my-1" />)
+        : content ? <Markdown text={content} cls={cls} /> : null}
+    </div>
+  );
 };
 
 // Consecutive assistant turns (one agent run's worth of LLM calls, ending in
@@ -166,16 +171,17 @@ const Working = ({ tool }) => {
     const t = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
     return () => clearInterval(t);
   }, []);
-  return html`
+  return (
     <div class="flex items-center gap-2 py-0.5" aria-label="working">
       <span class="flex items-end gap-[3px] h-3">
         <span class="working-dot inline-block w-1.5 h-1.5 rounded-full bg-dim"></span>
         <span class="working-dot inline-block w-1.5 h-1.5 rounded-full bg-dim"></span>
         <span class="working-dot inline-block w-1.5 h-1.5 rounded-full bg-dim"></span>
       </span>
-      ${tool ? html`<span class="text-dim/70 text-xs font-mono">${tool}…</span>` : null}
-      <span class="text-dim/70 text-xs font-mono tabular-nums">${fmtElapsed(elapsed)}</span>
-    </div>`;
+      {tool ? <span class="text-dim/70 text-xs font-mono">{tool}…</span> : null}
+      <span class="text-dim/70 text-xs font-mono tabular-nums">{fmtElapsed(elapsed)}</span>
+    </div>
+  );
 };
 
 // Distance (from the bottom) that still counts as "pinned".
@@ -216,20 +222,25 @@ export const Messages = ({ messages, running = false }) => {
 
   const blocks = buildBlocks(messages);
   const groups = groupRuns(blocks);
-  return html`
+  return (
     <div class="relative flex-1 flex flex-col min-h-0">
-      <div ref=${ref} class="flex-1 overflow-y-auto p-3 flex flex-col gap-3" onscroll=${onScroll}>
-        ${groups.map((g, i) => g.blocks
-          ? html`<div key=${i} class="flex flex-col gap-1">
-              ${g.blocks.map((b, j) => b.pairs
-                ? html`<${AssistantBlock} key=${j} m=${b.m} pairs=${b.pairs} />`
-                : html`<${Message} key=${j} m=${b.m} />`)}</div>`
-          : html`<${Message} key=${i} m=${g.m} />`)}
-        ${running ? html`<${Working} tool=${inFlightTool(blocks)} />` : null}
+      <div ref={ref} class="flex-1 overflow-y-auto p-3 flex flex-col gap-3" onScroll={onScroll}>
+        {groups.map((g, i) => g.blocks
+          ? (
+            <div key={i} class="flex flex-col gap-1">
+              {g.blocks.map((b, j) => b.pairs
+                ? <AssistantBlock key={j} m={b.m} pairs={b.pairs} />
+                : <Message key={j} m={b.m} />)}
+            </div>
+          )
+          : <Message key={i} m={g.m} />)}
+        {running ? <Working tool={inFlightTool(blocks)} /> : null}
       </div>
-      ${!pinned ? html`
+      {!pinned ? (
         <button class="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 text-xs text-ink bg-panel border border-line rounded-full shadow-lg cursor-pointer hover:border-accent"
                 title="scroll to the latest message"
-                onclick=${jumpToLatest}>↓ latest</button>` : null}
-    </div>`;
+                onClick={jumpToLatest}>↓ latest</button>
+      ) : null}
+    </div>
+  );
 };

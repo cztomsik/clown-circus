@@ -12,18 +12,21 @@ const WEBUI_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'webui');
 const log = (m) => console.log(`[${new Date().toISOString()}] ${m}`);
 
 const main = async () => {
-  // Bundle the web UI (entry webui/app.js, node_modules deps inlined) into one
-  // file at /vendor/bundle.js. Blocking build at startup, then a background
-  // watch keeps it fresh while the server runs.
+  // Bundle the web UI (entry webui/app.tsx, node_modules deps inlined) into one
+  // file at /vendor/bundle.js. Preact JSX (automatic runtime → preact/jsx-runtime).
+  // Blocking build at startup, then a background watch keeps it fresh while the
+  // server runs.
   const webuiCtx = await esbuild.context({
-    entryPoints: [join(WEBUI_DIR, 'app.js')],
+    entryPoints: [join(WEBUI_DIR, 'app.tsx')],
     bundle: true,
     format: 'esm',
     target: 'es2022',
+    jsx: 'automatic',
+    jsxImportSource: 'preact',
     outfile: join(WEBUI_DIR, 'vendor', 'bundle.js'),
   });
   await webuiCtx.rebuild(); // blocks startup until the first bundle is on disk
-  webuiCtx.watch(); // no await — rebuilds on webui/*.js changes in the background
+  webuiCtx.watch(); // no await — rebuilds on webui/*.{js,tsx} changes in the background
 
   const manager = new SessionManager();
   const app = buildApp({ manager });

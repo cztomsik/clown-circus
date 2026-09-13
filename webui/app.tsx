@@ -5,13 +5,12 @@
 import '@tailwindcss/browser';
 import { render } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { html } from './ui.js';
 import { api, post, openSessionEvents } from './api.js';
 import { baseName, parseCommand, modelId, isVisionModel } from './util.js';
 import { fileToDataURL, prepareImageDataURL, isImageFile } from './image.js';
-import { Header } from './Header.js';
-import { Sidebar } from './Sidebar.js';
-import { Main } from './Main.js';
+import { Header } from './Header';
+import { Sidebar } from './Sidebar';
+import { Main } from './Main';
 
 // md breakpoint: >= it the sidebar sits in the flex flow; below it, it's an
 // overlay drawer (auto-collapsed by default on mobile).
@@ -211,7 +210,7 @@ const App = () => {
   // session's last-used model; with none open it also seeds new sessions.
   const onModelChange = (v) => setModel(v);
 
-  const handleAction = async (name, arg) => {
+  const handleAction = async (name, arg = null) => {
     if (!current) return;
     try {
       if (name === 'undo' || name === 'clear' || name === 'trim') {
@@ -281,7 +280,7 @@ const App = () => {
     const valid = files.filter(isImageFile);
     if (!valid.length) { flashMsg('no supported image in that'); return; }
     try {
-      const items = await Promise.all(valid.map(async (f) => ({
+      const items = await Promise.all(valid.map(async (f: any) => ({
         id: uid(),
         name: f.name || 'image',
         dataUrl: await fileToDataURL(f),
@@ -341,31 +340,33 @@ const App = () => {
     } catch (err) { flashMsg(err.message); }
   };
 
-  return html`
+  return (
     <div class="h-dvh flex flex-col">
-      <${Header} cfg=${cfg} theme=${theme} sideOpen=${sideOpen}
-                 onSideToggle=${() => setSideOpen((o) => !o)} onThemeToggle=${toggleTheme}
-                 view=${view} onAction=${handleAction} onDel=${del}
-                 model=${model} onModelChange=${onModelChange} models=${models} />
+      <Header cfg={cfg} theme={theme} sideOpen={sideOpen}
+              onSideToggle={() => setSideOpen((o) => !o)} onThemeToggle={toggleTheme}
+              view={view} onAction={handleAction} onDel={del}
+              model={model} onModelChange={onModelChange} models={models} />
       <div class="flex-1 flex min-h-0">
-        ${sideOpen ? html`
-          <!-- mobile (<md): fixed overlay drawer + dimmed backdrop;
-               desktop (>=md): display:contents wrapper, so the <aside>
-               joins the parent flex row as the in-flow column -->
+        {sideOpen ? (
+          // mobile (<md): fixed overlay drawer + dimmed backdrop;
+          // desktop (>=md): display:contents wrapper, so the <aside>
+          // joins the parent flex row as the in-flow column
           <div class="fixed inset-0 z-40 flex md:contents">
-            <${Sidebar} cls="w-[280px] max-w-[85vw] md:max-w-none min-w-[220px] border-r border-line flex flex-col bg-bg shadow-xl md:shadow-none"
-                       sessions=${sessions} current=${current}
-                       onNew=${onNew} onSelect=${select} newCwd=${newCwd} setNewCwd=${setNewCwd}
-                       showArchived=${showArchived} onToggleArchived=${() => setShowArchived((v) => !v)}
-                       grouped=${grouped} onToggleGrouped=${() => setGrouped((v) => !v)} />
-            <div class="flex-1 bg-black/50 md:hidden" onclick=${() => setSideOpen(false)}></div>
-          </div>` : null}
-        <${Main} view=${view} flash=${flash} input=${input} setInput=${setInput}
-                 attachments=${attachments} onAddFiles=${addFiles} onRemoveAttachment=${removeAttachment}
-                 visionCapable=${isVisionCapable(view?.model)}
-                 onSend=${send} onStop=${stop} onKey=${onKey} />
+            <Sidebar cls="w-[280px] max-w-[85vw] md:max-w-none min-w-[220px] border-r border-line flex flex-col bg-bg shadow-xl md:shadow-none"
+                     sessions={sessions} current={current}
+                     onNew={onNew} onSelect={select} newCwd={newCwd} setNewCwd={setNewCwd}
+                     showArchived={showArchived} onToggleArchived={() => setShowArchived((v) => !v)}
+                     grouped={grouped} onToggleGrouped={() => setGrouped((v) => !v)} />
+            <div class="flex-1 bg-black/50 md:hidden" onClick={() => setSideOpen(false)}></div>
+          </div>
+        ) : null}
+        <Main view={view} flash={flash} input={input} setInput={setInput}
+              attachments={attachments} onAddFiles={addFiles} onRemoveAttachment={removeAttachment}
+              visionCapable={isVisionCapable(view?.model)}
+              onSend={send} onStop={stop} onKey={onKey} />
       </div>
-    </div>`;
+    </div>
+  );
 };
 
-render(html`<${App} />`, document.getElementById('root'));
+render(<App />, document.getElementById('root'));

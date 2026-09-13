@@ -7,7 +7,8 @@ Server-Sent Events. All sessions and their conversation state are persisted in a
 local **SQLite** database.
 
 - **Target runtime**: the currently installed **Node.js 24.x** (`v24.14.1`),
-  plain JavaScript (ESM). No build step.
+  plain JavaScript (ESM). The server has no build step; the web UI's
+  `.tsx` modules are bundled by esbuild at startup (§7.8).
 - **Storage**: the builtin **`node:sqlite`** module (no external DB server).
 - **No TUI, no terminal.** Everything is an HTTP endpoint.
 
@@ -23,7 +24,7 @@ local **SQLite** database.
 - Provide a **headless REST + SSE API** that a client (web UI, CLI, CI, other
   services) can drive entirely over HTTP.
 - Provide a **web UI** served at `/` so the server is usable out of the box in
-  a browser. It is minimal for now (a thin Preact + htm page,
+  a browser. It is minimal for now (a thin Preact JSX (`.tsx`) page,
   esbuild-bundled at startup)
   and expected to grow over time — see [WEB_UI.md](WEB_UI.md) for the full
   description.
@@ -447,18 +448,21 @@ Event types (SSE `event:` field):
 
 A web UI is served at `GET /` from `webui/` (via `express.static`): a thin
 `index.html` shell (Tailwind v4 via the bundled `@tailwindcss/browser`
-JIT, and a single `#root` mount) plus a set of small **Preact + htm** ES
-modules — `app.js` holds the root component (all state + side effects), with
-component modules (`Header.js`, `Sidebar.js`, `Main.js`, `Message.js`,
-`InputBar.js`, `Todos.js`) and non-component helpers (`api.js`, `util.js`,
-`image.js`, `ui.js`; the full file list is in §13). It is a **pure client**
+JIT, and a single `#root` mount) plus a set of small **Preact JSX** (`.tsx`)
+modules — `app.tsx` holds the root component (all state + side effects), with
+component modules (`Header.tsx`, `Sidebar.tsx`, `Main.tsx`, `Message.tsx`,
+`InputBar.tsx`, `Todos.tsx`, `toolcall.tsx`) and non-component helpers
+(`api.js`, `util.js`, `image.js`, `md.js`, `ui.js`; the full file list is in
+§13). It is a **pure client**
 of the API in this section — it adds no server logic, routes, or
 dependencies. At server startup, esbuild (a runtime dependency, run in
-`src/main.js`) bundles `webui/app.js` + its deps from `node_modules` into
+`src/main.js`) bundles `webui/app.tsx` + its deps from `node_modules` into
 `webui/vendor/bundle.js` (served at `/vendor/bundle.js`, the only
-`<script>` in the shell); a background watch keeps it fresh, and it is
-disposed on shutdown. The Tailwind browser JIT is in the same bundle
-(`webui/app.js` imports `@tailwindcss/browser` first, so the JIT is installed
+`<script>` in the shell; JSX compiles via `jsx: automatic` +
+`jsxImportSource: preact` → `preact/jsx-runtime`); a background watch keeps
+it fresh, and it is disposed on shutdown. The Tailwind browser JIT is in the
+same bundle (`webui/app.tsx` imports `@tailwindcss/browser` first, so the JIT
+is installed
 before the UI renders). No network CDNs, no `node_modules` static mounts —
 the UI works fully offline.
 
@@ -633,18 +637,20 @@ clown-circus/
 ├─ .gitignore
 ├─ webui/
 │  ├─ index.html            # web UI shell served at / (loads /vendor/bundle.js + #root)
-│  ├─ app.js                # the web UI: Preact + htm ES module (root component + state, bundle entry)
+│  ├─ app.tsx               # the web UI: Preact JSX module (root component + state, bundle entry)
 │  ├─ vendor/               # generated: esbuild bundle (bundle.js) — git-ignored, rebuilt at startup
-│  ├─ ui.js                 # htm→h binding + shared class tokens
+│  ├─ ui.js                 # shared Tailwind class tokens
 │  ├─ api.js                # REST + SSE client helpers
 │  ├─ util.js               # pure helpers (no DOM)
 │  ├─ image.js              # client-side image helpers (FileReader, canvas)
-│  ├─ Header.js             # unified top bar
-│  ├─ Sidebar.js            # project-grouped session list + new-session form
-│  ├─ Main.js               # right-hand pane composition
-│  ├─ Message.js            # transcript (messages + tool pairs)
-│  ├─ InputBar.js           # composer (textarea + send/stop + image attachments)
-│  └─ Todos.js              # floating todo panel
+│  ├─ md.js                 # Markdown component (marked + DOMPurify → dangerouslySetInnerHTML)
+│  ├─ Header.tsx            # unified top bar
+│  ├─ Sidebar.tsx           # project-grouped session list + new-session form
+│  ├─ Main.tsx              # right-hand pane composition
+│  ├─ Message.tsx           # transcript (messages + tool pairs)
+│  ├─ toolcall.tsx          # per-tool argument views (collapsible tool-call bodies)
+│  ├─ InputBar.tsx          # composer (textarea + send/stop + image attachments)
+│  └─ Todos.tsx             # floating todo panel
 └─ src/
    ├─ main.js               # bootstrap: bundle web UI (esbuild + watch), parse config, open DB, build app, listen
    ├─ config.js             # Config resolution (flags + env)
@@ -670,7 +676,8 @@ subdirectories.
 ## 14. Technology Choices
 
 - **Node.js 24.x** (the currently installed runtime, `v24.14.1`). Plain
-  **JavaScript (ESM, `type: "module"`)**, no TypeScript. The only build step
+  **JavaScript (ESM, `type: "module"`)** — the only TypeScript is the web UI's
+  untyped **JSX (`.tsx`) modules**. The only build step
   is esbuild bundling the web UI at server startup (see §7.8) — the server
   itself runs directly with `node src/main.js`.
 - **`node:sqlite`** (builtin) for storage. Available without a flag in Node 24;
@@ -688,7 +695,7 @@ subdirectories.
 - **SSE** via a minimal helper over the Express response (no heavy deps).
 - **`node:crypto.randomUUID`** for session ids.
 - Minimal dependencies: `express` for the server, `esbuild` for bundling the
-  web UI at startup, plus the web UI's browser libraries (`preact`, `htm`,
+  web UI at startup, plus the web UI's browser libraries (`preact`,
   `marked`, `dompurify`, `@tailwindcss/browser`). All of those are
   `dependencies` because they are consumed at runtime — esbuild bundles them
   into `webui/vendor/bundle.js` from `node_modules` (offline, no CDN, no
@@ -696,13 +703,15 @@ subdirectories.
   code. Everything else (SQLite, crypto, http, child_process) is built into
   Node.
 - **TypeScript (dev-only, check-only)**: `typescript` and `@types/node` are
-  dev dependencies used *solely* to type-check the plain-JS codebase — they
+  dev dependencies used *solely* to type-check the JS/TSX codebase — they
   never emit and are not part of the runtime or build. (The web UI's
-  libraries double as type sources: `webui/*.js` imports them as bare
+  libraries double as type sources: `webui/*` imports them as bare
   specifiers, so `tsc --noEmit` resolves them from the same packages esbuild
   bundles; the generated `webui/vendor/` is excluded from the tsconfig.) Run
   with `npm run typecheck` (i.e. `tsc --noEmit`), configured in `tsconfig.json`:
-  `checkJs` + `allowJs` + `noEmit` with `strict: false`, plus `types: ["node"]`
+  `checkJs` + `allowJs` + `noEmit` with `strict: false`, plus `types: ["node"]`,
+  and `jsx: "react-jsx"` + `jsxImportSource: "preact"` for the web UI's `.tsx`
+  modules
   (the native `tsc` does not auto-include `@types` the way the JS compiler does).
   Both **`src/`** and **`webui/`** are type-clean (the SSE `onmessage`
   handler is cast to `MessageEvent` in `webui/api.js`).
@@ -809,7 +818,7 @@ function readFile(io, ctx, args) {
 5. Controls: `stop`, `undo`, `retry`, `clear`, `trim`, `compact`,
    `init`.
 6. `README.md`.
-7. Minimal web UI at `/` (static Preact + htm page; see WEB_UI.md).
+7. Minimal web UI at `/` (static Preact JSX page; see WEB_UI.md).
 
 ---
 
