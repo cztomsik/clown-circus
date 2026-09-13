@@ -1,8 +1,8 @@
 import { useRef, useState, useEffect, useLayoutEffect } from 'preact/hooks';
-import { PRE } from './ui.js';
-import { prettyArgs, parseArgs, reasoningText } from './util.js';
-import { ToolCall, toolCallTitle } from './toolcall';
-import { Markdown } from './md.js';
+import { PRE } from './ui';
+import { prettyArgs, parseArgs, reasoningText } from './util';
+import { ToolCall, toolCallTitle } from './ToolCall';
+import { Markdown } from './Markdown';
 
 const Pre = ({ text, cls = PRE }) => <pre class={cls}>{text ?? ''}</pre>;
 
@@ -43,7 +43,7 @@ const buildBlocks = (messages) => {
 // One collapsible call+result pair. The summary shows a short, bounded per-tool
 // title (e.g. `edit_file src/foo.js`) plus a first-line preview of the result,
 // so a large payload can't stretch the collapsed line. The body stacks the call
-// — rendered by ToolCall (webui/toolcall.tsx) with a bespoke view per tool, or
+// — rendered by ToolCall (webui/ToolCall.tsx) with a bespoke view per tool, or
 // the generic pretty-JSON <pre> for unknown ones — above the result, which keeps
 // the original args/result distinction (bg-line tint vs bg-bg tint). A call
 // without a result (e.g. a duplicate of a running session, which strips a

@@ -1,5 +1,5 @@
 import { Fragment } from 'preact';
-import { baseName, timeAgo } from './util.js';
+import { baseName, timeAgo } from './util';
 
 // ── status colour map (dot) ───────────────────────────────────────────
 const dotColor = { running: 'bg-accent animate-pulse', idle: 'bg-ok', error: 'bg-err', stopped: 'bg-dim' };

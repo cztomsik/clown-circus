@@ -3,8 +3,6 @@
   "exclude": ["webui/vendor"],
   "compilerOptions": {
     "strict": false,
-    "checkJs": true,
-    "allowJs": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "types": ["node"],

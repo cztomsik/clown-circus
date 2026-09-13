@@ -191,25 +191,25 @@ src/
 └─ skills/init.md
 ```
 
-`webui/` — the web UI served at `/` (Preact JSX (`.tsx`) modules + a few
-`.js` helpers; esbuild bundles it into `vendor/bundle.js` at server startup):
+`webui/` — the web UI served at `/` (Preact JSX (`.tsx`) and TypeScript (`.ts`)
+modules; esbuild bundles it into `vendor/bundle.js` at server startup):
 
 ```
 webui/
-├─ index.html     # page shell: Tailwind v4 @theme tokens + #root mount + /vendor/bundle.js
-├─ app.tsx        # root Preact component (bundle entry): all state + side effects
-├─ Header.tsx     # top bar (toggle, status, model picker, theme, actions menu)
-├─ Sidebar.tsx    # project-grouped session list + new-session form
-├─ Main.tsx       # right-hand pane (error banner, todos, transcript, composer)
-├─ Message.tsx    # transcript rendering (user/assistant/tool, reasoning)
-├─ toolcall.tsx   # per-tool argument views (collapsible tool-call bodies)
-├─ InputBar.tsx   # composer (textarea, send/stop, slash cmds, image attach)
-├─ Todos.tsx      # floating collapsible todo panel
-├─ api.js         # REST + SSE client (no Preact/DOM)
-├─ util.js        # pure helpers (no DOM/Preact)
-├─ image.js       # client-side image helpers (FileReader read, canvas downscale)
-├─ md.js          # Markdown component (marked + DOMPurify)
-└─ ui.js          # shared Tailwind class tokens (BTN, PRE)
+├─ index.html      # page shell: Tailwind v4 @theme tokens + #root mount + /vendor/bundle.js
+├─ app.tsx         # root Preact component (bundle entry): all state + side effects
+├─ Header.tsx      # top bar (toggle, status, model picker, theme, actions menu)
+├─ Sidebar.tsx     # project-grouped session list + new-session form
+├─ Main.tsx        # right-hand pane (error banner, todos, transcript, composer)
+├─ Message.tsx     # transcript rendering (user/assistant/tool, reasoning)
+├─ ToolCall.tsx    # per-tool argument views (collapsible tool-call bodies)
+├─ InputBar.tsx    # composer (textarea, send/stop, slash cmds, image attach)
+├─ Todos.tsx       # floating collapsible todo panel
+├─ Markdown.tsx    # Markdown component (marked + DOMPurify)
+├─ api.ts          # REST + SSE client (no Preact/DOM)
+├─ util.ts         # pure helpers (no DOM/Preact)
+├─ image.ts        # client-side image helpers (FileReader read, canvas downscale)
+└─ ui.ts           # shared Tailwind class tokens (BTN, PRE)
 ```
 
 See [`WEB_UI.md`](WEB_UI.md) for details.

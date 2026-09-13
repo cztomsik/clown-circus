@@ -1,5 +1,5 @@
 import { useState } from 'preact/hooks';
-import { parseTodos } from './util.js';
+import { parseTodos } from './util';
 
 // Collapsible floating todo panel. Anchored top-right inside the main pane
 // (Main.tsx makes <main> relative), so it overlays the transcript instead of

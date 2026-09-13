@@ -2,12 +2,12 @@
 // No DOM, no state, no Preact — kept out of app.js so that file holds only
 // the components, hooks, and wiring.
 
-export const baseName = (cwd) => cwd.split('/').filter(Boolean).at(-1) || cwd;
+export const baseName = (cwd: string) => cwd.split('/').filter(Boolean).at(-1) || cwd;
 
 // Parse a `/cmd [arg]` line from the composer. Returns null for a plain message
 // (no leading slash); otherwise { name, arg } with the command lowercased and
 // everything after the first run of whitespace as `arg`.
-export const parseCommand = (text) => {
+export const parseCommand = (text: string) => {
   const t = text.trim();
   if (!t.startsWith('/')) return null;
   const parts = t.slice(1).trim().split(/\s+/);
@@ -32,7 +32,7 @@ export const isVisionModel = (m) => {
 // made it — so only the display normalises here. Null when absent.
 export const reasoningText = (m) => m?.reasoning_content ?? m?.reasoning ?? null;
 
-export const timeAgo = (iso) => {
+export const timeAgo = (iso: string) => {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
   if (s < 60) return `${Math.floor(s)}s ago`;
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
@@ -40,11 +40,11 @@ export const timeAgo = (iso) => {
   return `${Math.floor(s / 86400)}d ago`;
 };
 
-export const prettyArgs = (a) => { try { return JSON.stringify(JSON.parse(a)); } catch { return a ?? ''; } };
+export const prettyArgs = (a: string) => { try { return JSON.stringify(JSON.parse(a)); } catch { return a ?? ''; } };
 
 // Parse a tool call's `arguments` JSON string into an object, or null when it
 // is absent / not valid JSON (callers then render the raw string instead).
-export const parseArgs = (a) => { try { const o = JSON.parse(a); return o && typeof o === 'object' ? o : null; } catch { return null; } };
+export const parseArgs = (a: string) => { try { const o = JSON.parse(a); return o && typeof o === 'object' ? o : null; } catch { return null; } };
 
 // Best-effort parse of the todos markdown string (checkbox convention lives in
 // PREFIX.md). Returns one entry per non-empty line:
@@ -52,7 +52,7 @@ export const parseArgs = (a) => { try { const o = JSON.parse(a); return o && typ
 //   other line: { text }                     // shown as-is
 const CHECKBOX = /^\s*[-*+]\s+\[( |x|X)\]\s*(.*)$/;
 const IN_PROGRESS = /\s*\(in progress\)\s*$/i;
-export const parseTodos = (md) =>
+export const parseTodos = (md: string) =>
   (md || '').split('\n').map((line) => {
     const m = line.match(CHECKBOX);
     if (!m) return line.trim() ? { text: line.trim() } : null;

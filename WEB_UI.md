@@ -20,7 +20,7 @@ primary interface — the UI is just one client of it.
   holds a plain `<style>` block with the **light** palette (overriding the same
   tokens under `:root[data-theme="light"]`), the `dot-bounce` keyframes behind
   the transcript's working indicator (see `webui/Message.tsx`), the `.md`
-  typography rules behind Markdown message rendering (see `webui/md.js`), and
+  typography rules behind Markdown message rendering (see `webui/Markdown.tsx`), and
   a tiny
   inline `<script>` that
   re-applies the saved theme before first paint (no flash on reload). The
@@ -56,9 +56,9 @@ primary interface — the UI is just one client of it.
   modules below and mounts into `#root` via Preact's `render`. Markup is
   plain **Preact JSX** (`.tsx`, automatic runtime → `preact/jsx-runtime`;
   esbuild does the transform — no `h`/`htm` prelude anywhere).
-- **`webui/ui.js`** — the shared Tailwind class tokens
+- **`webui/ui.ts`** — the shared Tailwind class tokens
   (`BTN`, `PRE`). Component modules import them where needed.
-- **`webui/api.js`** — all client → server traffic, kept apart from the
+- **`webui/api.ts`** — all client → server traffic, kept apart from the
   components (no DOM, no Preact, no JSX): the JSON `api()`/`post()` REST helpers
   and `openSessionEvents(id, handlers)`, which opens the per-session SSE
   `EventSource`, fans its events out to a `{snapshot, status, done,
@@ -85,8 +85,8 @@ primary interface — the UI is just one client of it.
   (in `Main.tsx`), so a session switch remounts it and lands at the bottom of
   the new transcript.
   User and assistant **text** renders through the `Markdown` component
-  (`webui/md.js`); reasoning, system and tool content stay plain `<pre>`.
-- **`webui/md.js`** — `Markdown({ text, cls })`: the single component that
+  (`webui/Markdown.tsx`); reasoning, system and tool content stay plain `<pre>`.
+- **`webui/Markdown.tsx`** — `Markdown({ text, cls })`: the single component that
   turns message text into HTML. `marked` (GFM, `breaks: true` so single
   newlines break — chat feel) parses the text, **DOMPurify** sanitises the
   result (agent output is untrusted; a hook forces `target="_blank"
@@ -96,7 +96,7 @@ primary interface — the UI is just one client of it.
   (re-parsing on each SSE snapshot is cheap at transcript scale). Typography
   lives in the `.md` rules in `index.html`, which reference the `--color-*`
   tokens so theming is free.
-- **`webui/toolcall.tsx`** — bespoke rendering of a tool **call** (the
+- **`webui/ToolCall.tsx`** — bespoke rendering of a tool **call** (the
   arguments only; the tool **result** stays a plain dim `<pre>` in
   `Message.tsx`). One view per registered tool: `read_file`/`write_file`/
   `edit_file` show the path (`edit_file` as a stacked red-gutter old over
@@ -113,7 +113,7 @@ primary interface — the UI is just one client of it.
   session's messages (the markdown is derived client-side via
   `extractTodos`); its header row (a `Todos` label + rotating chevron)
   toggles the block, which scrolls internally when long (`max-h-64`). The
-  string is parsed **best-effort** by `parseTodos` (in `webui/util.js`):
+  string is parsed **best-effort** by `parseTodos` (in `webui/util.ts`):
   checkbox lines
   (`- [x]`, `- [ ] … (in progress)`, `- [ ]`) render as a styled list — dim
   strikethrough = done, accent bold = in progress — with a `done/total` count
@@ -128,10 +128,10 @@ primary interface — the UI is just one client of it.
   `Messages`, and `InputBar` (or a "select a session" placeholder when none is
   selected). The session status/actions no longer live here — they moved into
   the unified `Header`.
-- **`webui/util.js`** — a small module of pure, dependency-free helpers
+- **`webui/util.ts`** — a small module of pure, dependency-free helpers
   (`baseName`, `parseCommand`, `modelId`, `isVisionModel`, `reasoningText`,
   `timeAgo`, `prettyArgs`, `parseArgs`, `parseTodos`, `extractTodos`), exported
-  by name and pulled in with `import { … } from './util.js'`. `parseCommand(text)`
+  by name and pulled in with `import { … } from './util'`. `parseCommand(text)`
   parses a composer `/cmd [arg]` line (returns `null` for a plain message),
   `modelId(m)` normalises a `/models` entry to a plain id, and `isVisionModel(m)`
   decides whether an entry accepts image input — honours
@@ -141,7 +141,7 @@ primary interface — the UI is just one client of it.
   (`reasoning_content` or `reasoning`). `extractTodos(messages)`
   derives the todo markdown from the last `write_todos` tool call in the
   messages array; `parseTodos(md)` parses it into structured entries.
-- **`webui/image.js`** — client-side image helpers for the composer's
+- **`webui/image.ts`** — client-side image helpers for the composer's
   attachment feature: `fileToDataURL(file)` (FileReader → base64 data-URL),
   `prepareImageDataURL(dataUrl)` (decode to validate the bytes, downscale via
   canvas if the image exceeds a 4 MP cap, and re-encode to a sendable format —
@@ -150,7 +150,7 @@ primary interface — the UI is just one client of it.
   `isImageFile(file)` (the accept predicate: any `image/*` except SVG, plus an
   empty/unknown type — iOS Safari reports no MIME for a pasted image, so the
   real validation is the decode in `prepareImageDataURL`). Pure DOM, no
-  Preact — kept separate from the no-DOM `util.js`.
+  Preact — kept separate from the no-DOM `util.ts`.
 - Bundled at server startup (consistent with SPEC §7.7). The modules are plain
   static files in `webui/`; esbuild bundles `webui/app.tsx` + its deps
   (**Preact (+ `jsx-runtime`) + marked + DOMPurify + the Tailwind browser
@@ -242,13 +242,13 @@ primary interface — the UI is just one client of it.
   colour, medium weight, faint accent wash with a thin accent left rule;
   **assistant** = plain ink. Both **user** and **assistant** text is rendered
   as **Markdown** (GFM: headings, lists, tables, blockquotes, links, inline
-  and fenced code — see `webui/md.js`; typography in the `.md` rules in
+  and fenced code — see `webui/Markdown.tsx`; typography in the `.md` rules in
   `index.html`), with the prose in the sans font and code in mono;
   reasoning/system/tool content stays plain `<pre>`. Assistant turns
   additionally show `tool_calls` as collapsible dim
   lines (native `<details>`) whose **call** is rendered per tool (a short
   `tool  path`-style summary title plus a bespoke argument view — see
-  `webui/toolcall.tsx` — e.g. a stacked red/green diff for `edit_file`, a
+  `webui/ToolCall.tsx` — e.g. a stacked red/green diff for `edit_file`, a
   `$`-prompt for `run_command`, the parsed list for `write_todos`; unknown
   tools fall back to pretty-JSON) and whose **result** stays a plain dim
   `<pre>`; a turn that carries the provider's chain-of-thought
@@ -304,7 +304,7 @@ primary interface — the UI is just one client of it.
   hover-revealed on desktop. On send, images are sent as OpenAI `ContentPart[]`
   (`{type:"image_url", image_url:{url:"data:…"}}`) alongside the text part.
   **Vision gating**: on boot, the UI builds a `visionModels` set from
-  `GET /models` via `isVisionModel()` (`webui/util.js`). Only an entry that
+  `GET /models` via `isVisionModel()` (`webui/util.ts`). Only an entry that
   **explicitly declares modalities** (llama.cpp's `architecture.input_modalities`)
   can be marked non-vision; providers with no such field (e.g. vLLM) — and
   models not present in the `/models` list at all — are assumed vision-capable.
@@ -376,10 +376,10 @@ primary interface — the UI is just one client of it.
   + `npm install` (esbuild resolves each package's standard ESM entry).
 - **No un-sanitised HTML injection**: LLM output is untrusted. All content is
   rendered as Preact text (JSX expressions become text nodes /
-  `textContent`) **except** user/assistant message text, which `webui/md.js`
+  `textContent`) **except** user/assistant message text, which `webui/Markdown.tsx`
   parses as Markdown and injects via `dangerouslySetInnerHTML` — and only
   *after* DOMPurify sanitisation (with the link / `javascript:`-URL hooks).
-  `md.js` is the sole `dangerouslySetInnerHTML` in the UI; new HTML injection
+  `Markdown.tsx` is the sole `dangerouslySetInnerHTML` in the UI; new HTML injection
   must not be added, and Markdown output must keep flowing through the same
   sanitizer.
 - **JSX void elements must self-close.** In `.tsx` a tag is closed only by an

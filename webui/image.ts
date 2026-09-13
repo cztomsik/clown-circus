@@ -16,14 +16,14 @@ const MAX_MEGAPIXELS = 4;
 // iOS Safari) report no MIME for a pasted image, and the real validation
 // happens later, at decode time in prepareImageDataURL, which surfaces a clear
 // error if the bytes can't be decoded.
-export const isImageFile = (file) => {
+export const isImageFile = (file: File) => {
   const t = (file?.type ?? '').toLowerCase();
   if (t === 'image/svg+xml') return false;
   return t.startsWith('image/') || t === '';
 };
 
 // Read a File / Blob as a base64 data-URL.
-export const fileToDataURL = (file) =>
+export const fileToDataURL = (file: File) =>
   new Promise((resolve, reject) => {
     const r = new FileReader();
     r.onload = () => resolve(r.result);
@@ -36,7 +36,7 @@ export const fileToDataURL = (file) =>
 // PNG). Decoding is what actually validates the bytes, so an un-decodable
 // image (e.g. HEIC in a non-Safari browser) rejects here with a real error.
 // Returns the (possibly new) data-URL.
-export const prepareImageDataURL = async (dataUrl) => {
+export const prepareImageDataURL = async (dataUrl: string) => {
   const mime = (dataUrl.split(',')[0].split(':')[1] ?? '').toLowerCase();
   const img = await loadImage(dataUrl);
   const mp = (img.naturalWidth * img.naturalHeight) / 1_000_000;
@@ -55,7 +55,7 @@ export const prepareImageDataURL = async (dataUrl) => {
 };
 
 // Internal: create an <img> and wait for it to decode.
-const loadImage = (src) =>
+const loadImage = (src: string): Promise<HTMLImageElement> =>
   new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve(img);

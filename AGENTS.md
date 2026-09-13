@@ -19,7 +19,7 @@
 - **Storage**: builtin **`node:sqlite`** (`DatabaseSync`), single file `~/.clowndb` by default. Emits a harmless `ExperimentalWarning`.
 - **LLM**: OpenAI-compatible `/v1/chat/completions` (llama.cpp by default). Base URL from `--base-url`/`CLOWN_API` (default `http://127.0.0.1:8080`); optional `CLOWN_API_KEY` sent as Bearer.
 - **Spec**: the authoritative spec is [`SPEC.md`](SPEC.md) (16 sections); `SPEC.md` and this repo's code are the source of truth.
-- **Web UI**: a first-class feature, described authoritatively in [`WEB_UI.md`](WEB_UI.md). A thin `webui/index.html` shell (Tailwind v4 via the `@tailwindcss/browser` JIT, `@theme` tokens) plus small **Preact JSX (`.tsx`)** modules, esbuild-bundled at startup into `webui/vendor/bundle.js` (served at `/vendor/bundle.js`) — `app.tsx` is the root component (all state + side effects), with `Header/Sidebar/Main/Message/InputBar/Todos/toolcall.tsx` for the components and `api/util/image/ui/md.js` for the API client, pure helpers, image helpers, shared class tokens, and the Markdown component (full list in the Source Structure table). Pure client of the REST + SSE API: project-grouped session sidebar, model picker (`GET /models`), session-level header actions (open-in-vscode, archive, delete) + composer slash commands (retry, init, compact, undo, clear, etc.), live chat over SSE, todos panel.
+- **Web UI**: a first-class feature, described authoritatively in [`WEB_UI.md`](WEB_UI.md). A thin `webui/index.html` shell (Tailwind v4 via the `@tailwindcss/browser` JIT, `@theme` tokens) plus small **Preact JSX (`.tsx`) and TypeScript (`.ts`)** modules, esbuild-bundled at startup into `webui/vendor/bundle.js` (served at `/vendor/bundle.js`) — `app.tsx` is the root component (all state + side effects), with `Header/Sidebar/Main/Message/InputBar/Todos/ToolCall/Markdown.tsx` for the components and `api/util/image/ui.ts` for the API client, pure helpers, image helpers, and shared class tokens (full list in the Source Structure table). Pure client of the REST + SSE API: project-grouped session sidebar, model picker (`GET /models`), session-level header actions (open-in-vscode, archive, delete) + composer slash commands (retry, init, compact, undo, clear, etc.), live chat over SSE, todos panel.
 
 ## Source Structure
 
@@ -46,14 +46,14 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 | `webui/Sidebar.tsx` | Project-grouped session list + new-session form + the "show archived" toggle. |
 | `webui/Main.tsx` | Right-hand pane composition (error banner, todos, transcript, composer). |
 | `webui/Message.tsx` | Transcript rendering: user/assistant/tool blocks, collapsible tool-call pairs, reasoning. |
-| `webui/toolcall.tsx` | Per-tool argument views (collapsible tool-call bodies) + the collapsed-summary title. |
+| `webui/ToolCall.tsx` | Per-tool argument views (collapsible tool-call bodies) + the collapsed-summary title. |
 | `webui/InputBar.tsx` | Composer: textarea, send/stop, slash commands, image attachments (paste + drag). |
 | `webui/Todos.tsx` | Floating collapsible todo panel. |
-| `webui/api.js` | REST + SSE client helpers (no Preact/DOM). |
-| `webui/util.js` | Pure helpers (no DOM/Preact): baseName, parseCommand, modelId, isVisionModel, reasoningText, timeAgo, prettyArgs, parseArgs, parseTodos, extractTodos. |
-| `webui/image.js` | Client-side image helpers (FileReader read, canvas downscale). |
-| `webui/md.js` | Markdown component (marked + DOMPurify → `dangerouslySetInnerHTML`); the sole `dangerouslySetInnerHTML` in the UI. |
-| `webui/ui.js` | Shared Tailwind class tokens (`BTN`, `PRE`). |
+| `webui/api.ts` | REST + SSE client helpers (no Preact/DOM). |
+| `webui/util.ts` | Pure helpers (no DOM/Preact): baseName, parseCommand, modelId, isVisionModel, reasoningText, timeAgo, prettyArgs, parseArgs, parseTodos, extractTodos. |
+| `webui/image.ts` | Client-side image helpers (FileReader read, canvas downscale). |
+| `webui/Markdown.tsx` | Markdown component (marked + DOMPurify → `dangerouslySetInnerHTML`); the sole `dangerouslySetInnerHTML` in the UI. |
+| `webui/ui.ts` | Shared Tailwind class tokens (`BTN`, `PRE`). |
 | `WEB_UI.md` | Authoritative description of the web UI: features, constraints/invariants, and current gaps (it is a scoped feature, expected to grow). |
 
 ## Architecture Notes
@@ -68,7 +68,7 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 
 ## Working conventions
 
-- **Type-check**: `npm run typecheck` (i.e. `tsc --noEmit`, config in `tsconfig.json`: `checkJs`+`allowJs`+`noEmit`+`allowImportingTsExtensions`, `strict:false`, `types:["node"]`). `src/` is `.ts` (type-checked directly); `webui/` mixes `.js`+`.tsx` (checked via `checkJs`/`allowJs`). Dev deps `typescript`/`@types/node` are check-only — never emitted (the web UI's libraries are runtime deps that esbuild bundles into `webui/vendor/bundle.js`, and which `tsc` resolves for the bare imports in `webui/*.{js,tsx}`). **Current state: clean** — both `src/` and `webui/` pass with no errors (the SSE `onmessage` handler is cast to `MessageEvent` in `webui/api.js`).
+- **Type-check**: `npm run typecheck` (i.e. `tsc --noEmit`, config in `tsconfig.json`: `noEmit`+`allowImportingTsExtensions`, `strict:false`, `types:["node"]`). `src/` is `.ts` and `webui/` is `.ts`/`.tsx` — the whole tree is TypeScript (type-checked directly, no `checkJs`/`allowJs`). Dev deps `typescript`/`@types/node` are check-only — never emitted (the web UI's libraries are runtime deps that esbuild bundles into `webui/vendor/bundle.js`, and which `tsc` resolves for the bare imports in `webui/*.{ts,tsx}`). **Current state: clean** — both `src/` and `webui/` pass with no errors (the SSE `onmessage` handler is cast to `MessageEvent` in `webui/api.ts`).
 - **No test framework.** Verify by running the server and exercising the API (e.g. `node src/main.ts --port 8899 --db-file /tmp/x.clowndb`, then `curl`). Keep the default DB `~/.clowndb` clean by using a throwaway `--db-file` during dev.
 - **Config precedence**: CLI flag > env var > default.
 - **Localhost by default** (`127.0.0.1`), no auth — single-user local tool.
@@ -76,7 +76,7 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 ## Code Style
 
 House style for the codebase — modern, idiomatic, **terse** TypeScript
-(server `.ts`) and JavaScript/JSX (web UI). These are conventions, not
+(server `.ts`, web UI `.ts`/`.tsx`). These are conventions, not
 lint-enforced. Keep the code clean under `npm run typecheck` (`tsc --noEmit`)
 even though it is not lint-gated.
 

@@ -5,9 +5,9 @@
 import '@tailwindcss/browser';
 import { render } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { api, post, openSessionEvents } from './api.js';
-import { baseName, parseCommand, modelId, isVisionModel } from './util.js';
-import { fileToDataURL, prepareImageDataURL, isImageFile } from './image.js';
+import { api, post, openSessionEvents } from './api';
+import { baseName, parseCommand, modelId, isVisionModel } from './util';
+import { fileToDataURL, prepareImageDataURL, isImageFile } from './image';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { Main } from './Main';

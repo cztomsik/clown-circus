@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
-import { BTN } from './ui.js';
-import { baseName } from './util.js';
+import { BTN } from './ui';
+import { baseName } from './util';
 
 // Status bubble (same look as the sidebar dot, incl. the pulse while running);
 // the full status text lives in the `title` tooltip.

@@ -1,4 +1,4 @@
-import { parseTodos } from './util.js';
+import { parseTodos } from './util';
 
 // Bespoke rendering of a tool *call* — the arguments only. The tool *result* is
 // rendered separately (and unchanged) by Message.tsx. Every tool registered in

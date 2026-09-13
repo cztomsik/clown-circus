@@ -1,4 +1,3 @@
-import { h } from 'preact';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 
@@ -27,5 +26,5 @@ const render = (text) => DOMPurify.sanitize(md(text));
 // Markdown block. `cls` lets the caller keep its own layout tint (e.g. the
 // user's accent border/wash) — typography lives in the `.md` rules in
 // index.html, which reference the theme tokens.
-export const Markdown = ({ text, cls = null }) =>
-  h('div', { class: cls ? `md ${cls}` : 'md', dangerouslySetInnerHTML: { __html: render(text) } });
+export const Markdown = ({ text, cls = null }: { text: string; cls?: string | null }) =>
+  <div class={cls ? `md ${cls}` : 'md'} dangerouslySetInnerHTML={{ __html: render(text) }} />;

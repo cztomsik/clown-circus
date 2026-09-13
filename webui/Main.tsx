@@ -1,4 +1,4 @@
-import { extractTodos } from './util.js';
+import { extractTodos } from './util';
 import { Todos } from './Todos';
 import { Messages } from './Message';
 import { InputBar } from './InputBar';
