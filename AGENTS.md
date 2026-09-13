@@ -13,13 +13,13 @@
 
 **Clown-Circus** is a **headless, multi-session** agent server, exposed as an **Express** HTTP app. It runs any number of independent agent **sessions** — each with its own working directory, conversation state, and running agent loop — driven over **REST + Server-Sent Events (SSE)**. All sessions and their conversation snapshots persist in a local **SQLite** file, so state survives restarts.
 
-- **Tech stack**: Node.js 24.x, plain JavaScript (ESM, `"type": "module"`), no build step. TypeScript is a **dev-only, check-only** dependency (`tsc --noEmit`, see below) — it is never run or emitted.
-- **Run command**: `node src/main.js` (or `npm start`). No build/test toolchain; type-check via `npm run typecheck`.
-- **Dependency**: `express` (v5) for the server, plus the web UI's browser libraries (`preact`, `htm`, `marked`, `dompurify`, `@tailwindcss/browser`) as runtime deps — `src/app.js` serves their dist files under `/vendor/*` so the UI works offline (no CDN). Dev deps (check-only, never emitted): `typescript`, `@types/node`. Everything else — SQLite, crypto, http, child_process — is built into Node.
+- **Tech stack**: Node.js 24.x. The **server** is plain JavaScript (ESM, `"type": "module"`); the **web UI** is Preact **JSX (`.tsx`)** modules that esbuild bundles at startup (the only build step). TypeScript is a **dev-only, check-only** dependency (`tsc --noEmit`, see below) — it is never run or emitted.
+- **Run command**: `node src/main.js` (or `npm start`). esbuild bundles the web UI automatically at startup; type-check via `npm run typecheck`.
+- **Dependency**: `express` (v5) for the server, `esbuild` for bundling the web UI at startup, plus the web UI's browser libraries (`preact`, `marked`, `dompurify`, `@tailwindcss/browser`) as runtime deps — esbuild inlines them all into `webui/vendor/bundle.js` from `node_modules` so the UI works offline (no CDN, no `node_modules` static mounts). Dev deps (check-only, never emitted): `typescript`, `@types/node`. Everything else — SQLite, crypto, http, child_process — is built into Node.
 - **Storage**: builtin **`node:sqlite`** (`DatabaseSync`), single file `~/.clowndb` by default. Emits a harmless `ExperimentalWarning`.
 - **LLM**: OpenAI-compatible `/v1/chat/completions` (llama.cpp by default). Base URL from `--base-url`/`CLOWN_API` (default `http://127.0.0.1:8080`); optional `CLOWN_API_KEY` sent as Bearer.
 - **Spec**: the authoritative spec is [`SPEC.md`](SPEC.md) (~20 sections); `SPEC.md` and this repo's code are the source of truth.
-- **Web UI**: a first-class feature, described authoritatively in [`WEB_UI.md`](WEB_UI.md). A set of static files served at `/` — a thin `webui/index.html` shell (Tailwind v4 via the locally-served `@tailwindcss/browser` JIT, `@theme` tokens, import-map → `/vendor/*` static mounts over `node_modules`) plus small **Preact + htm** ES modules: `app.js` is the root component (all state + side effects), with `Header/Sidebar/Main/Message/InputBar/Todos.js` for the components and `api/util/image/ui.js` for the API client, pure helpers, image helpers, and shared htm binding (full list in the Source Structure table). Pure client of the REST + SSE API: project-grouped session sidebar, model picker (`GET /models`), full control toolbar (open-in-vscode, retry, init, compact, undo, clear-tools, clear, archive, delete, stop, send), live chat over SSE, todos panel.
+- **Web UI**: a first-class feature, described authoritatively in [`WEB_UI.md`](WEB_UI.md). A thin `webui/index.html` shell (Tailwind v4 via the `@tailwindcss/browser` JIT, `@theme` tokens) plus small **Preact JSX (`.tsx`)** modules, esbuild-bundled at startup into `webui/vendor/bundle.js` (served at `/vendor/bundle.js`) — `app.tsx` is the root component (all state + side effects), with `Header/Sidebar/Main/Message/InputBar/Todos/toolcall.tsx` for the components and `api/util/image/ui/md.js` for the API client, pure helpers, image helpers, shared class tokens, and the Markdown component (full list in the Source Structure table). Pure client of the REST + SSE API: project-grouped session sidebar, model picker (`GET /models`), session-level header actions (open-in-vscode, archive, delete) + composer slash commands (retry, init, compact, undo, clear, etc.), live chat over SSE, todos panel.
 
 ## Source Structure
 
@@ -32,7 +32,7 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 | `src/app.js` | Express app factory: all REST routes, the SSE endpoint, 404 fallback, and the error-mapping middleware. |
 | `src/db.js` | Thin `node:sqlite` wrapper: opens/migrates the DB (idempotent DDL + `user_version`) and exposes the helpers the manager/session use — `upsert`, `all` (startup load), `deleteRow`, `close`. Listing + project grouping are done in memory by the manager, not in SQL. |
 | `src/manager.js` | `SessionManager` registry: loads all sessions from the DB at startup (resetting `running`/`stopped` → `idle`), owns create/list/get/delete and the in-memory hot state. |
-| `src/session.js` | `Session`. Owns messages/todos/tokens, the single-flight `running` flag, an `AbortController`, an `EventEmitter` (SSE source) with a bounded seq ring buffer, and all operations (`send/retry/undo/clear/clearTools/compact/stop/destroy`) + persistence. |
+| `src/session.js` | `Session`. Owns messages/todos/tokens, the single-flight `running` flag, an `AbortController`, an `EventEmitter` (SSE source) with a bounded seq ring buffer, and all operations (`send/retry/retryTurn/undo/clear/trim/compact/init/stop/destroy`) + persistence. |
 | `src/loop.js` | `runLoop` — the agent loop: `next()` → execute tool calls → emit snapshot → repeat; converts every outcome to a terminal status and never throws. |
 | `src/llm.js` | OpenAI-compatible chat client: `chat()` + `listModels()`. Distinguishes stop-abort from timeout (504) / network-HTTP (502) via `LlmError.kind`. |
 | `src/prompt.js` | `buildSystemPrompt(cwd)`: `PREFIX.md` + `AGENTS.md`→`CLOWN.md` fallback (1MB cap) + date + realpath. |
@@ -40,18 +40,20 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 | `src/errors.js` | `HttpError` + `mapError()` (thrown errors → the §7.7 status/code table). Small module added to keep the import graph cycle-free. |
 | `src/PREFIX.md` | Base system prompt with guidelines. |
 | `src/skills/init.md` | Built-in `/init` skill: explore the project and write an `AGENTS.md`. |
-| `webui/index.html` | Web UI shell served at `/`. Thin page: import map (Preact/htm/marked/dompurify → `/vendor/*` routes serving `node_modules` dist files) + local Tailwind JIT script + a `#root` mount — no static UI markup. |
-| `webui/app.js` | Root Preact component: owns all state + side effects (config/models fetch, 10s poll, SSE, per-session drafts, actions) and composes the layout. No build step. |
-| `webui/Header.js` | Unified top bar: sidebar toggle, session status, model picker, and the ⋮ actions menu (open-in-vscode/retry/init/compact/undo/clear-tools/clear/archive/delete; open-in-vscode is a client-side `vscode://` URI, not a REST call). |
-| `webui/Sidebar.js` | Project-grouped session list + new-session form + the "show archived" toggle. |
-| `webui/Main.js` | Right-hand pane composition (error banner, todos, transcript, composer). |
-| `webui/Message.js` | Transcript rendering: user/assistant/tool blocks, collapsible tool-call pairs, reasoning. |
-| `webui/InputBar.js` | Composer: textarea, send/stop, slash commands, image attachments (paste + drag). |
-| `webui/Todos.js` | Floating collapsible todo panel. |
+| `webui/index.html` | Web UI shell served at `/`. Thin page: Tailwind v4 `@theme` tokens + a `<style type="text/tailwindcss">` block, a `#root` mount, and `<script type="module" src="/vendor/bundle.js">` — no static UI markup. |
+| `webui/app.tsx` | Root Preact component (bundle entry): owns all state + side effects (config/models fetch, 10s poll, SSE, per-session drafts, actions) and composes the layout. |
+| `webui/Header.tsx` | Unified top bar: sidebar toggle, session status, model picker, theme toggle, and the ⋮ actions menu (open-in-vscode/archive/delete; open-in-vscode is a client-side `vscode://` URI, not a REST call). |
+| `webui/Sidebar.tsx` | Project-grouped session list + new-session form + the "show archived" toggle. |
+| `webui/Main.tsx` | Right-hand pane composition (error banner, todos, transcript, composer). |
+| `webui/Message.tsx` | Transcript rendering: user/assistant/tool blocks, collapsible tool-call pairs, reasoning. |
+| `webui/toolcall.tsx` | Per-tool argument views (collapsible tool-call bodies) + the collapsed-summary title. |
+| `webui/InputBar.tsx` | Composer: textarea, send/stop, slash commands, image attachments (paste + drag). |
+| `webui/Todos.tsx` | Floating collapsible todo panel. |
 | `webui/api.js` | REST + SSE client helpers (no Preact/DOM). |
-| `webui/util.js` | Pure helpers (no DOM/Preact): baseName, parseCommand, modelId, timeAgo, prettyArgs. |
+| `webui/util.js` | Pure helpers (no DOM/Preact): baseName, parseCommand, modelId, isVisionModel, reasoningText, timeAgo, prettyArgs, parseArgs, parseTodos, extractTodos. |
 | `webui/image.js` | Client-side image helpers (FileReader read, canvas downscale). |
-| `webui/ui.js` | Shared htm→h binding + Tailwind class tokens. |
+| `webui/md.js` | Markdown component (marked + DOMPurify → `dangerouslySetInnerHTML`); the sole `dangerouslySetInnerHTML` in the UI. |
+| `webui/ui.js` | Shared Tailwind class tokens (`BTN`, `PRE`). |
 | `WEB_UI.md` | Authoritative description of the web UI: features, constraints/invariants, and current gaps (it is a scoped feature, expected to grow). |
 
 ## Architecture Notes
@@ -66,7 +68,7 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 
 ## Working conventions
 
-- **Type-check**: `npm run typecheck` (i.e. `tsc --noEmit`, config in `tsconfig.json`: `checkJs`+`allowJs`+`noEmit`, `strict:false`, `types:["node"]`). Dev deps `typescript`/`@types/node` are check-only — never emitted (the web UI's libraries are runtime deps whose dist files the server serves under `/vendor/*`, and which `tsc` resolves for the bare imports in `webui/*.js`). **Current state: clean** — both `src/` and `webui/` pass with no errors (the SSE `onmessage` handler is cast to `MessageEvent` in `webui/api.js`).
+- **Type-check**: `npm run typecheck` (i.e. `tsc --noEmit`, config in `tsconfig.json`: `checkJs`+`allowJs`+`noEmit`, `strict:false`, `types:["node"]`). Dev deps `typescript`/`@types/node` are check-only — never emitted (the web UI's libraries are runtime deps that esbuild bundles into `webui/vendor/bundle.js`, and which `tsc` resolves for the bare imports in `webui/*.{js,tsx}`). **Current state: clean** — both `src/` and `webui/` pass with no errors (the SSE `onmessage` handler is cast to `MessageEvent` in `webui/api.js`).
 - **No test framework.** Verify by running the server and exercising the API (e.g. `node src/main.js --port 8899 --db-file /tmp/x.clowndb`, then `curl`). Keep the default DB `~/.clowndb` clean by using a throwaway `--db-file` during dev.
 - **Code style** (see SPEC §15): ESM import/export only; `async`/`await` (no `.then`); arrow fns assigned to `const`; `const` > `let` > never `var`; terse (early returns, spread, optional chaining, template literals).
 - **Config precedence**: CLI flag > env var > default.
