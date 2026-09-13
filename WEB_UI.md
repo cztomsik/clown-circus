@@ -278,7 +278,7 @@ primary interface — the UI is just one client of it.
   - `error` → transient error banner
   - `done` → update token count
   - `EventSource` auto-reconnects and sends `Last-Event-ID`, so the server's
-    replay ring (SPEC §7.6) covers brief disconnects.
+    replay ring (SPEC §7.5) covers brief disconnects.
 - **Composer** — textarea, Enter to send, Shift+Enter for newline; it also
   accepts `/cmd` slash-commands (see **Commands**). The placeholder hints at
   this: `message (Enter to send, / for commands)`. While the
@@ -317,7 +317,7 @@ primary interface — the UI is just one client of it.
   Enter, `send()` runs `parseCommand()` first: if the trimmed text starts with
   `/`, the command (lowercased, first whitespace-delimited token) is dispatched
   by `runCommand()`; otherwise it is a normal message. The commands map 1:1 to
-  the §7.5 control endpoints and reuse the existing handlers (no new endpoint):
+  the §7.4 control endpoints and reuse the existing handlers (no new endpoint):
   `/stop`, `/retry`, `/retry-turn`, `/init`, `/compact`, `/clear`,
   `/trim [turns]`, `/undo`, `/duplicate` →
   the matching `POST /sessions/:id/…` (`/undo` restores the popped message into
@@ -354,7 +354,7 @@ primary interface — the UI is just one client of it.
   - **Send/stop** — the composer's send button (`POST …/messages`, with the
     model `<select>`'s value as the required `model` body field — see
     **Header**) and the running state's `stop`. All control endpoints are
-    from SPEC §7.5.
+    from SPEC §7.4.
 - **Theme toggle** — a compact icon button in the `Header` (top-right)
   switches the `--color-*` palette between the default dark and the light
   theme by setting `data-theme` on `<html>`; the icon shows the theme it

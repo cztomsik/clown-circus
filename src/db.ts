@@ -51,7 +51,7 @@ const openDb = (dbFile) => {
       )
       .run(r.id, r.cwd, r.model, r.status, r.created_at, r.last_activity, r.last_error ?? null, r.snapshot, r.archived ? 1 : 0);
 
-  // The SessionManager lists/projects from its in-memory map (which applies the
+  // The SessionManager lists from its in-memory map (which applies the
   // archived filter); only `all` (startup load) and `deleteRow` are needed here.
   const all = () => db.prepare('SELECT * FROM sessions').all();
 

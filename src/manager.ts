@@ -95,19 +95,6 @@ export class SessionManager {
       .map((s) => s.meta());
   }
 
-  // Projects derived from non-archived sessions only — a project whose
-  // sessions are all archived would otherwise list with zero visible sessions.
-  projects() {
-    const m = new Map();
-    for (const s of this.sessions.values()) {
-      if (s.archived) continue;
-      m.set(s.cwd, (m.get(s.cwd) ?? 0) + 1);
-    }
-    return [...m.entries()]
-      .map(([cwd, sessions]) => ({ cwd, sessions }))
-      .sort((a, b) => (a.cwd < b.cwd ? -1 : 1));
-  }
-
   get(id) {
     return this.sessions.get(id) ?? null;
   }

@@ -73,10 +73,7 @@ export const buildApp = ({ manager }) => {
     res.status(204).end();
   });
 
-  // --- 7.3 Projects ---------------------------------------------------------
-  app.get('/projects', (req, res) => res.json(manager.projects()));
-
-  // --- 7.4 Messages ---------------------------------------------------------
+  // --- 7.3 Messages ---------------------------------------------------------
   app.post('/sessions/:id/messages', (req, res) => {
     const s = manager.require(req.params.id);
     const message = req.body?.message;
@@ -92,7 +89,7 @@ export const buildApp = ({ manager }) => {
     res.status(202).json({ id: s.id, status: 'running' });
   });
 
-  // --- 7.5 Controls ---------------------------------------------------------
+  // --- 7.4 Controls ---------------------------------------------------------
   const session = (fn) => (req, res) => fn(manager.require(req.params.id), res);
   const started = (s) => ({ id: s.id, status: 'running' });
   const done = (s) => ({ id: s.id, status: s.status });
@@ -157,7 +154,7 @@ export const buildApp = ({ manager }) => {
     res.status(201).json(s.detail());
   });
 
-  // --- 7.6 Events (SSE) -----------------------------------------------------
+  // --- 7.5 Events (SSE) -----------------------------------------------------
   app.get('/sessions/:id/events', (req, res) => {
     const s = manager.require(req.params.id);
     res.writeHead(200, {

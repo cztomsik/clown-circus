@@ -9,7 +9,7 @@ local **SQLite** database.
 - **Target runtime**: the currently installed **Node.js 24.x** (`v24.14.1`),
   TypeScript (`.ts`, ESM). The server has no build step — Node strips the
   types at runtime; the web UI's `.tsx` modules are bundled by esbuild at
-  startup (§7.8).
+  startup (§7.7).
 - **Storage**: the builtin **`node:sqlite`** module (no external DB server).
 - **No TUI, no terminal.** Everything is an HTTP endpoint.
 
@@ -29,9 +29,6 @@ local **SQLite** database.
   esbuild-bundled at startup)
   and expected to grow over time — see [WEB_UI.md](WEB_UI.md) for the full
   description.
-- Support a **"projects" view**: sessions are grouped by their working directory,
-  and `/sessions` can be filtered by path.
-
 ---
 
 ## 2. Non-Goals
@@ -106,7 +103,7 @@ runs of the same session interleave**.
 
 - The agent loop is an in-process `async` loop; each `Session` has a
   single-flight `running` flag. Run-starting calls (`send`/`retry`/`compact`,
-  §7.4–§7.5) reject (HTTP 409) while `running` is true unless the caller
+  §7.3–§7.4) reject (HTTP 409) while `running` is true unless the caller
   issues `stop` first.
 - `stop` is cooperative cancellation: the loop checks the abort signal between
   turns and between tool calls, and in-flight LLM fetches / `run_command`
@@ -151,7 +148,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_cwd ON sessions (cwd);
 
 > `archived` (schema v2) is a plain boolean flag: archived sessions persist in
 > the DB and stay in the in-memory registry, but are excluded from the default
-> `GET /sessions` list and the `/projects` counts (§7.2, §7.3). Adding the
+> `GET /sessions` list (§7.2). Adding the
 > column to a v1 database is the v2 migration (`ALTER TABLE ... ADD COLUMN`,
 > §10.2).
 
@@ -189,12 +186,11 @@ snapshot; the raw `messages` are not included in list responses):
    the row from SQLite, drops from memory).
 
 **Archived** is an orthogonal flag, not a status: `POST /sessions/:id/archive`
-(hide) / `POST /sessions/:id/unarchive` (restore), §7.5. It is a
+(hide) / `POST /sessions/:id/unarchive` (restore), §7.4. It is a
 metadata-only edit — allowed while running (no `409`), it never touches the
 conversation — and it survives restarts like every other field. Archived
-sessions are excluded from the default `GET /sessions` list and `/projects`
-counts, but remain fully addressable by id (detail, controls, SSE) and
-deletable.
+sessions are excluded from the default `GET /sessions` list, but remain
+fully addressable by id (detail, controls, SSE) and deletable.
 
 **Persistence is continuous**: the DB is the system of record, so state is
 written on every transition (create, message, tool result, status change, error,
@@ -216,7 +212,7 @@ the DB. Clients persist the `id` to address a session across requests/restarts.
 ## 7. HTTP API
 
 Base path: `/`. All bodies are JSON. All responses are JSON except the SSE
-endpoint and the static web UI (§7.8). Errors use `4xx`/`5xx` with
+endpoint and the static web UI (§7.7). Errors use `4xx`/`5xx` with
 `{ "error": { "code", "message" } }`.
 
 ### 7.1 Server / models
@@ -258,7 +254,7 @@ endpoint and the static web UI (§7.8). Errors use `4xx`/`5xx` with
   relative paths are rejected with `400` `bad_request`. It is stored and used
   as given.
 - `model` — the LLM model to run (non-empty string). It is stored as the
-  session's **last-used model**: each `POST /sessions/:id/messages` (§7.4)
+  session's **last-used model**: each `POST /sessions/:id/messages` (§7.3)
   specifies the model for its run and the value is persisted — the web UI
   pre-fills its model picker from it, and `retry`/`init`/`compact` reuse it.
   There is no server-side default: the client always says which model to use.
@@ -284,29 +280,7 @@ endpoint and the static web UI (§7.8). Errors use `4xx`/`5xx` with
 }
 ```
 
-### 7.3 Projects
-
-| Method | Path         | Description |
-|--------|--------------|-------------|
-| `GET`  | `/projects`  | "Projects" view: unique working directories across all sessions |
-
-A project is simply a distinct `cwd`. It is derived from the non-archived
-sessions (so a project whose sessions are all archived does not surface),
-each with a session count, ordered by path.
-
-Response:
-
-```json
-[
-  { "cwd": "/Users/cztomsik/Desktop/clown-circus", "sessions": 3 },
-  { "cwd": "/Users/cztomsik/projects/other",       "sessions": 1 }
-]
-```
-
-Clients use this to build a project sidebar; selecting one is equivalent to
-`GET /sessions?cwd=<that path>`.
-
-### 7.4 Sending messages
+### 7.3 Sending messages
 
 | Method | Path                            | Description |
 |--------|---------------------------------|-------------|
@@ -330,7 +304,7 @@ Body: `{ "message": "help me fix the tests", "model": "llama-3" }` or
   or wait).
 - `404` if the session does not exist.
 
-### 7.5 Session controls
+### 7.4 Session controls
 
 All of these operate on a single session. The `Slash cmd` column is the web
 UI's composer command that dispatches the same action.
@@ -346,7 +320,7 @@ UI's composer command that dispatches the same action.
 | `POST` | `/sessions/:id/compact`    | `/compact`     | Run the two-phase summarize-then-replace compaction. `202` (starts a run). |
 | `POST` | `/sessions/:id/init`       | `/init`        | Convenience: send the prompt that triggers the built-in `init` skill ("Could you /init this project?"). `202`. |
 | `POST` | `/sessions/:id/duplicate`  | —              | Fork the session into a new one: same `cwd`, `model`, and archived flag; fresh id/timestamps; `last_error` cleared; a **deep copy** of the transcript (independent of the source). If the source is running and the copy ends mid-turn (an assistant `tool_calls` whose tool results have not all arrived yet — an invalid LLM transcript), that message and its partial results are stripped; a completed transcript is copied verbatim. Allowed while the source is running. `201`, returning the new session (meta + snapshot). `404` if the source is unknown. |
-| `POST` | `/sessions/:id/archive`    | —              | Mark the session as archived: kept in the DB but hidden from the default `GET /sessions` list and `/projects` counts. No body. `200` `{ "id", "archived": true }`. |
+| `POST` | `/sessions/:id/archive`    | —              | Mark the session as archived: kept in the DB but hidden from the default `GET /sessions` list. No body. `200` `{ "id", "archived": true }`. |
 | `POST` | `/sessions/:id/unarchive`  | —              | Restore an archived session to the default list. No body. `200` `{ "id", "archived": false }`. |
 
 Rules common to the run-starting controls (`retry`, `retry-turn`, `compact`,
@@ -359,7 +333,7 @@ touched, even while it runs).
 `undo`/`clear`/`trim` are synchronous state edits; if a run is in
 progress they implicitly `stop` first.
 
-### 7.6 Events (SSE)
+### 7.5 Events (SSE)
 
 | Method | Path                          | Description |
 |--------|-------------------------------|-------------|
@@ -393,7 +367,7 @@ Event types (SSE `event:` field):
 > **Rationale**: a single SSE stream per session keeps clients simple. WebSockets
 > are a non-goal; SSE is sufficient for one-way server→client streaming.
 
-### 7.7 Errors
+### 7.6 Errors
 
 | HTTP | `code`            | Meaning |
 |------|-------------------|---------|
@@ -404,7 +378,7 @@ Event types (SSE `event:` field):
 | `502`| `llm_unavailable` | The LLM endpoint is unreachable / returns an error |
 | `504`| `llm_timeout`     | The LLM request exceeded the configured timeout |
 
-### 7.8 Web UI
+### 7.7 Web UI
 
 A web UI is served at `GET /` from `webui/`: a thin `index.html` shell
 (Tailwind v4, a single `#root` mount) plus a set of small **Preact JSX**
@@ -580,7 +554,7 @@ Each tool invocation receives a `ToolContext`:
 - **Node.js 24.x** (the currently installed runtime). The server is
   **TypeScript (`.ts`, ESM)** run directly by Node's built-in type stripping
   (`node src/main.ts` — no build step); the web UI is untyped JSX (`.tsx`)
-  modules bundled by esbuild at startup (§7.8).
+  modules bundled by esbuild at startup (§7.7).
 - **`node:sqlite`** (builtin) for storage — no external server, no npm
   dependency. It currently emits an `ExperimentalWarning` (harmless; see §15).
 - **Express 5** for the HTTP layer; **SSE** via a minimal helper over the
@@ -615,7 +589,7 @@ Each tool invocation receives a `ToolContext`:
 ## 15. Error Handling & Logging
 
 - All async routes wrapped in an Express error middleware that maps thrown
-  errors to the §7.7 table (LLM errors → 502/504; unknown id → 404; busy → 409;
+  errors to the §7.6 table (LLM errors → 502/504; unknown id → 404; busy → 409;
   DB errors → 500).
 - Per-session errors are captured in `SessionMeta.last_error` (persisted to the
   DB), emitted as an `error` SSE event, and the session returns to `idle` so it
@@ -636,6 +610,6 @@ Each tool invocation receives a `ToolContext`:
 - Session TTL / garbage collection (sessions persist in the DB until deleted).
 - File-based session exports (SQLite is the sole system of record).
 - Changes to the LLM provider protocol beyond OpenAI-compatible chat.
-- The two-phase **auto**-compact: only the **manual** compact endpoint (§7.5)
+- The two-phase **auto**-compact: only the **manual** compact endpoint (§7.4)
   is in scope for v1.
 

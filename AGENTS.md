@@ -37,7 +37,7 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 | `src/llm.ts` | OpenAI-compatible chat client: `chat()` + `listModels()`. Distinguishes stop-abort from timeout (504) / network-HTTP (502) via `LlmError.kind`. |
 | `src/prompt.ts` | `buildSystemPrompt(cwd)`: `PREFIX.md` + `AGENTS.md`→`CLOWN.md` fallback (1MB cap) + date + realpath. |
 | `src/tools.ts` | All tools + `tools`/`toolSchemas` singletons. Relative paths resolve against the session cwd (no path sandbox). |
-| `src/errors.ts` | `HttpError` + `mapError()` (thrown errors → the §7.7 status/code table). Small module added to keep the import graph cycle-free. |
+| `src/errors.ts` | `HttpError` + `mapError()` (thrown errors → the §7.6 status/code table). Small module added to keep the import graph cycle-free. |
 | `src/PREFIX.md` | Base system prompt with guidelines. |
 | `src/skills/init.md` | Built-in `/init` skill: explore the project and write an `AGENTS.md`. |
 | `webui/index.html` | Web UI shell served at `/`. Thin page: Tailwind v4 `@theme` tokens + a `<style type="text/tailwindcss">` block, a `#root` mount, and `<script type="module" src="/vendor/bundle.js">` — no static UI markup. |
