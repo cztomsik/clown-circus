@@ -4,17 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Clown-Circus</title>
-<script type="importmap">
-{
-  "imports": {
-    "preact": "/vendor/preact/preact.mjs",
-    "preact/hooks": "/vendor/preact-hooks/hooks.mjs",
-    "htm": "/vendor/htm/htm.mjs",
-    "marked": "/vendor/marked/marked.esm.js",
-    "dompurify": "/vendor/dompurify/purify.es.mjs"
-  }
-}
-</script>
 <script src="/vendor/tailwind/index.global.js"></script>
 <style type="text/tailwindcss">
 /* Default (dark) palette. Every utility references var(--color-*), so the
@@ -112,6 +101,6 @@
 </head>
 <body class="bg-bg text-ink font-sans text-sm leading-[1.45]">
   <div id="root"></div>
-  <script type="module" src="/app.js"></script>
+  <script type="module" src="/vendor/bundle.js"></script>
 </body>
 </html>

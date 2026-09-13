@@ -23,7 +23,8 @@ local **SQLite** database.
 - Provide a **headless REST + SSE API** that a client (web UI, CLI, CI, other
   services) can drive entirely over HTTP.
 - Provide a **web UI** served at `/` so the server is usable out of the box in
-  a browser. It is minimal for now (a thin Preact + htm page, no build step)
+  a browser. It is minimal for now (a thin Preact + htm page,
+  esbuild-bundled at startup)
   and expected to grow over time — see [WEB_UI.md](WEB_UI.md) for the full
   description.
 - Support a **"projects" view**: sessions are grouped by their working directory,
@@ -446,16 +447,19 @@ Event types (SSE `event:` field):
 
 A web UI is served at `GET /` from `webui/` (via `express.static`): a thin
 `index.html` shell (Tailwind v4 via the locally-served `@tailwindcss/browser`
-JIT, an import map for Preact/htm/marked/dompurify, and a single `#root`
-mount) plus a set of small **Preact + htm** ES modules — `app.js`
-holds the root component (all state + side effects), with component modules
-(`Header.js`, `Sidebar.js`, `Main.js`, `Message.js`, `InputBar.js`, `Todos.js`)
-and non-component helpers (`api.js`, `util.js`, `image.js`, `ui.js`; the full
-file list is in §13). It is a **pure client** of the API in this section — it
-adds no server logic, routes, or dependencies. No build step: the only
-runtime libraries (Tailwind, Preact, htm, marked, DOMPurify) are served from
-`node_modules` through `/vendor/*` static mounts in `src/app.js` — no
-network CDNs, the UI works fully offline.
+JIT, and a single `#root` mount) plus a set of small **Preact + htm** ES
+modules — `app.js` holds the root component (all state + side effects), with
+component modules (`Header.js`, `Sidebar.js`, `Main.js`, `Message.js`,
+`InputBar.js`, `Todos.js`) and non-component helpers (`api.js`, `util.js`,
+`image.js`, `ui.js`; the full file list is in §13). It is a **pure client**
+of the API in this section — it adds no server logic, routes, or
+dependencies. At server startup, esbuild (a runtime dependency, run in
+`src/main.js`) bundles `webui/app.js` + its deps from `node_modules` into
+`webui/vendor/bundle.js` (served at `/vendor/bundle.js`, the only
+`<script>` in the shell); a background watch keeps it fresh, and it is
+disposed on shutdown. Tailwind stays unbundled (served at
+`/vendor/tailwind/index.global.js`). No network CDNs — the UI works fully
+offline.
 
 The authoritative description of the UI — features, constraints/invariants,
 and the current gaps it is expected to grow into — lives in
@@ -627,8 +631,9 @@ clown-circus/
 ├─ tsconfig.json            # tsc config: checkJs/allowJs/noEmit, strict:false, types:[node] (type-check only)
 ├─ .gitignore
 ├─ webui/
-│  ├─ index.html            # web UI shell served at / (import map → /vendor/* + #root)
-│  ├─ app.js                # the web UI: Preact + htm ES module (root component + state)
+│  ├─ index.html            # web UI shell served at / (loads /vendor/bundle.js + #root)
+│  ├─ app.js                # the web UI: Preact + htm ES module (root component + state, bundle entry)
+│  ├─ vendor/               # generated: esbuild bundle (bundle.js) — git-ignored, rebuilt at startup
 │  ├─ ui.js                 # htm→h binding + shared class tokens
 │  ├─ api.js                # REST + SSE client helpers
 │  ├─ util.js               # pure helpers (no DOM)
@@ -640,7 +645,7 @@ clown-circus/
 │  ├─ InputBar.js           # composer (textarea + send/stop + image attachments)
 │  └─ Todos.js              # floating todo panel
 └─ src/
-   ├─ main.js               # bootstrap: parse config, open DB, build app, listen
+   ├─ main.js               # bootstrap: bundle web UI (esbuild + watch), parse config, open DB, build app, listen
    ├─ config.js             # Config resolution (flags + env)
    ├─ app.js                # express app factory (all routes wired here)
    ├─ db.js                 # node:sqlite wrapper: connection, migration, queries
@@ -664,8 +669,9 @@ subdirectories.
 ## 14. Technology Choices
 
 - **Node.js 24.x** (the currently installed runtime, `v24.14.1`). Plain
-  **JavaScript (ESM, `type: "module"`)**, no TypeScript, no build step. Run
-  directly with `node src/main.js`.
+  **JavaScript (ESM, `type: "module"`)**, no TypeScript. The only build step
+  is esbuild bundling the web UI at server startup (see §7.8) — the server
+  itself runs directly with `node src/main.js`.
 - **`node:sqlite`** (builtin) for storage. Available without a flag in Node 24;
   it currently emits an `ExperimentalWarning` — harmless, and we pin to the
   installed major (24) so behavior is stable for our purposes.
@@ -680,18 +686,21 @@ subdirectories.
   slow non-streaming turns with an opaque `"fetch failed"` error.
 - **SSE** via a minimal helper over the Express response (no heavy deps).
 - **`node:crypto.randomUUID`** for session ids.
-- Minimal dependencies: `express` for the server, plus the web UI's browser
-  libraries (`preact`, `htm`, `marked`, `dompurify`, `@tailwindcss/browser`) —
-  those are `dependencies` because `src/app.js` serves their dist files to the
-  browser under `/vendor/*` (offline, no CDN); the server never imports them
-  as code. Everything else (SQLite, crypto, http, child_process) is built
-  into Node.
+- Minimal dependencies: `express` for the server, `esbuild` for bundling the
+  web UI at startup, plus the web UI's browser libraries (`preact`, `htm`,
+  `marked`, `dompurify`, `@tailwindcss/browser`). All of those are
+  `dependencies` because they are consumed at runtime — esbuild bundles the
+  browser libraries into `webui/vendor/bundle.js` from `node_modules`, and
+  `src/app.js` still serves the Tailwind JIT at
+  `/vendor/tailwind/index.global.js` (offline, no CDN); the server imports
+  only `esbuild` of them as code. Everything else (SQLite, crypto, http,
+  child_process) is built into Node.
 - **TypeScript (dev-only, check-only)**: `typescript` and `@types/node` are
   dev dependencies used *solely* to type-check the plain-JS codebase — they
   never emit and are not part of the runtime or build. (The web UI's
   libraries double as type sources: `webui/*.js` imports them as bare
-  specifiers, so `tsc --noEmit` resolves them from the same packages the
-  server serves to the browser.) Run
+  specifiers, so `tsc --noEmit` resolves them from the same packages esbuild
+  bundles; the generated `webui/vendor/` is excluded from the tsconfig.) Run
   with `npm run typecheck` (i.e. `tsc --noEmit`), configured in `tsconfig.json`:
   `checkJs` + `allowJs` + `noEmit` with `strict: false`, plus `types: ["node"]`
   (the native `tsc` does not auto-include `@types` the way the JS compiler does).

@@ -1,12 +1,30 @@
 #!/usr/bin/env node
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import * as esbuild from 'esbuild';
 import { config } from './config.js';
 import { db } from './db.js';
 import { SessionManager } from './manager.js';
 import { buildApp } from './app.js';
 
+const WEBUI_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'webui');
+
 const log = (m) => console.log(`[${new Date().toISOString()}] ${m}`);
 
-const main = () => {
+const main = async () => {
+  // Bundle the web UI (entry webui/app.js, node_modules deps inlined) into one
+  // file at /vendor/bundle.js. Blocking build at startup, then a background
+  // watch keeps it fresh while the server runs.
+  const webuiCtx = await esbuild.context({
+    entryPoints: [join(WEBUI_DIR, 'app.js')],
+    bundle: true,
+    format: 'esm',
+    target: 'es2022',
+    outfile: join(WEBUI_DIR, 'vendor', 'bundle.js'),
+  });
+  await webuiCtx.rebuild(); // blocks startup until the first bundle is on disk
+  webuiCtx.watch(); // no await — rebuilds on webui/*.js changes in the background
+
   const manager = new SessionManager();
   const app = buildApp({ manager });
 
@@ -22,6 +40,7 @@ const main = () => {
     closing = true;
     log(`${sig} received, shutting down`);
     server.close(() => {
+      webuiCtx.dispose();
       db.close();
       process.exit(0);
     });

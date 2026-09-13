@@ -1,7 +1,8 @@
 # Clown-Circus — Web UI
 
 The web UI is a **first-class part of Clown-Circus**. It is minimal today (a
-thin shell page plus a small set of Preact ES modules, no build step) and is
+thin shell page plus a small set of Preact ES modules, bundled at server
+startup by esbuild) and is
 expected to grow;
 this file is the authoritative
 description of what the UI is, what it uses, and the constraints it must keep
@@ -11,7 +12,7 @@ primary interface — the UI is just one client of it.
 ## What it is
 
 - **`webui/index.html`** — a thin page shell, served at `GET /` via
-  `express.static` in `src/app.js`. The `<head>` holds the import map, a
+  `express.static` in `src/app.js`. The `<head>` holds a
   `<style type="text/tailwindcss">` block, and styling is **Tailwind CSS v4**
   via the `@tailwindcss/browser` JIT (served from node_modules at
   `/vendor/tailwind/index.global.js`) with the colour palette as
@@ -24,26 +25,25 @@ primary interface — the UI is just one client of it.
   inline `<script>` that
   re-applies the saved theme before first paint (no flash on reload). The
   `<body>` contains only a single `<div id="root">` mount point plus
-  `<script type="module" src="/app.js">` — no static UI markup (the whole UI is
-  rendered by Preact at runtime).
-- **Import map** — `index.html` declares a `<script type="importmap">` in the
-  `<head>` (before any module script) that maps `preact`, `preact/hooks`,
-  `htm`, `marked`, and `dompurify` to local `/vendor/…` paths. `src/app.js`
-  mounts one `express.static` per package dist dir under `/vendor/*`
-  (serving the exact ESM dist files straight out of `node_modules` — e.g.
-  `/vendor/preact/preact.mjs` → `preact/dist/preact.mjs`,
-  `/vendor/preact-hooks/hooks.mjs` → `preact/hooks/dist/hooks.mjs`, which
-  itself imports bare `"preact"` and resolves through the import map, just
-  like esm.sh's subpath mapping did). This makes them importable as bare
-  specifiers in ES modules (`import { h } from "preact"`,
-  `import { useState } from "preact/hooks"`, `import htm from "htm"`,
-  `import { marked } from "marked"`, `import DOMPurify from "dompurify"`)
-  with **no network and no bundling** — the UI works fully offline. The
-  packages are real `dependencies` in `package.json`: the server serves their
-  files at runtime, and `tsc --noEmit` resolves them for the check-only type
-  declarations.
-- **`webui/app.js`** — the entry module (loaded via
-  `<script type="module" src="/app.js">`). Holds **only** the stateful `App`
+  `<script type="module" src="/vendor/bundle.js">` — no static UI markup (the
+  whole UI is rendered by Preact at runtime).
+- **esbuild bundle** — `src/main.js` runs an esbuild build (runtime
+  `dependency`, not dev-only) **at server startup**: entry `webui/app.js`,
+  `bundle: true`, `format: esm`, `target: es2022`, outfile
+  `webui/vendor/bundle.js`. An initial blocking build runs before `listen`,
+  then `ctx.watch()` (no await) keeps the bundle fresh in the background as
+  `webui/*.js` changes; `ctx.dispose()` runs on shutdown. The modules keep
+  bare imports (`import { h } from "preact"`, `import { useState } from
+  "preact/hooks"`, `import htm from "htm"`, `import { marked } from "marked"`,
+  `import DOMPurify from "dompurify"`); esbuild resolves and inlines them from
+  `node_modules` at build time — **no network, fully offline**. The packages
+  are real `dependencies` in `package.json`: esbuild bundles them at runtime,
+  and `tsc --noEmit` resolves the bare imports for the check-only type
+  declarations. `webui/vendor/` is generated output (git-ignored, excluded
+  from the tsconfig).
+- **`webui/app.js`** — the entry module (bundled to
+  `webui/vendor/bundle.js`, served at `/vendor/bundle.js`). Holds **only**
+  the stateful `App`
   root component and its mount: all state and side effects live here as
   `useState`/`useEffect`/`useRef` (`preact/hooks`) — the config/models boot, the
   10s session poll, theme, the SSE subscription (via `openSessionEvents`), and
@@ -150,12 +150,13 @@ primary interface — the UI is just one client of it.
   empty/unknown type — iOS Safari reports no MIME for a pasted image, so the
   real validation is the decode in `prepareImageDataURL`). Pure DOM, no
   Preact — kept separate from the no-DOM `util.js`.
-- No build step (consistent with SPEC §14). The whole UI is plain static
-  files in `webui/`; the only runtime UI libraries are **Preact + htm +
-  marked + DOMPurify** (import map → local `/vendor/*` routes) plus Tailwind
-  (the `@tailwindcss/browser` JIT, likewise served locally) — nothing is
-  bundled or compiled locally, and all of it is served from `node_modules`
-  so the UI works offline.
+- Bundled at server startup (consistent with SPEC §14). The modules are plain
+  static files in `webui/`; esbuild bundles `webui/app.js` + its deps
+  (**Preact + htm + marked + DOMPurify**) into `webui/vendor/bundle.js` from
+  `node_modules` at startup (see **esbuild bundle** above). Tailwind stays
+  unbundled — the `@tailwindcss/browser` JIT is served locally from
+  `node_modules` at `/vendor/tailwind/index.global.js`. Nothing is fetched
+  from a network CDN, so the UI works offline.
 - The UI is a **pure client**: every action goes through the existing REST +
   SSE endpoints (the lone exception is `open in vscode`, a local `vscode://`
   URI). It adds no server-side logic, routes, or dependencies.
@@ -363,15 +364,16 @@ primary interface — the UI is just one client of it.
 
 ## Constraints / invariants
 
-- **Static files, no build step.** All UI assets live in `webui/` and are
-  served as-is by `express.static`. No bundler, no transpiler. The runtime
-  libraries (Preact, htm, marked, DOMPurify, Tailwind) come from
-  `node_modules` — the import map points at the `/vendor/*` static mounts in
-  `src/app.js`, and Tailwind's JIT loads from
-  `/vendor/tailwind/index.global.js`. Nothing is fetched from a network CDN,
-  so the UI works fully offline; upgrading a UI library means bumping the
-  version in `package.json` + `npm install` (the dist file paths the import
-  map references are the package's stable ESM entries).
+- **Static modules, esbuild-bundled at startup.** All UI source lives in
+  `webui/` and is served as-is by `express.static`; the only bundled asset is
+  the esbuild output `webui/vendor/bundle.js` (rebuilt at every startup +
+  background watch — see **esbuild bundle** above). The runtime libraries
+  (Preact, htm, marked, DOMPurify) are inlined from `node_modules` by
+  esbuild, and Tailwind's JIT loads from
+  `/vendor/tailwind/index.global.js` (the one remaining `node_modules`
+  static mount). Nothing is fetched from a network CDN, so the UI works fully
+  offline; upgrading a UI library means bumping the version in `package.json`
+  + `npm install` (esbuild resolves each package's standard ESM entry).
 - **No un-sanitised HTML injection**: LLM output is untrusted. All content is
   rendered as Preact text (htm template interpolations become text nodes /
   `textContent`) **except** user/assistant message text, which `webui/md.js`
@@ -408,7 +410,8 @@ primary interface — the UI is just one client of it.
 ## Current gaps (intentional — candidates for expansion)
 
 - No syntax highlighting in fenced code blocks (plain mono `<pre><code>`;
-  candidates: `highlight.js` via the import map, plus a language label / copy
+  candidates: `highlight.js` via the esbuild bundle, plus a language label /
+  copy
   button on the code header).
 - No multi-session side-by-side view; one session at a time.
 - Image `undo` restores text only (images dropped from the composer); v1

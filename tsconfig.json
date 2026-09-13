@@ -1,5 +1,6 @@
 {
   "include": ["src/**/*", "webui/**/*"],
+  "exclude": ["webui/vendor"],
   "compilerOptions": {
     "strict": false,
     "checkJs": true,

@@ -17,14 +17,7 @@ export const buildApp = ({ manager }) => {
   app.disable('x-powered-by');
   app.use(express.static(WEBUI_DIR)); // web UI at / (see WEB_UI.md)
 
-  // Browser deps for the web UI, served from node_modules (offline, no CDN).
-  // Each mount exposes one package's dist dir; index.html's import map /
-  // Tailwind script reference the exact files (see WEB_UI.md).
-  app.use('/vendor/preact', express.static(join(NM, 'preact/dist')));
-  app.use('/vendor/preact-hooks', express.static(join(NM, 'preact/hooks/dist')));
-  app.use('/vendor/htm', express.static(join(NM, 'htm/dist')));
-  app.use('/vendor/marked', express.static(join(NM, 'marked/lib')));
-  app.use('/vendor/dompurify', express.static(join(NM, 'dompurify/dist')));
+  // In-browser Tailwind JIT, served from node_modules (offline, no CDN).
   app.use('/vendor/tailwind', express.static(join(NM, '@tailwindcss/browser/dist')));
 
   const sseFrame = (res, rec) =>

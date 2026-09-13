@@ -17,6 +17,7 @@
   "dependencies": {
     "@tailwindcss/browser": "^4",
     "dompurify": "^3.4.14",
+    "esbuild": "^0.28.2",
     "express": "^5.1.0",
     "htm": "^3.1.1",
     "marked": "^18.0.11",

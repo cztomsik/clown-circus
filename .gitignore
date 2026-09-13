@@ -1,4 +1,5 @@
 node_modules/
+webui/vendor/
 *.log
 *.clowndb
 *.clowndb-journal
