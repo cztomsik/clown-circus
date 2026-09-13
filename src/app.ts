@@ -1,5 +1,5 @@
 import express from 'express';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { statSync } from 'node:fs';
 import { HttpError, mapError } from './errors.ts';
@@ -50,19 +50,19 @@ export const buildApp = ({ manager }) => {
     const body = req.body ?? {};
     const { cwd } = body;
     if (typeof cwd !== 'string' || cwd === '') throw new HttpError(400, 'bad_request', 'cwd is required');
-    const abs = resolve(process.cwd(), cwd);
+    if (!isAbsolute(cwd)) throw new HttpError(400, 'bad_request', 'cwd must be an absolute path');
     let st;
     try {
-      st = statSync(abs);
+      st = statSync(cwd);
     } catch {
-      throw new HttpError(500, 'internal', `cwd path does not exist: ${abs}`);
+      throw new HttpError(500, 'internal', `cwd path does not exist: ${cwd}`);
     }
-    if (!st.isDirectory()) throw new HttpError(500, 'internal', `cwd is not a directory: ${abs}`);
+    if (!st.isDirectory()) throw new HttpError(500, 'internal', `cwd is not a directory: ${cwd}`);
 
     const model = body.model;
     if (typeof model !== 'string' || model === '')
       throw new HttpError(400, 'bad_request', 'model is required');
-    const s = manager.create({ cwd: abs, model });
+    const s = manager.create({ cwd, model });
     res.status(201).json(s.detail());
   });
 

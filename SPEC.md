@@ -35,7 +35,7 @@ local **SQLite** database.
 
 - No terminal client.
 - No authentication/authorization, rate limiting, or multi-tenancy hardening
-  beyond binding to localhost by default (see §16).
+  beyond binding to localhost by default (see §14).
 - No change to the model provider contract: it still targets an OpenAI-compatible
   `/v1/chat/completions` endpoint (llama.cpp by default).
 - No external database server — storage is embedded SQLite only.
@@ -294,17 +294,17 @@ endpoint and the static web UI (§7.8). Errors use `4xx`/`5xx` with
 }
 ```
 
-- `cwd` is a filesystem path used as the session's working directory. It is
-  normalized to an **absolute** path (resolved against the server process cwd if
-  relative) and stored in that form.
+- `cwd` is the session's working directory. It **must** be an absolute path —
+  relative paths are rejected with `400` `bad_request`. It is stored and used
+  as given.
 - `model` — the LLM model to run (non-empty string). It is stored as the
   session's **last-used model**: each `POST /sessions/:id/messages` (§7.4)
   specifies the model for its run and the value is persisted — the web UI
   pre-fills its model picker from it, and `retry`/`init`/`compact` reuse it.
   There is no server-side default: the client always says which model to use.
 - `201` on success, returning the created session (meta + snapshot).
-- `400` if `cwd` or `model` is missing; `500` if the `cwd` path is not a
-  directory.
+- `400` if `cwd` or `model` is missing or `cwd` is not absolute; `500` if the
+  `cwd` path is not a directory.
 
 `GET /sessions/:id` response:
 
@@ -454,7 +454,7 @@ modules — `app.tsx` holds the root component (all state + side effects), with
 component modules (`Header.tsx`, `Sidebar.tsx`, `Main.tsx`, `Message.tsx`,
 `InputBar.tsx`, `Todos.tsx`, `toolcall.tsx`) and non-component helpers
 (`api.js`, `util.js`, `image.js`, `md.js`, `ui.js`; the full file list is in
-§13). It is a **pure client**
+[AGENTS.md](AGENTS.md)). It is a **pure client**
 of the API in this section — it adds no server logic, routes, or
 dependencies. At server startup, esbuild (a runtime dependency, run in
 `src/main.ts`) bundles `webui/app.tsx` + its deps from `node_modules` into
@@ -626,55 +626,7 @@ Each tool invocation receives a `ToolContext`:
 
 ---
 
-## 13. Directory Layout (target)
-
-```
-clown-circus/
-├─ SPEC.md                  # this file
-├─ README.md
-├─ WEB_UI.md                # web UI description (features, constraints, growth)
-├─ package.json             # "type": "module"; scripts: start, typecheck
-├─ tsconfig.json            # tsc config: checkJs/allowJs/noEmit/allowImportingTsExtensions, strict:false, types:[node] (type-check only)
-├─ .gitignore
-├─ webui/
-│  ├─ index.html            # web UI shell served at / (loads /vendor/bundle.js + #root)
-│  ├─ app.tsx               # the web UI: Preact JSX module (root component + state, bundle entry)
-│  ├─ vendor/               # generated: esbuild bundle (bundle.js) — git-ignored, rebuilt at startup
-│  ├─ ui.js                 # shared Tailwind class tokens
-│  ├─ api.js                # REST + SSE client helpers
-│  ├─ util.js               # pure helpers (no DOM)
-│  ├─ image.js              # client-side image helpers (FileReader, canvas)
-│  ├─ md.js                 # Markdown component (marked + DOMPurify → dangerouslySetInnerHTML)
-│  ├─ Header.tsx            # unified top bar
-│  ├─ Sidebar.tsx           # project-grouped session list + new-session form
-│  ├─ Main.tsx              # right-hand pane composition
-│  ├─ Message.tsx           # transcript (messages + tool pairs)
-│  ├─ toolcall.tsx          # per-tool argument views (collapsible tool-call bodies)
-│  ├─ InputBar.tsx          # composer (textarea + send/stop + image attachments)
-│  └─ Todos.tsx             # floating todo panel
-└─ src/
-   ├─ main.ts               # bootstrap: bundle web UI (esbuild + watch), parse config, open DB, build app, listen
-   ├─ config.ts             # Config resolution (flags + env)
-   ├─ app.ts                # express app factory (all routes wired here)
-   ├─ db.ts                 # node:sqlite wrapper: connection, migration, queries
-   ├─ manager.ts            # SessionManager registry (loads from DB, persists changes)
-   ├─ session.ts            # Session
-   ├─ loop.ts               # agent loop
-   ├─ llm.ts                # OpenAI-compatible chat client
-   ├─ prompt.ts             # system-prompt composition
-   ├─ tools.ts              # all tools + registration
-   ├─ PREFIX.md             # base system prompt
-   └─ skills/
-      └─ init.md            # built-in init skill
-```
-
-The tree is deliberately flat: one file per concern, no per-feature
-subdirectories. `webui/` (the static UI) and `src/skills/` are the only
-subdirectories.
-
----
-
-## 14. Technology Choices
+## 13. Technology Choices
 
 - **Node.js 24.x** (the currently installed runtime, `v24.14.1`). The server
   is **TypeScript (`.ts`, ESM, `type: "module"`)** that Node runs directly via
@@ -721,51 +673,7 @@ subdirectories.
 
 ---
 
-## 15. Code Style
-
-House style for the codebase — modern, idiomatic, **terse** TypeScript
-(server `.ts`) and JavaScript/JSX (web UI). These
-are conventions, not lint-enforced. Keep the code clean under `npm run typecheck`
-(`tsc --noEmit`, see §14) even though it is not lint-gated.
-
-- **Modules**: ESM `import`/`export` only. No `require`/`module.exports`.
-- **Exports**: one named export per module, imported by name. No `export default`
-  for our own modules (a default import is only for CJS externals like `express`).
-- **Async**: `async`/`await` throughout. No manual `.then()` chains.
-- **Functions**: arrow functions assigned to `const`, not `function` declarations.
-- **DRY**: when a block repeats in 2+ places, lift it into a named helper rather
-  than copy-pasting the block.
-- **Bindings**: `const` by default, `let` only when reassigned, never `var`.
-- **Terse**: minimal ceremony. Prefer early returns, spread, optional chaining,
-  and template literals over verbose constructs. No abstractions that add no
-  behavior.
-
-Prefer:
-
-```js
-const readFile = async (io, ctx, args) => {
-  const text = await fs.readFile(resolve(ctx.cwd, args.path), 'utf8');
-  return args.raw ? text : text.split('\n').map((l, i) => `${i + 1}:${l}`).join('\n');
-};
-```
-
-Not:
-
-```js
-function readFile(io, ctx, args) {
-  return fs.readFile(resolve(ctx.cwd, args.path), 'utf8').then((text) => {
-    if (args.raw) return text;
-    let out = '';
-    const lines = text.split('\n');
-    for (let i = 0; i < lines.length; i++) out += i + 1 + ':' + lines[i] + '\n';
-    return out;
-  });
-}
-```
-
----
-
-## 16. Security & Safety
+## 14. Security & Safety
 
 - Bind to `127.0.0.1` by default; the server is not assumed to be public.
 - **No path sandbox**: file and shell tools resolve relative paths against the
@@ -781,7 +689,7 @@ function readFile(io, ctx, args) {
 
 ---
 
-## 17. Error Handling & Logging
+## 15. Error Handling & Logging
 
 - All async routes wrapped in an Express error middleware that maps thrown
   errors to the §7.7 table (LLM errors → 502/504; unknown id → 404; busy → 409;
@@ -796,7 +704,7 @@ function readFile(io, ctx, args) {
 
 ---
 
-## 18. Out of Scope (explicit)
+## 16. Out of Scope (explicit)
 
 - A terminal client, or any non-HTTP control surface.
 - Authentication, multi-user tenancy, TLS termination (use a reverse proxy).
@@ -808,29 +716,3 @@ function readFile(io, ctx, args) {
 - The two-phase **auto**-compact: only the **manual** compact endpoint (§7.5)
   is in scope for v1.
 
----
-
-## 19. Milestones (suggested build order)
-
-1. Scaffold ESM/Express; config; `db.ts` (open + migrate); `/health`, `/config`,
-   `/models`.
-2. `SessionManager` + `Session` shell (load-from-DB at startup, persist on
-   change); `GET/POST/DELETE /sessions` with `?cwd` filter; `GET /projects`.
-3. LLM client + agent loop + `read_file`/`run_command`/`write_todos`;
-   `POST /messages`; SSE `events`.
-4. Remaining tools (`write_file`, `edit_file`, `load_skill`).
-5. Controls: `stop`, `undo`, `retry`, `clear`, `trim`, `compact`,
-   `init`.
-6. `README.md`.
-7. Minimal web UI at `/` (static Preact JSX page; see WEB_UI.md).
-
----
-
-## 20. Open Questions
-
-- **`cwd` matching**: exact match on the stored absolute path. Should
-  `?cwd` support prefix/subtree matching (e.g. all sessions under a dir)?
-  Current: exact match only.
-
-(Resolved during review: a session persisted as `running`/`stopped` on restart
-is reset to `idle` — no "interrupted" flag. Streaming is SSE, not WebSocket.)

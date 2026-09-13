@@ -70,6 +70,47 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 
 - **Type-check**: `npm run typecheck` (i.e. `tsc --noEmit`, config in `tsconfig.json`: `checkJs`+`allowJs`+`noEmit`+`allowImportingTsExtensions`, `strict:false`, `types:["node"]`). `src/` is `.ts` (type-checked directly); `webui/` mixes `.js`+`.tsx` (checked via `checkJs`/`allowJs`). Dev deps `typescript`/`@types/node` are check-only — never emitted (the web UI's libraries are runtime deps that esbuild bundles into `webui/vendor/bundle.js`, and which `tsc` resolves for the bare imports in `webui/*.{js,tsx}`). **Current state: clean** — both `src/` and `webui/` pass with no errors (the SSE `onmessage` handler is cast to `MessageEvent` in `webui/api.js`).
 - **No test framework.** Verify by running the server and exercising the API (e.g. `node src/main.ts --port 8899 --db-file /tmp/x.clowndb`, then `curl`). Keep the default DB `~/.clowndb` clean by using a throwaway `--db-file` during dev.
-- **Code style** (see SPEC §15): ESM import/export only; `async`/`await` (no `.then`); arrow fns assigned to `const`; `const` > `let` > never `var`; terse (early returns, spread, optional chaining, template literals).
 - **Config precedence**: CLI flag > env var > default.
 - **Localhost by default** (`127.0.0.1`), no auth — single-user local tool.
+
+## Code Style
+
+House style for the codebase — modern, idiomatic, **terse** TypeScript
+(server `.ts`) and JavaScript/JSX (web UI). These are conventions, not
+lint-enforced. Keep the code clean under `npm run typecheck` (`tsc --noEmit`)
+even though it is not lint-gated.
+
+- **Modules**: ESM `import`/`export` only. No `require`/`module.exports`.
+- **Exports**: one named export per module, imported by name. No `export default`
+  for our own modules (a default import is only for CJS externals like `express`).
+- **Async**: `async`/`await` throughout. No manual `.then()` chains.
+- **Functions**: arrow functions assigned to `const`, not `function` declarations.
+- **DRY**: when a block repeats in 2+ places, lift it into a named helper rather
+  than copy-pasting the block.
+- **Bindings**: `const` by default, `let` only when reassigned, never `var`.
+- **Terse**: minimal ceremony. Prefer early returns, spread, optional chaining,
+  and template literals over verbose constructs. No abstractions that add no
+  behavior.
+
+Prefer:
+
+```js
+const readFile = async (io, ctx, args) => {
+  const text = await fs.readFile(resolve(ctx.cwd, args.path), 'utf8');
+  return args.raw ? text : text.split('\n').map((l, i) => `${i + 1}:${l}`).join('\n');
+};
+```
+
+Not:
+
+```js
+function readFile(io, ctx, args) {
+  return fs.readFile(resolve(ctx.cwd, args.path), 'utf8').then((text) => {
+    if (args.raw) return text;
+    let out = '';
+    const lines = text.split('\n');
+    for (let i = 0; i < lines.length; i++) out += i + 1 + ':' + lines[i] + '\n';
+    return out;
+  });
+}
+```
