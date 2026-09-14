@@ -29,11 +29,21 @@
 /* --color-code / --color-material / --color-accent2 are used only from plain
    CSS (Markdown.tsx prose, the .material class, the .grad-accent gradient),
    so they can't live in @theme: the in-browser Tailwind JIT tree-shakes
-   @theme vars no utility references, and these have none. */
+   @theme vars no utility references, and these have none.
+   --color-panel / --color-sel / --color-ok are referenced from plain CSS
+   (.menu-card + .md th, ::selection, .sw.on) AND from utilities that are
+   only conditionally in the DOM (bg-panel: the "↓ latest" button / todos
+   panel; bg-sel: the active row / effort pick; bg-ok: the status dot) — so
+   the JIT drops them whenever those elements aren't rendered and the plain
+   CSS goes transparent. Defined here too, so the plain-CSS uses always
+   resolve; the JIT's copy (when present) carries the same value. */
 :root {
   --color-code: #6f95a8;
   --color-material: rgba(44,44,46,.7);
   --color-accent2: #2f9bff;
+  --color-panel: #28282a;
+  --color-sel: rgba(10,132,255,.28);
+  --color-ok: #30d158;
 }
 /* Light palette: same --color-* tokens, applied when <html data-theme="light">. */
 :root[data-theme="light"] {
