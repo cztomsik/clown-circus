@@ -70,6 +70,7 @@ export class Session {
   totalTokens: number;
   running: boolean;
   compacting: boolean;
+  destroyed: boolean;
   abortController: AbortController | null;
   emitter: EventEmitter;
   seq: number;
@@ -95,6 +96,7 @@ export class Session {
 
     this.running = false;
     this.compacting = false;
+    this.destroyed = false;
     this.abortController = null;
     this.emitter = new EventEmitter();
     this.emitter.setMaxListeners(0);
@@ -146,6 +148,7 @@ export class Session {
   // reload that rewrites a pre-restart status must not clobber the stored
   // timestamp).
   persist(touch = true) {
+    if (this.destroyed) return; // a deleted session must not upsert its row back
     if (touch) this.lastActivity = new Date().toISOString();
     db.upsert(this.row());
   }
@@ -156,6 +159,7 @@ export class Session {
   // client appends it), and a session-row persist. The system prompt is never
   // appended — it is derived and lives only in memory.
   append(msg) {
+    if (this.destroyed) return; // a deleted session's wind-down loop must not (re)insert rows
     this.messages.push(msg);
     this.msgIds.push(db.insertMessage(this.id, JSON.stringify(msg)));
     this.emit('message', { message: msg });
@@ -251,6 +255,7 @@ export class Session {
   }
 
   destroy() {
+    this.destroyed = true; // set before stop(): the wind-down loop must not (re)write
     this.stop();
     this.running = false;
     this.emit('status', { status: 'stopped' });
@@ -516,7 +521,7 @@ export class Session {
       this.status = 'error';
       this.lastError = err?.message ?? String(err);
       this.emit('error', { message: this.lastError });
-      this.persist();
+      try { this.persist(); } catch { /* a DB failure at finalize must not reject the run */ }
     } finally {
       this.compacting = false;
     }

@@ -16,8 +16,13 @@ export const buildApp = ({ manager }) => {
   app.disable('x-powered-by');
   app.use(express.static(WEBUI_DIR)); // web UI at / (see WEB_UI.md)
 
+  // A write that lands after the client is gone (a live `event`, the heartbeat,
+  // or a destroyed session's wind-down) would throw ERR_STREAM_WRITE_AFTER_END;
+  // inside an emitter listener or interval callback that throw is uncaught and
+  // crashes the process, so skip it.
+  const sseWrite = (res, str) => { if (res.writable && !res.writableEnded) res.write(str); };
   const sseFrame = (res, rec) =>
-    res.write(`id: ${rec.seq}\nevent: ${rec.event}\ndata: ${JSON.stringify(rec.data)}\n\n`);
+    sseWrite(res, `id: ${rec.seq}\nevent: ${rec.event}\ndata: ${JSON.stringify(rec.data)}\n\n`);
 
   // --- 7.1 Server / models --------------------------------------------------
   app.get('/health', (req, res) => res.json({ ok: true, sessions: manager.sessions.size }));
@@ -163,7 +168,7 @@ export const buildApp = ({ manager }) => {
       connection: 'keep-alive',
       'x-accel-buffering': 'no',
     });
-    res.write('retry: 3000\n\n');
+    sseWrite(res, 'retry: 3000\n\n');
 
     if (req.query.ping === 'true' || req.query.ping === '1') sseFrame(res, { seq: 0, event: 'pong', data: {} });
 
@@ -192,7 +197,7 @@ export const buildApp = ({ manager }) => {
     s.emitter.on('event', onEvent);
     s.emitter.on('end', onEnd);
 
-    const hb = setInterval(() => res.write(': keep-alive\n\n'), HEARTBEAT_MS);
+    const hb = setInterval(() => sseWrite(res, ': keep-alive\n\n'), HEARTBEAT_MS);
     req.on('close', () => {
       clearInterval(hb);
       s.emitter.off('event', onEvent);

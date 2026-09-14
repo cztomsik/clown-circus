@@ -44,7 +44,15 @@ export const runLoop = async (session) => {
   // but the rest of the batch is unanswered, leaving a dangling tool_call that
   // is invalid to send back. Roll the tail to a valid boundary and resync the
   // client (a granular `message` event already went out for the partial result).
-  if (status === 'stopped' && session.settle()) session.emitHistory();
-  session.end(status, error);
-  if (status !== 'error') session.emit('done', { total_tokens: session.totalTokens });
+  // Finalizing (settle/end -> persist, emit) can hit a DB error; the run is
+  // fire-and-forget, so a throw here would be an unhandled rejection that
+  // crashes the process. end() set running=false before persist, so the session
+  // stays reusable even if the final write fails.
+  try {
+    if (status === 'stopped' && session.settle()) session.emitHistory();
+    session.end(status, error);
+    if (status !== 'error') session.emit('done', { total_tokens: session.totalTokens });
+  } catch (err) {
+    console.error(`[loop] session=${session.id} failed to finalize run:`, err);
+  }
 };
