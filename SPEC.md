@@ -589,7 +589,7 @@ server process can reach.
 
 | Tool            | Args                                            | Notes |
 |-----------------|--------------------------------------------------|-------|
-| `read_file`     | `path`, `raw?: bool`                             | Line-number prefix `N:content` unless `raw`. 2MB limit. UTF-8 validated. |
+| `read_file`     | `path`, `raw?: bool`                             | Line-number prefix `N:content` unless `raw`. 2MB limit. UTF-8 validated for text. Images (PNG/JPEG/WebP/GIF, detected by magic bytes) are returned as a base64 `image_url` content part so a vision model can see them. |
 | `write_file`    | `path`, `content`                                | Creates parent dirs. |
 | `edit_file`     | `path`, `old_content`, `new_content`, `replace_all?: bool` | Exact-match replace; errors on 0 or >1 matches unless `replace_all`. Exact-string semantics only (no line-range/sed edits). |
 | `run_command`   | `command`, `cwd?: string`                        | Runs `sh -c`; captures stdout+stderr (2MB limits); abortable on stop. |
@@ -597,7 +597,11 @@ server process can reach.
 | `load_skill`    | `skill_name`                                     | Built-in `init` first, else `skills/<name>.md` in cwd (path-validated). |
 
 Tool result values are returned to the model as text (strings / structured
-values serialized to JSON).
+values serialized to JSON). A tool may instead return an OpenAI content-part
+array, which is stored and sent verbatim as the tool message's `content` —
+`read_file` on an image returns a `text` caption + `image_url` (data-URL)
+part. `trim` counts such results at their serialized size and truncates them
+like any bulky tool result.
 
 ### Tool context
 

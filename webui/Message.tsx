@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, useLayoutEffect } from 'preact/hooks';
 import { PRE } from './ui';
 import { Spinner, Dot, Guide } from './primitives';
-import { prettyArgs, parseArgs, reasoningText, firstLine } from './util';
+import { prettyArgs, parseArgs, reasoningText, firstLine, contentText } from './util';
 import { ToolCall, toolCallTitle } from './ToolCall';
 import { Markdown } from './Markdown';
 
@@ -17,9 +17,22 @@ const isToolError = (c) =>
 
 // A tool call's result: plain dim <pre> — except a failed result, whose
 // first line renders in the error tint so the failure stands out even when
-// the detail is collapsed to the one-line preview.
+// the detail is collapsed to the one-line preview. A content-part array
+// (read_file on an image) renders its text parts + the images.
 const ToolResult = ({ content }) => {
   if (content == null) return null;
+  if (Array.isArray(content)) {
+    const images = content.filter((p) => p.type === 'image_url');
+    const text = contentText(content);
+    return (
+      <div class="space-y-1">
+        {text ? <pre class="m-0 text-dim text-xs font-mono whitespace-pre-wrap break-words">{text}</pre> : null}
+        {images.map((p, i) => (
+          <img key={i} src={p.image_url?.url} alt="tool result image" class="max-h-64 max-w-full rounded border border-line" />
+        ))}
+      </div>
+    );
+  }
   const text = String(content);
   if (!isToolError(text))
     return <pre class="m-0 text-dim text-xs font-mono whitespace-pre-wrap break-words">{text}</pre>;
@@ -97,7 +110,7 @@ const ToolPair = ({ tc, result, cwd }) => {
         <Dot />
         <span class="text-dim font-medium whitespace-nowrap">{name}</span>
         {arg ? <span class="text-text3 whitespace-nowrap overflow-hidden text-ellipsis font-mono">{arg}</span> : null}
-        {result ? <span class={`${failed ? 'text-err' : 'text-text3'} text-[.72rem] justify-self-end whitespace-nowrap opacity-90 font-mono`}>{firstLine(result.content, 40)}</span> : null}
+        {result ? <span class={`${failed ? 'text-err' : 'text-text3'} text-[.72rem] justify-self-end whitespace-nowrap opacity-90 font-mono`}>{firstLine(contentText(result.content), 40)}</span> : null}
       </summary>
       <Guide cls="space-y-1.5">
         <ToolCall name={name} args={args} raw={raw} cwd={cwd} />
@@ -172,7 +185,7 @@ const Message = ({ m }) => {
   }
   if (m.role === 'tool') {
     return (
-      <Activity label="tool result" mono status={firstLine(m.content, 60)}>
+      <Activity label="tool result" mono status={firstLine(contentText(m.content), 60)}>
         <ToolResult content={m.content} />
       </Activity>
     );
@@ -184,7 +197,7 @@ const Message = ({ m }) => {
   if (m.role === 'user') {
     const parts = Array.isArray(content) ? content : content ? [{ type: 'text', text: content }] : [];
     const images = parts.filter((p) => p.type === 'image_url');
-    const text = parts.filter((p) => p.type === 'text').map((p) => p.text).join('\n');
+    const text = contentText(parts);
     return (
       <div class="flex flex-col items-end gap-1.5">
         {images.map((p, i) => (

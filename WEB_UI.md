@@ -359,7 +359,8 @@ primary interface — the UI is just one client of it.
   The entire image affordance (picker, paste handler, drop zone, thumbnail strip)
   is hidden when the current session's model is known to be non-vision. The
   transcript renders `image_url` parts as inline `<img>` thumbnails in user
-  messages.
+  messages and in tool results that carry them (e.g. `read_file` on an image
+  returns a `text` + `image_url` content-part array).
 - **Commands** — typing a `/cmd` line in the composer dispatches a control
   instead of sending a message. On
   Enter, `send()` runs `parseCommand()` first: if the trimmed text starts with

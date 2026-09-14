@@ -16,11 +16,29 @@ const obj = (properties, required) => ({ type: 'object', properties, required })
 
 const isUtf8 = (buf) => buf.equals(Buffer.from(buf.toString('utf8'), 'utf8'));
 
+// Magic-byte image detection. The MIME set is the one the LLM backend is
+// guaranteed to decode — the same set the web UI sends as composer
+// attachments (webui/image.ts). Returns the MIME, or null for non-images.
+const IMAGE_MAGIC = [
+  { mime: 'image/png', test: (b) => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) },
+  { mime: 'image/jpeg', test: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+  { mime: 'image/webp', test: (b) => b.subarray(0, 4).toString('ascii') === 'RIFF' && b.subarray(8, 12).toString('ascii') === 'WEBP' },
+  { mime: 'image/gif', test: (b) => b.subarray(0, 4).toString('ascii') === 'GIF8' }, // 87a/88a/89a
+];
+const detectImageMime = (buf) =>
+  buf.length >= 12 ? (IMAGE_MAGIC.find((m) => m.test(buf))?.mime ?? null) : null;
+
 // --- Core tools -------------------------------------------------------------
 
 const readFile = async (ctx, args) => {
   const buf = await fsReadFile(resolve(ctx.cwd, args.path));
   if (buf.length > MAX) throw new Error('File too large');
+  const mime = detectImageMime(buf);
+  if (mime)
+    return [
+      { type: 'text', text: `Image (${mime}, ${buf.length} bytes):` },
+      { type: 'image_url', image_url: { url: `data:${mime};base64,${buf.toString('base64')}` } },
+    ];
   if (!isUtf8(buf)) throw new Error('Invalid UTF-8');
   const text = buf.toString('utf8');
   return args.raw ? text : text.split('\n').map((l, i) => `${i + 1}:${l}`).join('\n');
@@ -121,7 +139,7 @@ const loadSkill = async (ctx, args) => {
 
 const buildTools = () =>
   new Map([
-    tool('read_file', 'Read the contents of a file',
+    tool('read_file', 'Read the contents of a file (images are returned as a base64 image the model can see)',
       obj({ path: S(), raw: B() }, ['path']), readFile),
     tool('write_file', 'Write content to a file, creating directories if needed',
       obj({ path: S(), content: S() }, ['path', 'content']), writeFile),

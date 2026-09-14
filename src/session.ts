@@ -336,7 +336,12 @@ export class Session {
       }
       try {
         const result = await t.run(this.toolContext(), args);
-        content = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+        // A tool may return plain content (string, or a structured value we
+        // serialize to JSON) or an OpenAI content-part array (e.g. read_file
+        // on an image returns a text + image_url part the model can see).
+        content = Array.isArray(result) ? result
+          : typeof result === 'string' ? result
+          : JSON.stringify(result, null, 2);
       } catch (err) {
         content = `Error: ${err?.message ?? err}`; // tool errors become content, loop continues
       }
@@ -490,9 +495,11 @@ export class Session {
     for (let i = 0; i < boundary; i++) {
       const m = this.messages[i];
       if (m.role === 'tool') {
-        if (typeof m.content === 'string'
-            && Buffer.byteLength(m.content, 'utf8') > TOOL_RESULT_KEEP_BYTES) {
-          const bytes = Buffer.byteLength(m.content, 'utf8');
+        // Content-part arrays (image tool results) count at their serialized
+        // size, so a base64 image in an old turn gets the same marker.
+        const bytes = Buffer.byteLength(
+          typeof m.content === 'string' ? m.content : JSON.stringify(m.content), 'utf8');
+        if (bytes > TOOL_RESULT_KEEP_BYTES) {
           m.content = `[tool result truncated — was ${bytes} bytes]`;
           truncatedResults += 1;
           changed.push(i);

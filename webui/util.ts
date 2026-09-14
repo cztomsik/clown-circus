@@ -4,6 +4,13 @@
 
 export const baseName = (cwd: string) => cwd.split('/').filter(Boolean).at(-1) || cwd;
 
+// Plain text of a message's content (string | ContentPart[]): the text parts
+// joined, image parts dropped. '' when the content carries no text.
+export const contentText = (c) =>
+  typeof c === 'string' ? c
+  : Array.isArray(c) ? c.filter((p) => p.type === 'text').map((p) => p.text ?? '').join('\n')
+  : '';
+
 // First line of a string, truncated to n chars with an ellipsis.
 export const firstLine = (s, n = 80) => {
   const l = (s ?? '').split('\n')[0];
