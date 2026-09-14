@@ -90,13 +90,6 @@
 .md img { max-width: 100%; }
 .md del { color: var(--color-dim); }
 </style>
-<script>
-  // Apply the saved theme before first paint (app.js re-applies on mount).
-  try {
-    const t = localStorage.getItem('clown-circus-theme');
-    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
-  } catch {}
-</script>
 </head>
 <body class="bg-bg text-ink font-sans text-sm leading-[1.45]">
   <div id="root"></div>

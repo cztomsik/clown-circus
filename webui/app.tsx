@@ -1,152 +1,70 @@
 // Browser-side Tailwind v4 JIT: processes the <style type="text/tailwindcss">
 // block in index.html and watches the DOM for new classes (Preact renders).
-// Bundled in here (first import, so it runs before the UI renders); it is a
-// side-effect IIFE, not an ESM module.
+// Bundled first (side-effect IIFE), so it runs before the UI paints.
 import '@tailwindcss/browser';
 import { render } from 'preact';
-import { useState, useEffect, useRef } from 'preact/hooks';
-import { api, post, openSessionEvents } from './api';
-import { baseName, parseCommand, modelId, isVisionModel } from './util';
-import { fileToDataURL, prepareImageDataURL, isImageFile } from './image';
+import { useState, useEffect } from 'preact/hooks';
+import { api, post } from './api';
+import { baseName, parseCommand } from './util';
+import { prepareImageDataURL } from './image';
+import {
+  useLocalStorage, useModels, useSessions, useSessionView, useAttachments, useFlash, useTheme,
+} from './hooks';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { Main } from './Main';
 
-// md breakpoint: >= it the sidebar sits in the flex flow; below it, it's an
-// overlay drawer (auto-collapsed by default on mobile).
+// md breakpoint: >= it the sidebar is in-flow; below it, an overlay drawer
+// (auto-collapsed by default on mobile).
 const isWide = () => window.matchMedia('(min-width: 768px)').matches;
-
 // localStorage key for a session's composer draft.
 const inputKey = (id) => `clown-circus-input-${id}`;
-
-// Default for /trim when no turn count is typed: keep this many trailing
-// turns (assistant LLM calls, each with its tool results) untouched —
-// everything before is trimmed. A web-UI convenience — the REST endpoint
-// still requires an explicit `keep`.
+// Default for /trim when no turn count is typed: how many trailing turns to
+// leave untouched. A web-UI convenience — the REST endpoint needs an explicit
+// `keep`.
 const TRIM_KEEP_DEFAULT = 5;
 
-// Attachment id. crypto.randomUUID() is only exposed in *secure* contexts
-// (https / localhost); a phone that reaches the server over a LAN IP is not,
-// so fall back to a non-crypto id. It only needs to be unique among the
-// current thumbnails (Preact keys + remove-by-id).
-const uid = () =>
-  (crypto.randomUUID
-    ? crypto.randomUUID()
-    : `att-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
-
-// ── root component (owns all state + side effects) ───────────────────
+// ── root component: wires the hooks, keeps cross-cutting orchestration ─────
 const App = () => {
-  const [cfg, setCfg] = useState('loading…');
-  const [models, setModels] = useState([]);
-  const [sessions, setSessions] = useState([]);
+  const { flash, flashMsg } = useFlash();
+  const { theme, toggleTheme } = useTheme();
+  const { sessions, refresh } = useSessions();
+  const { models, model, setModel, isVisionCapable } = useModels();
   const [current, setCurrent] = useState(null);
-  const [view, setView] = useState(null);
+  const { view, setView, patch, clear } = useSessionView(current, { refresh, onFlash: flashMsg });
+  const { attachments, set: setAttachments, addFiles, removeAttachment } = useAttachments(flashMsg);
+
   const [input, setInput] = useState('');
-  const [attachments, setAttachments] = useState([]);
   const [newCwd, setNewCwd] = useState('');
-  // Header select; kept pointing at a real model whenever /models returned
-  // anything (see the effect below) — only '' when the list is empty.
-  const [model, setModel] = useState('');
-  const [flash, setFlash] = useState(null);
-  const flashTimer = useRef(null);
-  const [visionModels, setVisionModels] = useState(new Set());
-  const [knownModelIds, setKnownModelIds] = useState(new Set());
-  const [theme, setTheme] = useState(() => {
-    try { return localStorage.getItem('clown-circus-theme') === 'light' ? 'light' : 'dark'; }
-    catch { return 'dark'; }
-  });
-
-  // Sidebar: open by default on desktop, auto-collapsed on narrow viewports.
   const [sideOpen, setSideOpen] = useState(isWide);
-  // Archived sessions are fetched but hidden by default; the sidebar toggle
-  // flips this (client-side split, so the 10s poll stays toggle-agnostic).
+  // Archived sessions are fetched (see useSessions) but hidden by default; the
+  // sidebar toggle flips this. Not persisted.
   const [showArchived, setShowArchived] = useState(false);
-  // Group the sidebar by project (cwd). On by default (matches the classic
-  // look); a flat list when off.
-  const [grouped, setGrouped] = useState(() => {
-    try { return localStorage.getItem('clown-circus-grouped') !== '0'; }
-    catch { return true; }
-  });
+  // Group the sidebar by project (cwd); persisted (see useLocalStorage).
+  const [grouped, setGrouped] = useLocalStorage('clown-circus-grouped', true);
+
+  // The /config summary (base_url · db) shown in the header when no session is
+  // open — a one-shot status line, so it stays here rather than in a hook.
+  const [cfg, setCfg] = useState('loading…');
   useEffect(() => {
-    try { localStorage.setItem('clown-circus-grouped', grouped ? '1' : '0'); } catch {}
-  }, [grouped]);
-
-  const flashMsg = (msg) => {
-    setFlash(msg);
-    clearTimeout(flashTimer.current);
-    flashTimer.current = setTimeout(() => setFlash(null), 6000);
-  };
-
-  const refreshSessions = async () => {
-    let list;
-    try { list = await api('/sessions?archived=1'); } catch { return; }
-    setSessions(list);
-  };
-
-  // boot: load config + models, seed the session list, then poll every 10s.
-  useEffect(() => {
-    let timer;
     (async () => {
-      try {
-        const c = await api('/config');
-        setCfg(`${c.base_url} · db: ${c.db_file}`);
-      } catch { setCfg(''); }
-      try {
-        const { data } = await api('/models');
-        const list = data ?? [];
-        setModels(list.map(modelId).filter(Boolean));
-        const known = new Set();
-        const vision = new Set();
-        for (const m of list) {
-          const id = modelId(m);
-          if (!id) continue;
-          known.add(id);
-          if (isVisionModel(m)) vision.add(id);
-        }
-        setKnownModelIds(known);
-        setVisionModels(vision);
-      } catch {}
-      await refreshSessions();
+      try { const c = await api('/config'); setCfg(`${c.base_url} · db: ${c.db_file}`); }
+      catch { setCfg(''); }
     })();
-    timer = setInterval(refreshSessions, 10000);
-    return () => { clearInterval(timer); clearTimeout(flashTimer.current); };
   }, []);
 
-  // The select always points at a model that exists in the list whenever one
-  // is known: pre-fills from the open session's last-used model (select()),
-  // and falls back to the first model when that value has no matching option
-  // (stale — removed from the backend) or nothing is selected yet.
-  useEffect(() => {
-    if (models.length && !models.includes(model)) setModel(models[0]);
-  }, [models, model]);
-
-  // theme: reflect to <html data-theme> and persist so it survives reloads.
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    try { localStorage.setItem('clown-circus-theme', theme); } catch {}
-  }, [theme]);
-
-  // Reflect the selected session in the tab title; falls back to the app
-  // name when no session is open.
-  useEffect(() => {
-    document.title = view?.cwd ? `${baseName(view.cwd)} · Clown-Circus` : 'Clown-Circus';
-  }, [view?.cwd]);
-
-  // Per-session composer draft: restore it when the session changes, and
-  // persist it on every change, keyed by session id so switching back and
-  // forth keeps each session's half-typed message.
+  // Per-session composer draft: restored when the session changes, persisted on
+  // every change, keyed by session id so switching back and forth keeps each
+  // session's half-typed message. The two effects are deliberately keyed
+  // differently — restore on `current`, persist on `input` — so a switch (new
+  // `current`, still-old `input`) can't write the old session's text under a
+  // stale key. (Can't be useLocalStorage: its write is keyed on [key, v].)
   useEffect(() => {
     if (!current) return;
     let saved = '';
     try { saved = localStorage.getItem(inputKey(current)) ?? ''; } catch {}
     setInput(saved);
   }, [current]);
-
-  // Deliberately keyed on `input` only (not `current`): on a session switch the
-  // render carries the new `current` but the *old* `input`, so depending on
-  // `current` here would write the previous session's text into the new key
-  // before the restore above has loaded it. By then `current` is already fresh
-  // in the closure, so the write always lands on the right session.
   useEffect(() => {
     if (!current) return;
     try {
@@ -155,8 +73,8 @@ const App = () => {
     } catch {}
   }, [input]);
 
-  // Keep the drawer from covering the whole viewport when the window shrinks
-  // below the md breakpoint (resize / rotate to portrait).
+  // Keep the drawer from covering the viewport when the window shrinks below
+  // the md breakpoint (resize / rotate to portrait).
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 768px)');
     const onChange = (e) => { if (!e.matches) setSideOpen(false); };
@@ -164,22 +82,16 @@ const App = () => {
     return () => mq.removeEventListener('change', onChange);
   }, []);
 
-  // live updates: one EventSource per selected session (auto-reconnects with
-  // Last-Event-ID; the server's replay ring covers brief disconnects).
+  // Reflect the selected session in the tab title; fall back to the app name
+  // when none is open.
   useEffect(() => {
-    if (!current) return;
-    return openSessionEvents(current, {
-      snapshot: (snap) => setView((v) => v ? { ...v, messages: snap.messages, tokens: snap.total_tokens } : v),
-      status: (s) => { setView((v) => v ? { ...v, status: s.status } : v); refreshSessions(); },
-      done: (d) => setView((v) => v ? { ...v, tokens: d.total_tokens } : v),
-      error: (err) => { setView((v) => v ? { ...v, status: 'error' } : v); flashMsg(err.message); refreshSessions(); },
-    });
-  }, [current]);
+    document.title = view?.cwd ? `${baseName(view.cwd)} · Clown-Circus` : 'Clown-Circus';
+  }, [view?.cwd]);
 
   const select = async (id) => {
     if (!isWide()) setSideOpen(false); // on mobile, a tap on a session reveals the chat
     setCurrent(id);
-    refreshSessions();
+    refresh();
     try {
       const d = await api(`/sessions/${id}`);
       setView({
@@ -188,11 +100,11 @@ const App = () => {
         archived: d.archived,
       });
       setNewCwd(d.cwd);
-      setModel(d.model); // pre-fill the select (the effect drops stale values)
+      setModel(d.model); // pre-fill the select (useModels drops stale values)
     } catch (err) {
       flashMsg(err.message);
       setCurrent(null);
-      setView(null);
+      clear();
     }
   };
 
@@ -200,59 +112,48 @@ const App = () => {
     if (!model) { flashMsg('no models available — check the LLM endpoint'); return; }
     try {
       const s = await post('/sessions', { cwd, model });
-      await refreshSessions();
+      await refresh();
       await select(s.id);
     } catch (err) { flashMsg(err.message); }
   };
-
-  // Pure client state: the select picks the model for the *next send* (sent
-  // with the messages POST). With a session open it's pre-filled from that
-  // session's last-used model; with none open it also seeds new sessions.
-  const onModelChange = (v) => setModel(v);
 
   const handleAction = async (name, arg = null) => {
     if (!current) return;
     try {
       if (name === 'undo' || name === 'clear' || name === 'trim') {
-        // synchronous history edits: re-fetch the detail and re-render.
-        // Only `trim` carries a body (the `keep` arg); the rest are no-arg.
-        const r = await post(`/sessions/${current}/${name}`,
-          name === 'trim' ? { keep: arg } : undefined);
+        // synchronous history edits: re-fetch the detail and re-render. Only
+        // `trim` carries a body (the `keep` arg); the rest are no-arg.
+        const r = await post(`/sessions/${current}/${name}`, name === 'trim' ? { keep: arg } : undefined);
         // Undo restores the popped user message into the composer so it can be
         // edited and re-sent.
         if (name === 'undo' && r?.undone) setInput(r.undone);
         const d = await api(`/sessions/${current}`);
-        setView((v) => v ? {
-          ...v, status: d.status, last_error: d.last_error,
-          messages: d.snapshot.messages, tokens: d.snapshot.total_tokens,
-        } : v);
+        patch({ status: d.status, last_error: d.last_error, messages: d.snapshot.messages, tokens: d.snapshot.total_tokens });
       } else if (name === 'archive' || name === 'unarchive') {
         // metadata-only flag: reflect it in the open view, refresh the list.
         const r = await post(`/sessions/${current}/${name}`);
-        setView((v) => (v ? { ...v, archived: r.archived } : v));
-        refreshSessions();
+        patch({ archived: r.archived });
+        refresh();
       } else if (name === 'duplicate') {
         // fork: the server returns the new session; jump to it so the branch
-        // can continue immediately (the source stays open in the sidebar).
+        // continues immediately (the source stays open in the sidebar).
         const r = await post(`/sessions/${current}/duplicate`);
         await select(r.id);
       } else {
-        // agent actions (retry/init/compact): fire-and-forget; SSE streams the rest.
+        // agent actions (retry/init/compact): fire-and-forget; SSE streams it.
         await post(`/sessions/${current}/${name}`);
-        refreshSessions();
+        refresh();
       }
     } catch (err) { flashMsg(err.message); }
   };
 
   // Composer slash-commands (e.g. /retry). Parsed before the message path so a
-  // command always dispatches
-  // — including /stop and the implicit-stop commands (/undo, /clear, /trim)
-  // that must work while a run is in flight. Each delegates to the existing
-  // handlers, so there is no new endpoint. /trim takes an optional numeric
-  // `<turns>` arg (how many trailing turns — assistant LLM calls, each with its
-  // tool results — to leave untouched); with no arg it keeps the last
+  // command always dispatches — including /stop and the implicit-stop commands
+  // (/undo, /clear, /trim) that must work while a run is in flight. Each
+  // delegates to the existing handlers, so there's no new endpoint. /trim takes
+  // an optional numeric `<turns>` arg; with no arg it keeps the last
   // TRIM_KEEP_DEFAULT. A non-numeric/negative arg flashes usage and keeps the
-  // text. Unknown commands keep the text in the box so it can be edited.
+  // text; unknown commands keep the text so it can be edited.
   const runCommand = ({ name, arg }) => {
     switch (name) {
       case 'stop': setInput(''); void stop(); return;
@@ -272,28 +173,6 @@ const App = () => {
     }
   };
 
-  // --- Attachments (image upload) -------------------------------------------
-
-  const addFiles = async (fileList) => {
-    const files = Array.from(fileList ?? []);
-    if (!files.length) return;
-    const valid = files.filter(isImageFile);
-    if (!valid.length) { flashMsg('no supported image in that'); return; }
-    try {
-      const items = await Promise.all(valid.map(async (f: any) => ({
-        id: uid(),
-        name: f.name || 'image',
-        dataUrl: await fileToDataURL(f),
-      })));
-      setAttachments((prev) => [...prev, ...items]);
-    } catch (err) { flashMsg(`couldn't read image: ${err?.message ?? err}`); }
-  };
-
-  const removeAttachment = (id) => setAttachments((prev) => prev.filter((a) => a.id !== id));
-  const clearAttachments = () => setAttachments([]);
-
-  const isVisionCapable = (modelId) => !knownModelIds.has(modelId) || visionModels.has(modelId);
-
   const send = async () => {
     const text = input.trim();
     if ((!text && !attachments.length) || !current) return;
@@ -302,7 +181,7 @@ const App = () => {
     if (view?.status === 'running') return;
     const savedAttachments = attachments;
     setInput('');
-    clearAttachments();
+    setAttachments([]);
     try {
       let message;
       if (savedAttachments.length) {
@@ -327,16 +206,14 @@ const App = () => {
     try { await post(`/sessions/${current}/stop`); } catch (err) { flashMsg(err.message); }
   };
 
-  const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
-
   const del = async () => {
     if (!confirm(`delete session ${baseName(view?.cwd ?? '')}?`)) return;
     try {
       await api(`/sessions/${current}`, { method: 'DELETE' });
       try { localStorage.removeItem(inputKey(current)); } catch {}
       setCurrent(null);
-      setView(null);
-      await refreshSessions();
+      clear();
+      await refresh();
     } catch (err) { flashMsg(err.message); }
   };
 
@@ -345,7 +222,7 @@ const App = () => {
       <Header cfg={cfg} theme={theme} sideOpen={sideOpen}
               onSideToggle={() => setSideOpen((o) => !o)} onThemeToggle={toggleTheme}
               view={view} onAction={handleAction} onDel={del}
-              model={model} onModelChange={onModelChange} models={models} />
+              model={model} onModelChange={setModel} models={models} />
       <div class="flex-1 flex min-h-0">
         {sideOpen ? (
           // mobile (<md): fixed overlay drawer + dimmed backdrop;
