@@ -43,12 +43,13 @@ export class SessionManager {
     }
   }
 
-  create({ cwd, model }) {
+  create({ cwd, model, reasoningEffort = null }) {
     const now = new Date().toISOString();
     const row = {
       id: randomUUID(),
       cwd,
       model,
+      reasoning_effort: reasoningEffort,
       status: 'idle',
       created_at: now,
       last_activity: now,
@@ -80,6 +81,7 @@ export class SessionManager {
       id: randomUUID(),
       cwd: src.cwd,
       model: src.model,
+      reasoning_effort: src.reasoningEffort,
       status: 'idle',
       created_at: now,
       last_activity: now,

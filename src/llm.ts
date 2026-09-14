@@ -31,6 +31,10 @@ const patchGlobalDispatcher = () => {
   d[kOptions].bodyTimeout = 0;
 };
 
+// Reasoning-effort levels for the `reasoning_effort` field both vLLM and
+// llama.cpp accept in the chat-completions body (sent alongside `model`).
+export const REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh'];
+
 export class LlmError extends Error {
   kind: string; // 'aborted' | 'timeout' | 'unavailable' | 'http'
   constructor(kind: string, message?: string) {
@@ -51,7 +55,7 @@ const createLlm = () => {
   // One chat completion. Returns { message, usage }.
   // `signal` is the session's stop signal; aborting it raises LlmError('aborted')
   // (a clean stop, not an error). Timeouts/network/HTTP errors raise LlmError.
-  const chat = async ({ model, messages, tools, maxCompletionTokens, timeoutMs, signal }) => {
+  const chat = async ({ model, messages, tools, maxCompletionTokens, timeoutMs, signal, reasoningEffort = null }) => {
     if (signal?.aborted) throw new LlmError('aborted');
     const ctrl = new AbortController();
     const onStop = () => ctrl.abort('stop');
@@ -60,6 +64,8 @@ const createLlm = () => {
 
     const body: Record<string, any> = { model, messages, max_completion_tokens: maxCompletionTokens };
     if (tools?.length) body.tools = tools;
+    // Omitted when unset: backends without the field must not see it.
+    if (reasoningEffort) body.reasoning_effort = reasoningEffort;
 
     let res;
     try {

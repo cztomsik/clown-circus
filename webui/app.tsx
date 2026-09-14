@@ -36,6 +36,10 @@ const App = () => {
 
   const [input, setInput] = useState('');
   const [newCwd, setNewCwd] = useState('');
+  // Reasoning effort sent with the next model call: pure client state (like
+  // the model), defaulting to 'medium' and pre-filled from the open session's
+  // last-used value on select().
+  const [effort, setEffort] = useState('medium');
   const [sideOpen, setSideOpen] = useState(isWide);
   // Archived sessions are fetched (see useSessions) but hidden by default; the
   // sidebar toggle flips this. Not persisted.
@@ -109,6 +113,7 @@ const App = () => {
       });
       setNewCwd(d.cwd);
       setModel(d.model); // pre-fill the select (useModels drops stale values)
+      setEffort(d.reasoning_effort ?? 'medium');
     } catch (err) {
       flashMsg(err.message);
       setCurrent(null);
@@ -119,7 +124,7 @@ const App = () => {
   const onNew = async (cwd) => {
     if (!model) { flashMsg('no models available — check the LLM endpoint'); return; }
     try {
-      const s = await post('/sessions', { cwd, model });
+      const s = await post('/sessions', { cwd, model, reasoning_effort: effort });
       await refresh();
       await select(s.id);
     } catch (err) { flashMsg(err.message); }
@@ -204,7 +209,7 @@ const App = () => {
         message = text;
       }
       if (!model) { flashMsg('no models available — check the LLM endpoint'); setInput(text); setAttachments(savedAttachments); return; }
-      await post(`/sessions/${current}/messages`, { message, model });
+      await post(`/sessions/${current}/messages`, { message, model, reasoning_effort: effort });
     } catch (err) { flashMsg(err.message); setInput(text); setAttachments(savedAttachments); }
   };
 
@@ -230,7 +235,8 @@ const App = () => {
       <Header cfg={cfg} theme={theme} sideOpen={sideOpen}
               onSideToggle={() => setSideOpen((o) => !o)} onThemeToggle={toggleTheme}
               view={view} onAction={handleAction} onDel={del}
-              model={model} onModelChange={setModel} models={models} />
+              model={model} onModelChange={setModel} models={models}
+              effort={effort} onEffortChange={setEffort} />
       <div class="flex-1 flex min-h-0">
         {sideOpen ? (
           // mobile (<md): fixed overlay drawer + dimmed backdrop;

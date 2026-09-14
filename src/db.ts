@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { config } from './config.ts';
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 // Open (creating parents if needed) the SQLite file, run idempotent DDL and
 // versioned migrations, and return a small query-helper object. Each session
@@ -21,6 +21,7 @@ const openDb = (dbFile) => {
       id            TEXT PRIMARY KEY,
       cwd           TEXT NOT NULL,
       model         TEXT NOT NULL,
+      reasoning_effort TEXT,
       status        TEXT NOT NULL DEFAULT 'idle',
       created_at    TEXT NOT NULL,
       last_activity TEXT NOT NULL,
@@ -41,10 +42,12 @@ const openDb = (dbFile) => {
   // at 0 and already matches SCHEMA_VERSION (the DDL above), so it only needs
   // the bump; v1 DBs get the `archived` column added; v2 DBs get their
   // snapshot blobs imported into the messages table (system prompts dropped)
-  // and the column removed; v3 DBs get the `title` column added.
+  // and the column removed; v3 DBs get the `title` column added; v4 DBs get
+  // the `reasoning_effort` column added.
   const v = Number(db.prepare('PRAGMA user_version').get().user_version);
   if (v === 1) db.exec('ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0');
   if (v === 3) db.exec('ALTER TABLE sessions ADD COLUMN title TEXT');
+  if (v === 4) db.exec('ALTER TABLE sessions ADD COLUMN reasoning_effort TEXT');
   if (v >= 1 && v <= 2) {
     db.exec('BEGIN');
     try {
@@ -72,11 +75,12 @@ const openDb = (dbFile) => {
   const upsert = (r) =>
     db
       .prepare(
-        `INSERT INTO sessions (id, cwd, model, status, created_at, last_activity, last_error, total_tokens, archived, title)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO sessions (id, cwd, model, reasoning_effort, status, created_at, last_activity, last_error, total_tokens, archived, title)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            cwd = excluded.cwd,
            model = excluded.model,
+           reasoning_effort = excluded.reasoning_effort,
            status = excluded.status,
            last_activity = excluded.last_activity,
            last_error = excluded.last_error,
@@ -84,7 +88,7 @@ const openDb = (dbFile) => {
            archived = excluded.archived,
            title = excluded.title`,
       )
-      .run(r.id, r.cwd, r.model, r.status, r.created_at, r.last_activity, r.last_error ?? null, r.total_tokens ?? 0, r.archived ? 1 : 0, r.title ?? null);
+      .run(r.id, r.cwd, r.model, r.reasoning_effort ?? null, r.status, r.created_at, r.last_activity, r.last_error ?? null, r.total_tokens ?? 0, r.archived ? 1 : 0, r.title ?? null);
 
   const insertMessage = (sessionId, data) =>
     Number(db.prepare('INSERT INTO messages (session_id, data) VALUES (?, ?)').run(sessionId, data).lastInsertRowid);

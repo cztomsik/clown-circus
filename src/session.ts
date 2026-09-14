@@ -70,6 +70,7 @@ export class Session {
   id: string;
   cwd: string;
   model: string;
+  reasoningEffort: string | null;
   status: string;
   createdAt: string;
   lastActivity: string;
@@ -93,6 +94,7 @@ export class Session {
     this.id = row.id;
     this.cwd = row.cwd;
     this.model = row.model;
+    this.reasoningEffort = row.reasoning_effort ?? null;
     this.status = row.status ?? 'idle';
     this.createdAt = row.created_at ?? new Date().toISOString();
     this.lastActivity = row.last_activity ?? this.createdAt;
@@ -127,6 +129,7 @@ export class Session {
       id: this.id,
       cwd: this.cwd,
       model: this.model,
+      reasoning_effort: this.reasoningEffort,
       status: this.status,
       created_at: this.createdAt,
       last_activity: this.lastActivity,
@@ -147,6 +150,7 @@ export class Session {
       id: this.id,
       cwd: this.cwd,
       model: this.model,
+      reasoning_effort: this.reasoningEffort,
       status: this.status,
       created_at: this.createdAt,
       last_activity: this.lastActivity,
@@ -289,6 +293,7 @@ export class Session {
         maxCompletionTokens: 32 * 1024,
         timeoutMs: config.timeoutMs,
         signal: this.signal,
+        reasoningEffort: this.reasoningEffort,
       });
       // A stop issued while this LLM call was in flight aborts the shared
       // signal only after the response has already been received. Drop the
@@ -360,12 +365,16 @@ export class Session {
   // `model` (optional) is the model the client wants for this run: it is pinned
   // for the whole run and persisted as the session's "last used" model, which is
   // what the web UI pre-fills the picker from (and what retry/init/compact reuse).
-  send(text, model = undefined) {
+  // `reasoningEffort` (optional) rides along the same way: pinned for the run
+  // and persisted, sent with every LLM call of the run.
+  send(text, model = undefined, reasoningEffort = undefined) {
     this.assertIdle();
-    if (model) {
-      this.model = model;
-      this.persist();
-    }
+    // `reasoningEffort` undefined = absent from the request: keep the stored
+    // value (so init()/retry keep it); an explicit value (incl. null) wins.
+    let changed = false;
+    if (model) { this.model = model; changed = true; }
+    if (reasoningEffort !== undefined) { this.reasoningEffort = reasoningEffort; changed = true; }
+    if (changed) this.persist();
     // The first user-sent message titles the session. Set only here (not in
     // appendUser) so prompts that go through run() (compact) can't claim the
     // title; image-only sends yield no title.

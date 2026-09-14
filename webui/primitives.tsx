@@ -54,6 +54,30 @@ export const Switch = ({ on, onToggle, label = null }) => (
   <button type="button" title={label} class={`sw ${on ? 'on' : ''}`} aria-pressed={on} onClick={onToggle}></button>
 );
 
+// ── modal ──────────────────────────────────────────────────────────────
+// Centered card over a dimmed backdrop — for anything bigger than the ⋮
+// dropdowns (the model picker). Controlled: the parent owns `open` so it can
+// close on a selection; Escape and a backdrop tap close too.
+const MODAL_CARD = 'menu-card relative w-[min(380px,calc(100vw-2rem))] max-h-[min(75vh,600px)] overflow-y-auto rounded-xl border border-line shadow-2xl';
+export const Modal = ({ open, onClose, title, children }) => {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+  if (!open) return null;
+  return (
+    <div class="fixed inset-0 z-50 grid place-items-center p-4">
+      <div class="absolute inset-0 bg-black/50" onClick={onClose}></div>
+      <div class={MODAL_CARD}>
+        {title ? <div class="text-[.62rem] font-bold tracking-[.05em] uppercase text-text3 px-4 pt-3.5 pb-2">{title}</div> : null}
+        {children}
+      </div>
+    </div>
+  );
+};
+
 // ── dropdown menu ──────────────────────────────────────────────────────
 // Icon-triggered popover (the ⋮ menus). Owns its open state: a fixed
 // backdrop click or Escape closes it, a selected item closes it, and it

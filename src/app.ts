@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { statSync } from 'node:fs';
 import { HttpError, mapError } from './errors.ts';
 import { config } from './config.ts';
-import { llm } from './llm.ts';
+import { llm, REASONING_EFFORTS } from './llm.ts';
 
 const HEARTBEAT_MS = 15000;
 const WEBUI_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'webui');
@@ -40,6 +40,16 @@ export const buildApp = ({ manager }) => {
     res.json({ data: await llm.listModels() });
   });
 
+  // `reasoning_effort` in a request body: absent → undefined (keep the
+  // session's stored value), explicit null → unset, a known level → that
+  // value; anything else → 400.
+  const effortOf = (v) => {
+    if (v === undefined) return undefined;
+    if (v === null) return null;
+    if (typeof v === 'string' && REASONING_EFFORTS.includes(v)) return v;
+    throw new HttpError(400, 'bad_request', `reasoning_effort must be one of: ${REASONING_EFFORTS.join(', ')}`);
+  };
+
   // --- 7.2 Sessions ---------------------------------------------------------
   app.get('/sessions', (req, res) => {
     const { cwd, archived } = req.query;
@@ -67,7 +77,7 @@ export const buildApp = ({ manager }) => {
     const model = body.model;
     if (typeof model !== 'string' || model === '')
       throw new HttpError(400, 'bad_request', 'model is required');
-    const s = manager.create({ cwd, model });
+    const s = manager.create({ cwd, model, reasoningEffort: effortOf(body.reasoning_effort) });
     res.status(201).json(s.detail());
   });
 
@@ -90,7 +100,7 @@ export const buildApp = ({ manager }) => {
     const model = req.body?.model;
     if (typeof model !== 'string' || model === '')
       throw new HttpError(400, 'bad_request', 'model is required');
-    s.send(message, model); // throws 409 if busy
+    s.send(message, model, effortOf(req.body?.reasoning_effort)); // throws 409 if busy
     res.status(202).json({ id: s.id, status: 'running' });
   });
 

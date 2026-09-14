@@ -61,7 +61,10 @@ primary interface — the UI is just one client of it.
   no session state): `IconBtn` (the square ghost icon button), `PrimaryBtn`
   (the gradient CTA), `StatusDot` (the session status dot; the colour map —
   incl. the running pulse — lives here so header and sidebar can't drift),
-  `Spinner` (the CSS spinner), `Switch` (the iOS-style toggle), and `Menu`
+  `Spinner` (the CSS spinner), `Switch` (the iOS-style toggle), `Modal`
+  (a centered card over a dimmed backdrop — the parent controls `open` so it
+  can close on a selection; Escape and a backdrop tap close it too), and
+  `Menu`
   (icon-triggered dropdown: owns its open state — backdrop click / Escape /
   item select close it; items may be `danger` and/or carry a `rule`
   separator). A class token lives with its primitive here when only that
@@ -76,13 +79,15 @@ primary interface — the UI is just one client of it.
   and returns a `close()` used as the effect cleanup.
 - **`webui/Header.tsx`** — the **unified top bar**: sidebar toggle, brand, the
   session status badge + live summary (or the live config summary when no
-  session is open), a **model `<select>`** (client-side: picks the model for
-  the next send; see **Header**), a `⋮` dropdown holding
+  session is open), a **model picker button** (`ModelSelect`: a select-styled
+  button that opens a modal with the model list + a reasoning-effort toggle;
+  client-side, picks the model for the next send — see **Header**), a `⋮`
+  dropdown holding
   the session-level actions (see **Header** under Features), and the theme toggle. All of this shares one row, so it
   stays compact on mobile.
 - **`webui/Sidebar.tsx`** — `Sidebar` + `SessionList`/`SessionItem`: the
   project-grouped session list and the new-session form (a `cwd` input + a
-  "new session" button; the model is picked in the header's select).
+  "new session" button; the model is picked in the header's model picker).
 - **`webui/Message.tsx`** — `Messages` + `Message` (and the `Pre` leaf): the flat
   transcript, roles distinguished by colour/weight/tint, plus the `Working`
   indicator (three staggered-bouncing dim dots, optionally labelling the
@@ -189,7 +194,7 @@ primary interface — the UI is just one client of it.
   shows cwd basename, status, last-activity, and message count, with a
   full-path tooltip). Refreshed on SSE `status` events and
   every 10s. New-session form (a `cwd` input + a "new session" button — the
-  model is chosen in the header's model select, see **Header**) →
+  model is chosen in the header's model picker, see **Header**) →
   `POST /sessions`. The `cwd` field is **pre-set to the selected session's
   cwd** whenever a session is chosen (state lifted into `App`, written in
   `select()`), so spinning up another session for the same project is one
@@ -209,9 +214,9 @@ primary interface — the UI is just one client of it.
   room), then either the **session** status badge + title (the session's
   auto-title — `title`, cwd basename fallback — with a full-path tooltip,
   when a session is open) or the **config** summary
-  (`base_url · db file`, when none is), then the **model
-  `<select>`**, then the theme toggle. When a session is open, a `⋮` button
-  (between the summary and the model select) opens a dropdown of the
+  (`base_url · db file`, when none is), then the **model picker**
+  (`ModelSelect`), then the theme toggle. When a session is open, a `⋮` button
+  (between the summary and the model picker) opens a dropdown of the
   **session-level** actions only — `open in vscode`, `archive` (which flips to
   `unarchive` when the open session is archived), and `delete` last,
   separated by a rule. Conversation manipulation (`retry`, `retry-turn`,
@@ -220,25 +225,43 @@ primary interface — the UI is just one client of it.
   vscode` is the only non-REST item: it hands the session `cwd` to the local
   `vscode://file/` URI handler via `window.open` (the browser shows its
   external-app prompt; VS Code must be the `vscode://` protocol handler).
+- **`webui/ModelSelect.tsx`** — the header's **model picker**: a
+  select-styled button (model name + a dim effort suffix + chevron) that
+  opens a `Modal` with the model list (radio-style rows, `✓` on the current
+  one — a pick applies and closes) and a 4-way **reasoning-effort** segmented
+  toggle (Low / Medium / High / XHigh — applied in place so both can be set
+  in one open). Pure client state, like the model: both values ride in the
+  body of every `POST …/messages` / `POST /sessions` and are pre-filled from
+  the open session's last-used values (see **Header**).
   Archiving hides the session from the default sidebar list (see **Sidebar**);
   the toggle is reflected in the open session's state immediately. The summary is `flex-1 min-w-0 truncate`,
   so on narrow viewports it truncates to one line instead of pushing the
   buttons off-screen. The menu closes on outside-tap (a full-viewport backdrop),
   on Escape, or when the selected session changes.
 
-  The **model `<select>`** is pure client state — it picks the model for the
-  *next* send. Populated from `GET /models`; there is no "default" option,
-  the server has no default model of its own. Whenever the list is non-empty
-  the select **always points at a real model**: pre-filled from the open
-  session's **last-used model** on `select()` (the value the server persisted
-  from the previous send), and when that value has no matching option (stale
-  — removed from the backend) or nothing is selected yet, it falls back to
-  the **first model in the list**. The selected model is sent in the body of
-  every `POST …/messages` (required field) and of `POST /sessions`, where
-  the server pins it for the whole run and persists it as the session's
-  last-used model. Only when `/models` is empty (LLM unreachable) can the
-  select be valueless — creating a session and sending then flash
-  "no models available".
+  The **model picker** (`ModelSelect`) is pure client state — it picks the
+  model *and* the **reasoning effort** for the *next* send. The trigger looks
+  like a `<select>` (current model + a dim effort suffix + chevron) but opens
+  a **modal** (a centered card over a dimmed backdrop, closing on Escape or
+  a backdrop tap) instead of a native dropdown. The modal has two parts:
+  the **model list** (populated from `GET /models`; there is no "default"
+  option — the server has no default model of its own; a row click selects
+  that model and closes the modal) and a **reasoning-effort** segmented
+  toggle with the four levels the backend accepts — `low` / `medium` /
+  `high` / `xhigh` (the `reasoning_effort` field both vLLM and llama.cpp take
+  alongside the model in the chat-completions body; a toggle applies in
+  place without closing, so both values can be set in one open).
+  Whenever the model list is non-empty it **always points at a real model**:
+  pre-filled from the open session's **last-used model** (and last-used
+  effort, defaulting to `medium`) on `select()` (the values the server
+  persisted from the previous send), and when that value has no matching row
+  (stale — removed from the backend) or nothing is selected yet, it falls
+  back to the **first model in the list**. The selected model is sent in the
+  body of every `POST …/messages` (required field) and of `POST /sessions`,
+  and the effort as the optional `reasoning_effort` field — the server pins
+  both for the whole run and persists them as the session's last-used values.
+  Only when `/models` is empty (LLM unreachable) can the picker be valueless
+  — creating a session and sending then flash "no models available".
 - **Sidebar toggle (responsive)** — the `☰` button shows/hides the sidebar.
   The initial state follows the viewport: **open** at ≥ 768px, **collapsed**
   below it (auto-collapsed on mobile). At ≥ 768px the sidebar is an in-flow
@@ -377,7 +400,8 @@ primary interface — the UI is just one client of it.
     immediately **selects the copy**, so the diverging conversation can
     start right away; the source stays open in the sidebar).
   - **Send/stop** — the composer's send button (`POST …/messages`, with the
-    model `<select>`'s value as the required `model` body field — see
+    model picker's value as the required `model` body field and the picked
+    reasoning effort as the optional `reasoning_effort` field — see
     **Header**) and the running state's `stop`. All control endpoints are
     from SPEC §7.4.
 - **Theme toggle** — a compact icon button in the `Header` (top-right)

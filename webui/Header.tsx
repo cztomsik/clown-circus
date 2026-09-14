@@ -1,6 +1,7 @@
 import { IconBtn, Menu, StatusDot } from './primitives';
+import { ModelSelect } from './ModelSelect';
 import { baseName } from './util';
-import { IcHamburger, IcDots, IcSun, IcMoon, IcChevron, IcCode, IcArchive, IcTrash } from './icons';
+import { IcHamburger, IcDots, IcSun, IcMoon, IcCode, IcArchive, IcTrash } from './icons';
 
 // The session-level actions for the ⋮ dropdown. Only things that aren't
 // reachable from the composer live here — conversation manipulation
@@ -23,7 +24,7 @@ const AppIcon = () => (
 );
 
 const Header = ({ cfg, theme, sideOpen, onSideToggle, onThemeToggle, view, onAction, onDel,
-                   model, onModelChange, models }) => {
+                   model, onModelChange, models, effort, onEffortChange }) => {
   const run = (key) => {
     if (key === 'open-vscode') {
       window.open('vscode://file/' + encodeURI(view.cwd ?? ''));
@@ -56,14 +57,9 @@ const Header = ({ cfg, theme, sideOpen, onSideToggle, onThemeToggle, view, onAct
 
       {/* Right: model picker + ⋮ + theme */}
       <div class="flex items-center gap-[7px]">
-        {/* Model picker */}
-        <label class="inline-flex items-center gap-[7px] h-7 pl-[11px] pr-[7px] rounded-[7px] border border-line bg-field text-[.78rem] cursor-pointer transition-colors hover:bg-card">
-          <select value={model} onChange={(e: any) => onModelChange(e.target.value)} aria-label="Model"
-                  class="appearance-none bg-transparent font-inherit text-[.78rem] text-ink cursor-pointer max-w-[96px] sm:max-w-[130px] focus:outline-none">
-            {models.map((m) => <option key={m} value={m}>{m}</option>)}
-          </select>
-          <span class="text-text3"><IcChevron /></span>
-        </label>
+        {/* Model picker (opens the model + reasoning-effort modal) */}
+        <ModelSelect models={models} model={model} effort={effort}
+                     onPickModel={onModelChange} onPickEffort={onEffortChange} />
 
         {/* Session actions (⋮) — only when a session is open */}
         {view ? (

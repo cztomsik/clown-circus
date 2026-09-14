@@ -141,6 +141,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   id            TEXT PRIMARY KEY,               -- UUIDv4
   cwd           TEXT NOT NULL,                  -- absolute working directory
   model         TEXT NOT NULL,                    -- last model used (set on send); the web UI pre-fills its picker from it
+  reasoning_effort TEXT,                          -- nullable; last-used 'low'|'medium'|'high'|'xhigh' (set on send); sent with every LLM call when set
   status        TEXT NOT NULL DEFAULT 'idle',   -- idle | running | error | stopped
   created_at    TEXT NOT NULL,                  -- ISO 8601
   last_activity TEXT NOT NULL,                  -- ISO 8601
@@ -173,6 +174,13 @@ CREATE INDEX IF NOT EXISTS idx_messages_session ON messages (session_id);
 > `clear` resets it to null (a fresh conversation titles itself anew);
 > `compact` keeps it across its internal clear (a continuation of the same
 > conversation); `fork` copies it; an image-only first send leaves it null.
+>
+> `reasoning_effort` (schema v5) rides along with `model`: it is the
+> `reasoning_effort` field sent in every `/v1/chat/completions` request of a
+> run (both vLLM and llama.cpp accept it), one of `low`/`medium`/`high`/`xhigh`,
+> or null (unset — the field is then omitted from the request entirely, so
+> backends without it are never affected). Like the last-used model, `retry`/
+> `init`/`compact` reuse it and `fork` copies it.
 > Sessions persisted before v4 are backfilled at startup from their first user
 > message. The web UI falls back to the `cwd` basename when it is null.
 
@@ -274,7 +282,8 @@ endpoint and the static web UI (§7.7). Errors use `4xx`/`5xx` with
 ```json
 {
   "cwd": "/abs/path/to/project",
-  "model": "llama-3"
+  "model": "llama-3",
+  "reasoning_effort": "medium"
 }
 ```
 
@@ -286,9 +295,14 @@ endpoint and the static web UI (§7.7). Errors use `4xx`/`5xx` with
   specifies the model for its run and the value is persisted — the web UI
   pre-fills its model picker from it, and `retry`/`init`/`compact` reuse it.
   There is no server-side default: the client always says which model to use.
+- `reasoning_effort` — **optional** (`low`/`medium`/`high`/`xhigh`); when
+  present it is stored as the session's last-used value and sent with every
+  LLM call of its runs (§8). Absent or `null` → null (the field is then
+  omitted from the LLM request); any other value → `400` `bad_request`.
 - `201` on success, returning the created session (meta + messages).
-- `400` if `cwd` or `model` is missing or `cwd` is not absolute; `500` if the
-  `cwd` path is not a directory.
+- `400` if `cwd` or `model` is missing, `cwd` is not absolute, or
+  `reasoning_effort` is not a known level; `500` if the `cwd` path is not a
+  directory.
 
 `GET /sessions/:id` response:
 
@@ -297,6 +311,7 @@ endpoint and the static web UI (§7.7). Errors use `4xx`/`5xx` with
   "id": "...",
   "cwd": "/abs/path",
   "model": "llama-3",
+  "reasoning_effort": "medium",
   "status": "idle",
   "created_at": "2026-09-02T12:00:00.000Z",
   "last_activity": "2026-09-02T12:05:00.000Z",
@@ -315,7 +330,7 @@ endpoint and the static web UI (§7.7). Errors use `4xx`/`5xx` with
 |--------|---------------------------------|-------------|
 | `POST` | `/sessions/:id/messages`        | Append a user message and start the agent loop |
 
-Body: `{ "message": "help me fix the tests", "model": "llama-3" }` or
+Body: `{ "message": "help me fix the tests", "model": "llama-3", "reasoning_effort": "medium" }` or
 `{ "message": [{"type":"text","text":"describe this"},{"type":"image_url","image_url":{"url":"data:image/png;base64,…"}}] }`.
 
 - `message` is a **non-empty string** (text-only, the common case) or a
@@ -326,6 +341,11 @@ Body: `{ "message": "help me fix the tests", "model": "llama-3" }` or
   `400` `bad_request` if missing or empty). It is pinned for the whole run and
   persisted as the session's last-used model (the value the web UI pre-fills
   its picker from; `retry`/`init`/`compact` reuse it).
+- `reasoning_effort` is **optional** (`low`/`medium`/`high`/`xhigh`). When
+  present (including explicit `null`) it pins the run's value and overwrites
+  the session's last-used one; when absent the session's stored value is kept.
+  It is sent in the LLM request body of every call of the run (omitted when
+  null); any other value → `400` `bad_request`.
 - `202 Accepted` immediately: `{ "id", "status": "running" }`. The run is
   asynchronous; progress is delivered over the SSE stream (§8) and reflected in
   `GET /sessions/:id`.
@@ -406,7 +426,7 @@ Event types (SSE `event:` field):
 
 | HTTP | `code`            | Meaning |
 |------|-------------------|---------|
-| `400`| `bad_request`     | Malformed body / missing `cwd` or `model` / empty `cwd` filter |
+| `400`| `bad_request`     | Malformed body / missing `cwd` or `model` / bad `reasoning_effort` / empty `cwd` filter |
 | `404`| `not_found`       | Unknown session id |
 | `409`| `session_busy`    | Run-starting call while `running` is true |
 | `500`| `internal`        | Unhandled server error (incl. DB errors) |
@@ -445,7 +465,9 @@ loop:
 emit status=idle, done; persist(status)
 ```
 
-- `agent.next()` is one call to the LLM with `messages` + tool definitions. It
+- `agent.next()` is one call to the LLM with `model` (plus `reasoning_effort`,
+  when the session has one set — the field both vLLM and llama.cpp accept) +
+  `messages` + tool definitions. It
   appends the assistant message (with any `tool_calls`) before returning, so the
   turn is already in history by the time the loop advances.
 - `acceptAll` = execute every requested tool, append `role=tool` results, and
@@ -534,6 +556,7 @@ get the version bump.
 | 2 | `ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0` (§5.2) |
 | 3 | `messages` table (one row per message); `sessions.total_tokens` column; v2 `snapshot` blobs imported into `messages` (system prompts dropped) and `ALTER TABLE sessions DROP COLUMN snapshot` (§5.2) |
 | 4 | `ALTER TABLE sessions ADD COLUMN title TEXT` — the auto-title column (§5.2) |
+| 5 | `ALTER TABLE sessions ADD COLUMN reasoning_effort TEXT` — the last-used reasoning-effort column (§5.2) |
 
 ---
 
