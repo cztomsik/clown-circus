@@ -9,10 +9,10 @@ const SessionItem = ({ s, active, onSelect }) => (
     <StatusDot status={s.status} />
     <div class="min-w-0 flex-1">
       <div class={`text-[.84rem] truncate ${active ? 'font-semibold text-ink' : 'text-ink'} ${s.archived ? 'opacity-50' : ''}`}>
-        {baseName(s.cwd)}
+        {s.title ?? baseName(s.cwd)}
         {s.archived ? <span class="ml-1.5 text-[9px] uppercase tracking-wider text-text3 border border-line rounded px-1">archived</span> : null}
       </div>
-      <div class="text-[.7rem] text-text3">{s.status} · {timeAgo(s.last_activity)} · {s.message_count} msgs</div>
+      <div class="text-[.7rem] text-text3 truncate" title={s.cwd}>{baseName(s.cwd)} · {s.status} · {timeAgo(s.last_activity)} · {s.message_count} msgs</div>
     </div>
   </div>
 );

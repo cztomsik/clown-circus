@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { config } from './config.ts';
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 // Open (creating parents if needed) the SQLite file, run idempotent DDL and
 // versioned migrations, and return a small query-helper object. Each session
@@ -26,7 +26,8 @@ const openDb = (dbFile) => {
       last_activity TEXT NOT NULL,
       last_error    TEXT,
       total_tokens  INTEGER NOT NULL DEFAULT 0,
-      archived      INTEGER NOT NULL DEFAULT 0
+      archived      INTEGER NOT NULL DEFAULT 0,
+      title         TEXT
     );
     CREATE TABLE IF NOT EXISTS messages (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,9 +41,10 @@ const openDb = (dbFile) => {
   // at 0 and already matches SCHEMA_VERSION (the DDL above), so it only needs
   // the bump; v1 DBs get the `archived` column added; v2 DBs get their
   // snapshot blobs imported into the messages table (system prompts dropped)
-  // and the column removed.
+  // and the column removed; v3 DBs get the `title` column added.
   const v = Number(db.prepare('PRAGMA user_version').get().user_version);
   if (v === 1) db.exec('ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0');
+  if (v === 3) db.exec('ALTER TABLE sessions ADD COLUMN title TEXT');
   if (v >= 1 && v <= 2) {
     db.exec('BEGIN');
     try {
@@ -70,8 +72,8 @@ const openDb = (dbFile) => {
   const upsert = (r) =>
     db
       .prepare(
-        `INSERT INTO sessions (id, cwd, model, status, created_at, last_activity, last_error, total_tokens, archived)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO sessions (id, cwd, model, status, created_at, last_activity, last_error, total_tokens, archived, title)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            cwd = excluded.cwd,
            model = excluded.model,
@@ -79,9 +81,10 @@ const openDb = (dbFile) => {
            last_activity = excluded.last_activity,
            last_error = excluded.last_error,
            total_tokens = excluded.total_tokens,
-           archived = excluded.archived`,
+           archived = excluded.archived,
+           title = excluded.title`,
       )
-      .run(r.id, r.cwd, r.model, r.status, r.created_at, r.last_activity, r.last_error ?? null, r.total_tokens ?? 0, r.archived ? 1 : 0);
+      .run(r.id, r.cwd, r.model, r.status, r.created_at, r.last_activity, r.last_error ?? null, r.total_tokens ?? 0, r.archived ? 1 : 0, r.title ?? null);
 
   const insertMessage = (sessionId, data) =>
     Number(db.prepare('INSERT INTO messages (session_id, data) VALUES (?, ?)').run(sessionId, data).lastInsertRowid);

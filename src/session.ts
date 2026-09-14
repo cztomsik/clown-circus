@@ -49,6 +49,16 @@ const turnBoundary = (messages, n) => {
 const countTurns = (messages) =>
   messages.reduce((a, m) => a + (m.role === 'assistant' ? 1 : 0), 0);
 
+// A session-title candidate from a user message's content: the plain text
+// (string or text content parts) with whitespace collapsed, capped at 80
+// chars. '' when the message carries no text (e.g. an image-only send).
+const TITLE_MAX = 80;
+const makeTitle = (content) => {
+  const t = textOf(content).replace(/\s+/g, ' ').trim();
+  if (!t) return '';
+  return t.length > TITLE_MAX ? t.slice(0, TITLE_MAX - 1).trimEnd() + '…' : t;
+};
+
 
 
 // Session. Owns the message list (system prompt in memory at [0] + the stored
@@ -65,6 +75,7 @@ export class Session {
   lastActivity: string;
   lastError: string | null;
   archived: boolean;
+  title: string | null;
   messages: any[];
   msgIds: number[];
   totalTokens: number;
@@ -87,6 +98,7 @@ export class Session {
     this.lastActivity = row.last_activity ?? this.createdAt;
     this.lastError = row.last_error ?? null;
     this.archived = !!row.archived;
+    this.title = row.title ?? null;
     this.totalTokens = row.total_tokens ?? 0;
     this.msgIds = transcript.map((r) => r.id);
     this.messages = [
@@ -122,6 +134,7 @@ export class Session {
       total_tokens: this.totalTokens,
       last_error: this.lastError,
       archived: this.archived,
+      title: this.title,
     };
   }
 
@@ -140,6 +153,7 @@ export class Session {
       last_error: this.lastError,
       total_tokens: this.totalTokens,
       archived: this.archived,
+      title: this.title,
     };
   }
 
@@ -352,6 +366,10 @@ export class Session {
       this.model = model;
       this.persist();
     }
+    // The first user-sent message titles the session. Set only here (not in
+    // appendUser) so prompts that go through run() (compact) can't claim the
+    // title; image-only sends yield no title.
+    if (!this.title) this.title = makeTitle(text) || null;
     this.appendUser(text);
     void runLoop(this);
   }
@@ -427,7 +445,9 @@ export class Session {
     if (this.running) this.stop();
     // Truncate in place (keep the array's identity) so an in-flight `next()`
     // holding a reference can't strand a stale append on a discarded array.
-    // The system prompt is re-derived (picks up any AGENTS.md edits).
+    // The system prompt is re-derived (picks up any AGENTS.md edits), and the
+    // title is dropped so the fresh conversation titles itself anew.
+    this.title = null;
     this.messages.length = 1;
     this.messages[0] = { role: 'system', content: buildSystemPrompt(this.cwd) };
     const gone = this.msgIds;
@@ -482,6 +502,18 @@ export class Session {
     return { keep: k, trimmed: n, truncatedResults, reasoningRemoved };
   }
 
+  // Fill a null title from the first user message that carries text — the
+  // backfill for sessions persisted before titles existed (the manager calls
+  // it at startup; no-op once the title is set).
+  backfillTitle() {
+    if (this.title) return;
+    for (const m of this.messages) {
+      if (m.role !== 'user') continue;
+      const t = makeTitle(m.content);
+      if (t) { this.title = t; return; }
+    }
+  }
+
   // Flag the session as archived (or not). A metadata-only edit: allowed while
   // running, it never touches the conversation. Archived sessions persist but
   // are hidden from the default
@@ -515,7 +547,9 @@ export class Session {
       const fmt =
         'The conversation history has been compacted to save context space. Acknowledge this and ask user what they want to do next.\n\n' +
         `<compacted summary>\n${last.content ?? ''}\n</compacted summary>`;
-      this.clear();
+      const keep = this.title; // compacting continues the conversation: clear()
+      this.clear();            // would drop the title, so restore it
+      this.title = keep;
       await this.run(fmt);
     } catch (err) {
       this.status = 'error';

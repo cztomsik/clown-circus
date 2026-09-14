@@ -36,6 +36,7 @@ export class SessionManager {
       // An in-flight loop can't survive a restart: running/stopped -> idle.
       const status = row.status === 'running' || row.status === 'stopped' ? 'idle' : row.status;
       const s = new Session({ row: { ...row, status }, transcript: bySession.get(row.id) ?? [] });
+      s.backfillTitle(); // pre-title DBs: derive from the first user message
       this.sessions.set(s.id, s);
       s.persist(false); // status rewrite is not activity: keep the stored timestamp
       this._track(s);
@@ -54,6 +55,7 @@ export class SessionManager {
       last_error: null,
       total_tokens: 0,
       archived: false,
+      title: null,
     };
     const s = new Session({ row });
     s.persist();
@@ -84,6 +86,7 @@ export class SessionManager {
       last_error: null,
       total_tokens: 0,
       archived: src.archived,
+      title: src.title, // a fork continues the same conversation
     };
     const s = new Session({ row });
     s.persist(); // the session row must exist before its message rows (FK)

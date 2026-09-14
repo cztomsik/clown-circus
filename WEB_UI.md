@@ -177,8 +177,12 @@ primary interface — the UI is just one client of it.
 - **Sidebar** — sessions from `GET /sessions`, **grouped by project** (cwd):
   each group has a sticky-style header showing the project basename and
   session count, followed by its sessions (status dot colored by
-  `idle`/`running`/`error`/`stopped`, pulsing while running; cwd basename,
-  last-activity, message/token counts). Refreshed on SSE `status` events and
+  `idle`/`running`/`error`/`stopped`, pulsing while running; the title line
+  shows the session's **auto-title** — the first user-sent message,
+  server-set and exposed as `title` in `SessionMeta` (SPEC §5.2) — falling
+  back to the cwd basename when the session has no title yet; the meta line
+  shows cwd basename, status, last-activity, and message count, with a
+  full-path tooltip). Refreshed on SSE `status` events and
   every 10s. New-session form (a `cwd` input + a "new session" button — the
   model is chosen in the header's model select, see **Header**) →
   `POST /sessions`. The `cwd` field is **pre-set to the selected session's
@@ -197,8 +201,9 @@ primary interface — the UI is just one client of it.
 - **Header (unified top bar)** — one row that merges what used to be a
   separate global header and a per-session toolbar. Left to right: a `☰`
   sidebar-toggle button, the `clown-circus` brand (hidden below `sm` to save
-  room), then either the **session** status badge + live summary
-  (`cwd · N tok`, when a session is open) or the **config** summary
+  room), then either the **session** status badge + title (the session's
+  auto-title — `title`, cwd basename fallback — with a full-path tooltip,
+  when a session is open) or the **config** summary
   (`base_url · db file`, when none is), then the **model
   `<select>`**, then the theme toggle. When a session is open, a `⋮` button
   (between the summary and the model select) opens a dropdown of the

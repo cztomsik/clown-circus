@@ -146,7 +146,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   last_activity TEXT NOT NULL,                  -- ISO 8601
   last_error    TEXT,                           -- nullable
   total_tokens  INTEGER NOT NULL DEFAULT 0,     -- last LLM usage.total_tokens
-  archived      INTEGER NOT NULL DEFAULT 0      -- 0/1; hidden from the default list
+  archived      INTEGER NOT NULL DEFAULT 0,     -- 0/1; hidden from the default list
+  title         TEXT                            -- nullable; auto-set from the first user-sent message
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -165,6 +166,15 @@ CREATE INDEX IF NOT EXISTS idx_messages_session ON messages (session_id);
 > column to a v1 database is the v2 migration (`ALTER TABLE ... ADD COLUMN`,
 > §10.2). The `messages` table, the `total_tokens` column, and the removal of
 > the old `snapshot` column are the v3 migration (§10.2).
+>
+> `title` (schema v4) is the session's human-readable name: set **once**, from
+> the first user-*sent* message (whitespace collapsed, capped at 80 chars), so
+> internal prompts that go through `run()` (compact) can never claim it.
+> `clear` resets it to null (a fresh conversation titles itself anew);
+> `compact` keeps it across its internal clear (a continuation of the same
+> conversation); `fork` copies it; an image-only first send leaves it null.
+> Sessions persisted before v4 are backfilled at startup from their first user
+> message. The web UI falls back to the `cwd` basename when it is null.
 
 ### 5.3 Runtime model
 
@@ -181,7 +191,8 @@ the raw `messages` are not included in list responses):
 //   id, cwd, model, status, created_at, last_activity, last_error?,
 //   message_count,   // = messages.length (incl. the derived system prompt)
 //   total_tokens,    // = sessions.total_tokens
-//   archived         // boolean; false by default
+//   archived,        // boolean; false by default
+//   title            // nullable string; auto-set from the first user-sent message (§5.2)
 // }
 ```
 
@@ -293,6 +304,7 @@ endpoint and the static web UI (§7.7). Errors use `4xx`/`5xx` with
   "total_tokens": 18334,
   "last_error": null,
   "archived": false,
+  "title": "what is this project about?",
   "messages": [ { "role": "system", "content": "…" }, { "role": "user", "content": "…" } ]
 }
 ```
@@ -521,6 +533,7 @@ get the version bump.
 | 1 | Initial schema |
 | 2 | `ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0` (§5.2) |
 | 3 | `messages` table (one row per message); `sessions.total_tokens` column; v2 `snapshot` blobs imported into `messages` (system prompts dropped) and `ALTER TABLE sessions DROP COLUMN snapshot` (§5.2) |
+| 4 | `ALTER TABLE sessions ADD COLUMN title TEXT` — the auto-title column (§5.2) |
 
 ---
 

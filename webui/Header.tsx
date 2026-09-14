@@ -74,7 +74,7 @@ const Header = ({ cfg, theme, sideOpen, onSideToggle, onThemeToggle, view, onAct
         {view
           ? (<span class="flex items-center gap-2 min-w-0">
             <StatusDot status={view.status} size="w-[7px] h-[7px]" title={view.status ?? 'idle'} />
-            <span title={view.cwd ?? ''} class="text-dim text-[.82rem] whitespace-nowrap overflow-hidden text-ellipsis">{baseName(view.cwd ?? '')}</span>
+            <span title={view.cwd ?? ''} class="text-dim text-[.82rem] whitespace-nowrap overflow-hidden text-ellipsis">{view.title ?? baseName(view.cwd ?? '')}</span>
           </span>)
           : <span class="text-dim text-xs min-w-0 truncate">{cfg}</span>}
       </div>
