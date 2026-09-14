@@ -1,6 +1,7 @@
 import { useRef, useLayoutEffect, useState } from 'preact/hooks';
 import { IconBtn, Kbd } from './primitives';
 import { IcSend, IcStop, IcAttach } from './icons';
+import { parseCommand, SLASH_COMMANDS } from './util';
 
 // The single circular action slot: the accent send when idle, morphing in place
 // to a red stop while a run is in flight (so the bar never reflows).
@@ -62,9 +63,25 @@ export const InputBar = ({ running, current, value, onInput, onKey, onSend, onSt
 
   const canSend = (value?.trim().length > 0 || attachments.length > 0) && !running;
 
+  // While a slash command is being typed (exact name, no arg yet), its
+  // one-line hint takes the action bar's slack space — the native datalist
+  // popup can't carry descriptions.
+  const parsed = value?.startsWith('/') ? parseCommand(value) : null;
+  const hint = parsed && !parsed.arg
+    ? SLASH_COMMANDS.find((c) => c.name === parsed.name)?.hint ?? null
+    : null;
+  // Preact's textarea typings predate the HTML `list` attribute — route it
+  // through a spread. Attaches only while the text starts with `/`.
+  const listAttr = value?.startsWith('/') ? { list: 'slash-commands' } : {};
+
   return (
     <div class="px-3 py-2.5"
          {...(visionCapable ? { onDragEnter, onDragLeave, onDragOver, onDrop } : {})}>
+      {/* Native command palette: the browser filters these as you type (the
+          list only attaches while the text starts with `/`). */}
+      <datalist id="slash-commands">
+        {SLASH_COMMANDS.map((c) => <option key={c.name} value={`/${c.name}`}>{c.hint}</option>)}
+      </datalist>
       {/* Field card: frames the textarea + action bar, lights up on focus. */}
       <div class={`mx-auto max-w-3xl border rounded-[15px] bg-field overflow-hidden transition
                   focus-within:border-accent focus-within:ring-[3px] focus-within:ring-accent/20
@@ -88,7 +105,8 @@ export const InputBar = ({ running, current, value, onInput, onKey, onSend, onSt
              of the viewport, after which it scrolls internally. While running it
              looks disabled (faded) but stays focused so you can type ahead;
              Enter is a no-op until the run ends. */}
-        <textarea ref={ref} value={value} onInput={onInput} onKeyDown={onKey} onPaste={visionCapable ? onPaste : null}
+        <textarea ref={ref} value={value} {...listAttr}
+                  onInput={onInput} onKeyDown={onKey} onPaste={visionCapable ? onPaste : null}
                   placeholder="Message…  ( / for commands )"
                   class={`w-full block [field-sizing:content] min-h-[52px] max-h-[33dvh] resize-none overflow-y-auto
                           bg-transparent text-ink py-3 px-3.5 leading-[1.5] placeholder:text-dim focus:outline-none
@@ -105,7 +123,9 @@ export const InputBar = ({ running, current, value, onInput, onKey, onSend, onSt
               <IcAttach />
             </IconBtn>
           </>) : null}
-          <span class="flex-1"></span>
+          {hint
+            ? <span class="flex-1 text-right text-[11px] text-text3 truncate" title={hint}>{hint}</span>
+            : <span class="flex-1"></span>}
           <span class="hidden sm:flex items-center gap-1.5 text-[11px] text-dim select-none">
             <Kbd>↵</Kbd> send <Kbd>⇧↵</Kbd> newline
           </span>

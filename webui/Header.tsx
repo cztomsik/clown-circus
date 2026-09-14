@@ -1,7 +1,7 @@
 import { IconBtn, Menu, StatusDot } from './primitives';
 import { ModelSelect } from './ModelSelect';
-import { baseName } from './util';
-import { AppIcon, IcHamburger, IcDots, IcSun, IcMoon, IcCode, IcArchive, IcTrash } from './icons';
+import { baseName, fmtTokens } from './util';
+import { AppIcon, IcHamburger, IcDots, IcSun, IcMoon, IcCode, IcArchive, IcTrash, IcX } from './icons';
 
 // The session-level actions for the ⋮ dropdown. Only things that aren't
 // reachable from the composer live here — conversation manipulation
@@ -16,8 +16,8 @@ const menuItems = (view) => view ? [
   { key: 'delete', label: 'Delete session', icon: IcTrash, title: 'delete this session', danger: true, rule: true },
 ] : [];
 
-const Header = ({ cfg, theme, sideOpen, onSideToggle, onThemeToggle, view, onAction, onDel,
-                   model, onModelChange, models, effort, onEffortChange }) => {
+const Header = ({ cfg, theme, sideOpen, onSideToggle, onThemeToggle, view, onAction, onDel, onClose,
+                   model, onModelChange, models, visionModels, effort, onEffortChange }) => {
   const run = (key) => {
     if (key === 'open-vscode') {
       window.open('vscode://file/' + encodeURI(view.cwd ?? ''));
@@ -42,6 +42,8 @@ const Header = ({ cfg, theme, sideOpen, onSideToggle, onThemeToggle, view, onAct
           ? (<span class="flex items-center gap-2 min-w-0">
             <StatusDot status={view.status} size="w-[7px] h-[7px]" title={view.status ?? 'idle'} />
             <span title={view.cwd ?? ''} class="text-dim text-[.82rem] whitespace-nowrap overflow-hidden text-ellipsis">{view.title ?? baseName(view.cwd ?? '')}</span>
+            {view.tokens ? <span title="total tokens in the last LLM response" class="text-text3 text-[.7rem] whitespace-nowrap flex-none">{fmtTokens(view.tokens)} tok</span> : null}
+            <IconBtn title="close session (back to the start screen)" aria-label="close session" onClick={onClose}><IcX /></IconBtn>
           </span>)
           : <span class="text-dim text-xs min-w-0 truncate">{cfg}</span>}
       </div>
@@ -52,7 +54,8 @@ const Header = ({ cfg, theme, sideOpen, onSideToggle, onThemeToggle, view, onAct
       <div class="flex items-center gap-[7px]">
         {/* Model picker (opens the model + reasoning-effort modal) */}
         <ModelSelect models={models} model={model} effort={effort}
-                     onPickModel={onModelChange} onPickEffort={onEffortChange} />
+                     onPickModel={onModelChange} onPickEffort={onEffortChange}
+                     visionModels={visionModels} />
 
         {/* Session actions (⋮) — only when a session is open */}
         {view ? (

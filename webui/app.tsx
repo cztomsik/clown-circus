@@ -1,5 +1,5 @@
 import { render } from 'preact';
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useRef } from 'preact/hooks';
 import { api, post } from './api';
 import { baseName, parseCommand } from './util';
 import { prepareImageDataURL } from './image';
@@ -15,6 +15,10 @@ import { Main } from './Main';
 const isWide = () => window.matchMedia('(min-width: 768px)').matches;
 // localStorage key for a session's composer draft.
 const inputKey = (id) => `clown-circus-input-${id}`;
+// Deep link: #/session/<id>. The hash is the routing source — select() writes
+// it, closing clears it, and load / browser back-forward re-derive the open
+// session from it. Null when the hash names no session (the welcome state).
+const parseHash = () => location.hash.match(/^#\/session\/(.+)$/)?.[1] ?? null;
 // Default for /trim when no turn count is typed: how many trailing turns to
 // leave untouched. A web-UI convenience — the REST endpoint needs an explicit
 // `keep`.
@@ -25,7 +29,7 @@ const App = () => {
   const { flash, flashMsg } = useFlash();
   const { theme, toggleTheme } = useTheme();
   const { sessions, refresh } = useSessions();
-  const { models, model, setModel, isVisionCapable } = useModels();
+  const { models, model, setModel, isVisionCapable, visionModels } = useModels();
   const [current, setCurrent] = useState(null);
   const { view, setView, patch, clear } = useSessionView(current, { refresh, onFlash: flashMsg });
   const { attachments, set: setAttachments, addFiles, removeAttachment } = useAttachments(flashMsg);
@@ -96,8 +100,24 @@ const App = () => {
     if (s && view?.title !== s.title) patch({ title: s.title });
   }, [sessions, current, view?.title]);
 
+  // The id we last wrote into the hash — our own hashchange echo must be a
+  // no-op, only external navigation (back/forward/pasted link) acts on it.
+  const hashIdRef = useRef(null);
+
+  // Deselect the open session: clear the view and drop the hash (pushState, so
+  // browser back re-opens the session). The hash write goes through here too,
+  // so a failed select never leaves a dead link behind.
+  const closeSession = () => {
+    hashIdRef.current = null;
+    if (location.hash) history.pushState(null, '', location.pathname + location.search);
+    setCurrent(null);
+    clear();
+  };
+
   const select = async (id) => {
     if (!isWide()) setSideOpen(false); // on mobile, a tap on a session reveals the chat
+    hashIdRef.current = id;
+    if (location.hash !== `#/session/${id}`) location.hash = `#/session/${id}`;
     setCurrent(id);
     refresh();
     try {
@@ -112,8 +132,7 @@ const App = () => {
       setEffort(d.reasoning_effort ?? 'medium');
     } catch (err) {
       flashMsg(err.message);
-      setCurrent(null);
-      clear();
+      closeSession();
     }
   };
 
@@ -220,18 +239,40 @@ const App = () => {
     try {
       await api(`/sessions/${current}`, { method: 'DELETE' });
       try { localStorage.removeItem(inputKey(current)); } catch {}
-      setCurrent(null);
-      clear();
+      closeSession();
       await refresh();
     } catch (err) { flashMsg(err.message); }
   };
+
+  // Deep links: act on *external* hash changes (browser back/forward, a
+  // pasted #/session/<id>) — our own writes are skipped via hashIdRef.
+  useEffect(() => {
+    const onHash = () => {
+      const id = parseHash();
+      if (id === hashIdRef.current) return; // echo of our own write
+      if (id) void select(id);
+      else if (hashIdRef.current !== null) closeSession();
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
+  // On load, restore the session the URL points at once the list is known; a
+  // stale link (session already gone) is dropped from the URL, not selected.
+  useEffect(() => {
+    if (current || !sessions.length) return;
+    const id = parseHash();
+    if (!id) return;
+    if (sessions.some((s) => s.id === id)) void select(id);
+    else { hashIdRef.current = null; history.replaceState(null, '', location.pathname + location.search); }
+  }, [sessions, current]);
 
   return (
     <div class="h-dvh flex flex-col">
       <Header cfg={cfg} theme={theme} sideOpen={sideOpen}
               onSideToggle={() => setSideOpen((o) => !o)} onThemeToggle={toggleTheme}
-              view={view} onAction={handleAction} onDel={del}
-              model={model} onModelChange={setModel} models={models}
+              view={view} onAction={handleAction} onDel={del} onClose={closeSession}
+              model={model} onModelChange={setModel} models={models} visionModels={visionModels}
               effort={effort} onEffortChange={setEffort} />
       <div class="flex-1 flex min-h-0">
         {sideOpen ? (

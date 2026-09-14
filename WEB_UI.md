@@ -60,9 +60,10 @@ primary interface — the UI is just one client of it.
   the stateful `App`
   root component and its mount: all state and side effects live here as
   `useState`/`useEffect`/`useRef` (`preact/hooks`) — the config/models boot, the
-  10s session poll, theme, the SSE subscription (via `openSessionEvents`), and
-  the send/stop/undo/delete handlers plus the composer `/cmd` dispatch
-  (`runCommand`) — then it composes the presentational
+  10s session poll, theme, the SSE subscription (via `openSessionEvents`), the
+  client-side hash routing (see **Deep links**), and the send/stop/undo/delete
+  handlers plus the composer `/cmd` dispatch (`runCommand`) — then it composes
+  the presentational
   modules below and mounts into `#root` via Preact's `render`. Markup is
   plain **Preact JSX** (`.tsx`, automatic runtime → `preact/jsx-runtime`;
   esbuild does the transform — no `h`/`htm` prelude anywhere).
@@ -93,7 +94,8 @@ primary interface — the UI is just one client of it.
   button that opens a modal with the model list + a reasoning-effort toggle;
   client-side, picks the model for the next send — see **Header**), a `⋮`
   dropdown holding
-  the session-level actions (see **Header** under Features), and the theme toggle. All of this shares one row, so it
+  the session-level actions (see **Header** under Features), a `×`
+  close-session button, and the theme toggle. All of this shares one row, so it
   stays compact on mobile.
 - **`webui/Sidebar.tsx`** — `Sidebar` + `SessionList`/`SessionItem`: the
   project-grouped session list and the new-session form (a `cwd` input + a
@@ -153,15 +155,22 @@ primary interface — the UI is just one client of it.
 - **`webui/InputBar.tsx`** — the composer; owns its `useRef`/`useLayoutEffect`
   autofocus and its `SEND_BTN` class string. Handles the image attachment
   affordance (file picker, paste, drag-drop, thumbnail strip) gated on the
-  current model's vision capability.
+  current model's vision capability, and the slash-command palette (a native
+  `<datalist>` the browser filters as you type + a one-line description in the
+  action bar — the datalist popup can't carry descriptions; the command table
+  is `SLASH_COMMANDS` in `webui/util.ts`).
 - **`webui/Main.tsx`** — the right-hand pane: composes `ErrorBox`, `Todos`,
   `Messages`, and `InputBar` (or a "select a session" placeholder when none is
   selected). The session status/actions no longer live here — they moved into
   the unified `Header`.
 - **`webui/util.ts`** — a small module of pure, dependency-free helpers
-  (`baseName`, `parseCommand`, `modelId`, `isVisionModel`, `reasoningText`,
-  `timeAgo`, `prettyArgs`, `parseArgs`, `parseTodos`, `extractTodos`), exported
-  by name and pulled in with `import { … } from './util'`. `parseCommand(text)`
+  (`baseName`, `SLASH_COMMANDS`, `fmtTokens`, `parseCommand`, `modelId`,
+  `isVisionModel`, `reasoningText`, `timeAgo`, `prettyArgs`, `parseArgs`,
+  `parseTodos`, `extractTodos`), exported
+  by name and pulled in with `import { … } from './util'`. `SLASH_COMMANDS` is
+  the composer's command table (`{ name, hint }` — the datalist options + the
+  action-bar hints); `fmtTokens(n)` compacts the session's token count for the
+  header (`1234` → `1.2k`, `2048000` → `2m`). `parseCommand(text)`
   parses a composer `/cmd [arg]` line (returns `null` for a plain message),
   `modelId(m)` normalises a `/models` entry to a plain id, and `isVisionModel(m)`
   decides whether an entry accepts image input — honours
@@ -222,8 +231,11 @@ primary interface — the UI is just one client of it.
   separate global header and a per-session toolbar. Left to right: a `☰`
   sidebar-toggle button, the `clown-circus` brand (hidden below `sm` to save
   room), then either the **session** status badge + title (the session's
-  auto-title — `title`, cwd basename fallback — with a full-path tooltip,
-  when a session is open) or the **config** summary
+  auto-title — `title`, cwd basename fallback — with a full-path tooltip, when
+  a session is open) + a compact **token readout** (`126 tok`, `18.4k tok` —
+  the session's `total_tokens`, hidden at 0, live-updated by the SSE `done`
+  event) + a **`×` close-session button** (deselects the session — back to the
+  welcome state; see **Deep links**) or the **config** summary
   (`base_url · db file`, when none is), then the **model picker**
   (`ModelSelect`), then the theme toggle. When a session is open, a `⋮` button
   (between the summary and the model picker) opens a dropdown of the
@@ -238,7 +250,9 @@ primary interface — the UI is just one client of it.
 - **`webui/ModelSelect.tsx`** — the header's **model picker**: a
   select-styled button (model name + a dim effort suffix + chevron) that
   opens a `Modal` with the model list (radio-style rows, `✓` on the current
-  one — a pick applies and closes) and a 4-way **reasoning-effort** segmented
+  one — a pick applies and closes; an **eye badge** marks the rows that accept
+  image input, driven by the same `visionModels` set that gates the composer's
+  attachment affordance) and a 4-way **reasoning-effort** segmented
   toggle (Low / Medium / High / XHigh — applied in place so both can be set
   in one open). Pure client state, like the model: both values ride in the
   body of every `POST …/messages` / `POST /sessions` and are pre-filled from
@@ -339,7 +353,13 @@ primary interface — the UI is just one client of it.
     replay ring (SPEC §7.5) covers brief disconnects.
 - **Composer** — textarea, Enter to send, Shift+Enter for newline; it also
   accepts `/cmd` slash-commands (see **Commands**). The placeholder hints at
-  this: `message (Enter to send, / for commands)`. While the
+  this: `message (Enter to send, / for commands)`. While the text starts with
+  `/` the textarea carries a native **`<datalist>`** of the commands — the
+  browser's own popup filters as you type (pick one and the box takes over);
+  the datalist is detached for non-`/` text so it never fires on ordinary
+  typing. A **one-line description** of the command being typed takes the
+  action bar's slack space (the datalist popup can't carry descriptions), and
+  hides once an argument is typed (so `/trim` hints its optional `[turns]`). While the
   session is running the box **looks disabled** (faded, `opacity-50`) but stays
   **enabled and editable**, so you keep focus and can type ahead; Enter is a
   no-op until the session is idle (single-flight, so it never fires a second
@@ -392,7 +412,19 @@ primary interface — the UI is just one client of it.
   work while a run is in flight; plain messages still no-op while running
   (type-ahead preserved). The command text is cleared on a recognized command
   (and re-filled for `/undo`); an unknown `/…` keeps the text in the box so it
-  can be edited and is reported in the error banner.
+  can be edited and is reported in the error banner. The commands are
+  **discoverable** without knowing them: the composer's datalist palette
+  (see **Composer**) filters `SLASH_COMMANDS` as you type, and each entry's
+  one-line hint doubles as its documentation.
+- **Deep links** — the URL hash routes: selecting a session writes
+  `#/session/<id>` (the hash is the routing source; `select()` writes it, the
+  header's `×` clears it via `history.pushState`, so browser **back re-opens
+  the session**). On load, once the session list arrives, the linked session
+  is restored (a reload lands back on the open session, not the welcome
+  state); a stale link (session deleted) is dropped from the URL instead of
+  selected. A `hashchange` listener covers back/forward and pasted links;
+  the app's own hash writes are skipped (tracked in a ref) so navigation
+  never double-selects.
 - **Controls** — split by surface:
   - **Session-level** — the `⋮` dropdown in the unified header (see
     **Header**): `open in vscode` (client-side only — a

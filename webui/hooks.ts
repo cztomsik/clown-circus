@@ -103,7 +103,7 @@ export const useModels = () => {
   }, []);
   useEffect(() => { if (models.length && !models.includes(model)) setModel(models[0]); }, [models, model]);
   const isVisionCapable = (id) => !knownModelIds.has(id) || visionModels.has(id);
-  return { models, model, setModel, isVisionCapable };
+  return { models, model, setModel, isVisionCapable, visionModels };
 };
 
 // The open session's live view + its SSE subscription. `view` is the detail

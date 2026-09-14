@@ -42,17 +42,17 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 | `src/skills/init.md` | Built-in `/init` skill: explore the project and write an `AGENTS.md`. |
 | `webui/index.html` | Web UI shell served at `/`. Thin page: one `<link>` to `/vendor/tailwind.css`, a `#root` mount, and `<script type="module" src="/vendor/bundle.js">` — no static UI markup. |
 | `webui/styles.css` | Single source of all web-UI styles: `@import "tailwindcss"`, the `@theme` colour tokens (dark + light), and the plain CSS utilities don't cover (`.material`, `.menu-card`, `.sw`, `.spinner`, …). Compiled at startup by `@tailwindcss/cli` into `webui/vendor/tailwind.css` (rebuilt on any `webui/` change). |
-| `webui/app.tsx` | Root Preact component (bundle entry): owns all state + side effects (config/models fetch, 10s poll, SSE, per-session drafts, actions) and composes the layout. |
+| `webui/app.tsx` | Root Preact component (bundle entry): owns all state + side effects (config/models fetch, 10s poll, SSE, per-session drafts, `#/session/<id>` hash routing, actions) and composes the layout. |
 | `webui/primitives.tsx` | Mini UI kit: the small shared building blocks — `IconBtn`, `PrimaryBtn`, `StatusDot`, `Spinner`, `Switch`, `Menu` (dropdown). Class tokens used by only one primitive live with it; multi-component tokens live in `ui.ts`. |
-| `webui/Header.tsx` | Unified top bar: sidebar toggle, session status, model picker, theme toggle, and the ⋮ actions menu (open-in-vscode/archive/delete; open-in-vscode is a client-side `vscode://` URI, not a REST call). |
+| `webui/Header.tsx` | Unified top bar: sidebar toggle, session status + token readout, model picker, the × close-session button, theme toggle, and the ⋮ actions menu (open-in-vscode/archive/delete; open-in-vscode is a client-side `vscode://` URI, not a REST call). |
 | `webui/Sidebar.tsx` | Project-grouped session list + new-session form + the "show archived" toggle. |
 | `webui/Main.tsx` | Right-hand pane composition (error banner, todos, transcript, composer). |
 | `webui/Message.tsx` | Transcript rendering: user/assistant/tool blocks, collapsible tool-call pairs, reasoning. |
 | `webui/ToolCall.tsx` | Per-tool argument views (collapsible tool-call bodies) + the collapsed-summary title. |
-| `webui/InputBar.tsx` | Composer: textarea, send/stop, slash commands, image attachments (paste + drag). |
+| `webui/InputBar.tsx` | Composer: textarea, send/stop, slash commands (native `<datalist>` palette + one-line hint), image attachments (paste + drag). |
 | `webui/Todos.tsx` | Floating collapsible todo panel. |
 | `webui/api.ts` | REST + SSE client helpers (no Preact/DOM). |
-| `webui/util.ts` | Pure helpers (no DOM/Preact): baseName, firstLine, parseCommand, modelId, isVisionModel, reasoningText, timeAgo, prettyArgs, parseArgs, parseTodos, extractTodos. |
+| `webui/util.ts` | Pure helpers (no DOM/Preact): baseName, SLASH_COMMANDS, fmtTokens, firstLine, parseCommand, modelId, isVisionModel, reasoningText, timeAgo, prettyArgs, parseArgs, parseTodos, extractTodos. |
 | `webui/image.ts` | Client-side image helpers (FileReader read, canvas downscale). |
 | `webui/Markdown.tsx` | Markdown component (marked + DOMPurify → `dangerouslySetInnerHTML`); the sole `dangerouslySetInnerHTML` in the UI. |
 | `webui/ui.ts` | Shared Tailwind class tokens used by more than one component (`PRE`). |

@@ -17,6 +17,21 @@ export const firstLine = (s, n = 80) => {
   return l.length > n ? l.slice(0, n) + '…' : l;
 };
 
+// The composer's slash commands (what `/` completes) + a one-line hint each.
+// The hints show in the composer's action bar while the command is being typed
+// — the native <datalist> popup can't carry descriptions.
+export const SLASH_COMMANDS = [
+  { name: 'retry', hint: 're-run the loop from the last user message' },
+  { name: 'retry-turn', hint: 're-run from before the last assistant reply' },
+  { name: 'stop', hint: 'stop the running turn' },
+  { name: 'undo', hint: 'undo the last user message — it returns to the composer' },
+  { name: 'trim', hint: 'trim bulky tool results + CoT from old turns · optional: turns to keep' },
+  { name: 'compact', hint: 'summarize the conversation to free context' },
+  { name: 'clear', hint: 'clear the transcript (keeps the session)' },
+  { name: 'init', hint: 'explore the project and write an AGENTS.md' },
+  { name: 'fork', hint: 'branch this transcript into a new session' },
+];
+
 // Parse a `/cmd [arg]` line from the composer. Returns null for a plain message
 // (no leading slash); otherwise { name, arg } with the command lowercased and
 // everything after the first run of whitespace as `arg`.
@@ -25,6 +40,14 @@ export const parseCommand = (text: string) => {
   if (!t.startsWith('/')) return null;
   const parts = t.slice(1).trim().split(/\s+/);
   return { name: (parts.shift() ?? '').toLowerCase(), arg: parts.join(' ') };
+};
+
+// Compact the session's token count for the header (1234 → 1.2k, 2048000 → 2m).
+export const fmtTokens = (n) => {
+  if (!n) return '';
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1).replace(/\.0$/, '')}m`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1).replace(/\.0$/, '')}k`;
+  return String(n);
 };
 
 // Normalise a /models entry ({id} | {name} | "id") to a plain id string.

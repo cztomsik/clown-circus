@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import { Modal } from './primitives';
-import { IcCheck, IcChevron } from './icons';
+import { IcCheck, IcChevron, IcEye } from './icons';
 
 // The reasoning-effort levels the backend accepts in the chat body (mirrors
 // REASONING_EFFORTS in src/llm.ts); [value, label] pairs for the toggle.
@@ -12,7 +12,7 @@ const EFFORTS = [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh
 // get pre-filled from the open session's last-used values. A model pick
 // applies and closes; the effort toggle applies in place so both can be set
 // in one open.
-const ModelSelect = ({ models, model, effort, onPickModel, onPickEffort }) => {
+const ModelSelect = ({ models, model, effort, onPickModel, onPickEffort, visionModels = new Set() }) => {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -33,6 +33,9 @@ const ModelSelect = ({ models, model, effort, onPickModel, onPickEffort }) => {
                 {m === model ? <IcCheck /> : null}
               </span>
               <span class="truncate text-ink">{m}</span>
+              {visionModels.has(m)
+                ? <span title="accepts image input" class="text-text3 flex-none"><IcEye /></span>
+                : null}
             </button>
           ))}
         </div>
