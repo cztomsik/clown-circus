@@ -247,7 +247,8 @@ const App = () => {
             <div class="flex-1 bg-black/50 md:hidden" onClick={() => setSideOpen(false)}></div>
           </div>
         ) : null}
-        <Main view={view} flash={flash} input={input} setInput={setInput}
+        <Main view={view} flash={flash} cfg={cfg} sessions={sessions} onSelect={select}
+              input={input} setInput={setInput}
               attachments={attachments} onAddFiles={addFiles} onRemoveAttachment={removeAttachment}
               visionCapable={isVisionCapable(view?.model)}
               onSend={send} onStop={stop} onKey={onKey} />

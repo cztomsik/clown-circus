@@ -4,6 +4,14 @@
 // ones sized by the parent). All take no props and inherit `currentColor`.
 
 // ── header / chrome ─────────────────────────────────────────────────────────
+// The brand mark: a gradient rounded square with a right arrow (the "send
+// the agent off" gesture). Shared by the header and the empty state.
+export const AppIcon = () => (
+  <span class="w-[25px] h-[25px] rounded-[7px] grid place-items-center flex-none text-white"
+        style={{ background: 'linear-gradient(145deg, #5ac8fa, #0a84ff)', boxShadow: 'inset 0 .5px 0 rgba(255,255,255,.5), 0 1px 2px rgba(0,0,0,.18)' }}>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+  </span>
+);
 export const IcHamburger = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
 );

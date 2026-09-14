@@ -1,7 +1,7 @@
 import { IconBtn, Menu, StatusDot } from './primitives';
 import { ModelSelect } from './ModelSelect';
 import { baseName } from './util';
-import { IcHamburger, IcDots, IcSun, IcMoon, IcCode, IcArchive, IcTrash } from './icons';
+import { AppIcon, IcHamburger, IcDots, IcSun, IcMoon, IcCode, IcArchive, IcTrash } from './icons';
 
 // The session-level actions for the ⋮ dropdown. Only things that aren't
 // reachable from the composer live here — conversation manipulation
@@ -15,13 +15,6 @@ const menuItems = (view) => view ? [
     title: view.archived ? 'restore to the default session list' : 'hide from the default session list (kept for later)' },
   { key: 'delete', label: 'Delete session', icon: IcTrash, title: 'delete this session', danger: true, rule: true },
 ] : [];
-
-const AppIcon = () => (
-  <span class="w-[25px] h-[25px] rounded-[7px] grid place-items-center flex-none text-white"
-        style={{ background: 'linear-gradient(145deg, #5ac8fa, #0a84ff)', boxShadow: 'inset 0 .5px 0 rgba(255,255,255,.5), 0 1px 2px rgba(0,0,0,.18)' }}>
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-  </span>
-);
 
 const Header = ({ cfg, theme, sideOpen, onSideToggle, onThemeToggle, view, onAction, onDel,
                    model, onModelChange, models, effort, onEffortChange }) => {
