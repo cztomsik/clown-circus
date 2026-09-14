@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect, useLayoutEffect } from 'preact/hooks';
 import { PRE } from './ui';
-import { Spinner } from './primitives';
+import { Spinner, Dot, Guide } from './primitives';
 import { prettyArgs, parseArgs, reasoningText, firstLine } from './util';
 import { ToolCall, toolCallTitle } from './ToolCall';
 import { Markdown } from './Markdown';
@@ -94,15 +94,15 @@ const ToolPair = ({ tc, result, cwd }) => {
       <summary class="grid grid-cols-[6px_minmax(0,auto)_minmax(0,1fr)_auto] items-baseline gap-x-2.5
                       py-[3px] pl-1 pr-1.5 text-xs cursor-pointer select-none list-none
                       rounded hover:bg-material2 transition-colors">
-        <span class="w-[5px] h-[5px] rounded-full bg-text3 flex-none self-center opacity-85"></span>
+        <Dot />
         <span class="text-dim font-medium whitespace-nowrap">{name}</span>
         {arg ? <span class="text-text3 whitespace-nowrap overflow-hidden text-ellipsis font-mono">{arg}</span> : null}
         {result ? <span class={`${failed ? 'text-err' : 'text-text3'} text-[.72rem] justify-self-end whitespace-nowrap opacity-90 font-mono`}>{firstLine(result.content, 40)}</span> : null}
       </summary>
-      <div class="mb-1.5 ml-[7px] py-1 pl-3.5 border-l border-line/70 space-y-1.5">
+      <Guide cls="space-y-1.5">
         <ToolCall name={name} args={args} raw={raw} cwd={cwd} />
         {result ? <ToolResult content={result.content} /> : null}
-      </div>
+      </Guide>
     </details>
   );
 };
@@ -117,13 +117,13 @@ const Reasoning = ({ text }) => (
     <summary class="grid grid-cols-[6px_minmax(0,auto)_minmax(0,1fr)_auto] items-baseline gap-x-2.5
                     py-[3px] pl-1 pr-1.5 text-xs cursor-pointer select-none list-none
                     rounded hover:bg-material2 transition-colors">
-      <span class="w-[5px] h-[5px] rounded-full bg-text3 flex-none self-center opacity-85"></span>
+      <Dot />
       <span class="text-dim font-medium whitespace-nowrap">reasoning</span>
       <span class="text-text3 whitespace-nowrap overflow-hidden text-ellipsis font-mono">{firstLine(text, 60)}</span>
     </summary>
-    <div class="mb-1.5 ml-[7px] py-1 pl-3.5 border-l border-line/70">
+    <Guide>
       <Pre text={text} cls="m-0 text-dim text-xs whitespace-pre-wrap break-words" />
-    </div>
+    </Guide>
   </details>
 );
 

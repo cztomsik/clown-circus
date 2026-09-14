@@ -1,10 +1,6 @@
 import { useRef, useLayoutEffect, useState } from 'preact/hooks';
-import { IconBtn } from './primitives';
-
-// A bottom-bar key hint (the composer's ↵ / ⇧↵ affordances).
-const Kbd = ({ children }) => (
-  <kbd class="text-[11px] leading-none px-1 py-[1px] rounded border border-line bg-line/40 text-dim">{children}</kbd>
-);
+import { IconBtn, Kbd } from './primitives';
+import { IcSend, IcStop, IcAttach } from './icons';
 
 // The single circular action slot: the accent send when idle, morphing in place
 // to a red stop while a run is in flight (so the bar never reflows).
@@ -12,15 +8,14 @@ const Action = ({ running, canSend, onSend, onStop }) => running
   ? (
     <button class="w-8 h-8 rounded-full grid place-items-center bg-err text-white cursor-pointer hover:brightness-105 transition"
             title="stop the running turn" aria-label="stop" onClick={onStop}>
-      <svg viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4"><rect x="6" y="6" width="12" height="12" rx="2.5" /></svg>
+      <IcStop />
     </button>
   )
   : (
     <button class="w-8 h-8 rounded-full grid place-items-center bg-accent text-white cursor-pointer hover:brightness-105 transition
                    disabled:bg-line disabled:text-dim disabled:cursor-default disabled:hover:brightness-100"
             title="send" aria-label="send" disabled={!canSend} onClick={onSend}>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
-           stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+      <IcSend />
     </button>
   );
 
@@ -107,10 +102,7 @@ export const InputBar = ({ running, current, value, onInput, onKey, onSend, onSt
             <input ref={fileRef} type="file" accept="image/*" multiple class="sr-only" onChange={onFileChange} />
             <IconBtn title="attach image" aria-label="attach image"
                      onClick={() => fileRef.current?.click()}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
-                   stroke-linecap="round" stroke-linejoin="round" class="w-[17px] h-[17px]">
-                <rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" />
-              </svg>
+              <IcAttach />
             </IconBtn>
           </>) : null}
           <span class="flex-1"></span>

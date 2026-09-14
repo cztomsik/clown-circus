@@ -1,6 +1,7 @@
 import { Fragment } from 'preact';
 import { baseName, timeAgo } from './util';
 import { PrimaryBtn, StatusDot, Switch } from './primitives';
+import { IcPlus } from './icons';
 
 // ── session list item ─────────────────────────────────────────────────
 const SessionItem = ({ s, active, onSelect }) => (
@@ -71,7 +72,7 @@ export const Sidebar = ({ cls, sessions, current, onNew, onSelect, newCwd, setNe
       <div class="p-3.5 pb-2.5 flex flex-col gap-2">
         <form class="flex flex-col gap-2" onSubmit={submit}>
           <PrimaryBtn type="submit">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            <IcPlus />
             New Session
           </PrimaryBtn>
           <input value={newCwd} onInput={(e: any) => setNewCwd(e.target.value)} placeholder="/path/to/cwd" required autocomplete="off"

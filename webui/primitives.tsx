@@ -32,6 +32,23 @@ export const StatusDot = ({ status, size = 'w-2 h-2', title = null }) => (
 // The CSS spinner from index.html — the single "in flight" glyph.
 export const Spinner = ({ cls = '' }) => <span class={`spinner ${cls}`}></span>;
 
+// The small bullet that leads a quiet tool/reasoning line in the transcript
+// (Message.tsx). `cls` can retint it (the Activity line uses a dimmer dot).
+export const Dot = ({ cls = 'bg-text3' }) => (
+  <span class={`w-[5px] h-[5px] rounded-full ${cls} flex-none self-center opacity-85`}></span>
+);
+
+// The faint left-guided body that expands under a quiet line's summary.
+// `cls` adds per-caller spacing (e.g. `space-y-1.5`).
+export const Guide = ({ cls = '', children }) => (
+  <div class={`mb-1.5 ml-[7px] py-1 pl-3.5 border-l border-line/70 ${cls}`}>{children}</div>
+);
+
+// A bottom-bar key hint (the composer's ↵ / ⇧↵ affordances).
+export const Kbd = ({ children }) => (
+  <kbd class="text-[11px] leading-none px-1 py-[1px] rounded border border-line bg-line/40 text-dim">{children}</kbd>
+);
+
 // iOS-style on/off switch (the .sw CSS in index.html).
 export const Switch = ({ on, onToggle, label = null }) => (
   <button type="button" title={label} class={`sw ${on ? 'on' : ''}`} aria-pressed={on} onClick={onToggle}></button>
