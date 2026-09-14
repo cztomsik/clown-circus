@@ -108,8 +108,13 @@ const runCommand = (ctx, args) =>
 const writeTodos = (_ctx, _args) => 'Todos updated';
 
 const loadSkill = async (ctx, args) => {
-  if (args.skill_name === 'init') return BUILTIN_INIT;
-  return (await fsReadFile(resolve(ctx.cwd, `skills/${args.skill_name}.md`))).toString('utf8');
+  const name = args.skill_name;
+  if (name === 'init') return BUILTIN_INIT;
+  // A skill is a bare file name under <cwd>/skills — reject anything that
+  // could escape that directory (path separators / `..` traversal).
+  if (typeof name !== 'string' || /[/\\]/.test(name) || name === '.' || name === '..')
+    throw new Error(`invalid skill name: ${name}`);
+  return (await fsReadFile(resolve(ctx.cwd, `skills/${name}.md`))).toString('utf8');
 };
 
 // --- Registration -----------------------------------------------------------

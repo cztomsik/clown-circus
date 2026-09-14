@@ -4,7 +4,7 @@ import { runLoop } from './loop.ts';
 import { HttpError } from './errors.ts';
 import { config } from './config.ts';
 import { db } from './db.ts';
-import { llm } from './llm.ts';
+import { llm, LlmError } from './llm.ts';
 import { tools, toolSchemas } from './tools.ts';
 
 const MAX_EVENTS = 500; // bounded per-session replay ring for SSE `?since`
@@ -271,6 +271,14 @@ export class Session {
         timeoutMs: config.timeoutMs,
         signal: this.signal,
       });
+      // A stop issued while this LLM call was in flight aborts the shared
+      // signal only after the response has already been received. Drop the
+      // late turn instead of appending it: it would leave dangling tool_calls
+      // and (worse) race a concurrent clear/undo that already rewrote the
+      // transcript. Treat it as a clean stop, exactly like an aborted fetch.
+      // Checked before the token update so a dropped turn doesn't also clobber
+      // total_tokens.
+      if (this.signal?.aborted) throw new LlmError('aborted');
       if (usage.total_tokens) this.totalTokens = usage.total_tokens;
       const empty = (message.content == null || message.content === '') && !message.tool_calls?.length;
       // A truncated completion can yield tool_calls whose `arguments` is not
@@ -410,7 +418,11 @@ export class Session {
 
   clear() {
     if (this.running) this.stop();
-    this.messages = [{ role: 'system', content: buildSystemPrompt(this.cwd) }];
+    // Truncate in place (keep the array's identity) so an in-flight `next()`
+    // holding a reference can't strand a stale append on a discarded array.
+    // The system prompt is re-derived (picks up any AGENTS.md edits).
+    this.messages.length = 1;
+    this.messages[0] = { role: 'system', content: buildSystemPrompt(this.cwd) };
     const gone = this.msgIds;
     this.msgIds = [];
     if (gone.length) db.deleteMessages(gone);
