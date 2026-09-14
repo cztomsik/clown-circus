@@ -18,8 +18,8 @@ export const firstLine = (s, n = 80) => {
 };
 
 // The composer's slash commands (what `/` completes) + a one-line hint each.
-// The hints show in the composer's action bar while the command is being typed
-// — the native <datalist> popup can't carry descriptions.
+// The palette rows above the field show the hints while a command is being
+// chosen; a completed name shows its hint in the action bar instead.
 export const SLASH_COMMANDS = [
   { name: 'retry', hint: 're-run the loop from the last user message' },
   { name: 'retry-turn', hint: 're-run from before the last assistant reply' },
@@ -30,6 +30,7 @@ export const SLASH_COMMANDS = [
   { name: 'clear', hint: 'clear the transcript (keeps the session)' },
   { name: 'init', hint: 'explore the project and write an AGENTS.md' },
   { name: 'fork', hint: 'branch this transcript into a new session' },
+  { name: 'help', hint: 'list the available slash commands' },
 ];
 
 // Parse a `/cmd [arg]` line from the composer. Returns null for a plain message

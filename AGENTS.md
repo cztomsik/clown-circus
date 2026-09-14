@@ -49,7 +49,7 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 | `webui/Main.tsx` | Right-hand pane composition (error banner, todos, transcript, composer). |
 | `webui/Message.tsx` | Transcript rendering: user/assistant/tool blocks, collapsible tool-call pairs, reasoning. |
 | `webui/ToolCall.tsx` | Per-tool argument views (collapsible tool-call bodies) + the collapsed-summary title. |
-| `webui/InputBar.tsx` | Composer: textarea, send/stop, slash commands (native `<datalist>` palette + one-line hint), image attachments (paste + drag). |
+| `webui/InputBar.tsx` | Composer: textarea, send/stop, slash commands (app-rendered palette above the field — Chrome shows no native `<datalist>` on a `<textarea>` — + one-line hint), image attachments (paste + drag). |
 | `webui/Todos.tsx` | Floating collapsible todo panel. |
 | `webui/api.ts` | REST + SSE client helpers (no Preact/DOM). |
 | `webui/util.ts` | Pure helpers (no DOM/Preact): baseName, SLASH_COMMANDS, fmtTokens, firstLine, parseCommand, modelId, isVisionModel, reasoningText, timeAgo, prettyArgs, parseArgs, parseTodos, extractTodos. |

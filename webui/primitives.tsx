@@ -89,7 +89,8 @@ export const Modal = ({ open, onClose, title, children }) => {
 // closes whenever `resetKey` changes (e.g. the selected session). Items are
 // `{ key, label, icon, title, danger?, rule? }` — `rule` draws a separator
 // above the item, `danger` tints it as a destructive action.
-const MENU_ITEM = 'flex items-center gap-[11px] w-full px-2.5 py-[7px] rounded-lg text-[.83rem] cursor-pointer transition-colors';
+// Shared by the ⋮ dropdown items and the composer's slash-command palette.
+export const MENU_ITEM = 'flex items-center gap-[11px] w-full px-2.5 py-[7px] rounded-lg text-[.83rem] cursor-pointer transition-colors';
 export const Menu = ({ trigger, title, ariaLabel, heading = null, items, resetKey = null, onSelect }) => {
   const [open, setOpen] = useState(false);
   useEffect(() => { setOpen(false); }, [resetKey]);

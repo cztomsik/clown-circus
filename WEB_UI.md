@@ -155,10 +155,12 @@ primary interface — the UI is just one client of it.
 - **`webui/InputBar.tsx`** — the composer; owns its `useRef`/`useLayoutEffect`
   autofocus and its `SEND_BTN` class string. Handles the image attachment
   affordance (file picker, paste, drag-drop, thumbnail strip) gated on the
-  current model's vision capability, and the slash-command palette (a native
-  `<datalist>` the browser filters as you type + a one-line description in the
-  action bar — the datalist popup can't carry descriptions; the command table
-  is `SLASH_COMMANDS` in `webui/util.ts`).
+  current model's vision capability, and the slash-command palette (a popup
+  the app renders above the field while a command name is being typed —
+  Chrome never shows a native `<datalist>` on a `<textarea>`, so a
+  browser-filtered one would be dead there; the app's own list can also
+  carry each command's hint, which a datalist popup can't). The command
+  table is `SLASH_COMMANDS` in `webui/util.ts`.
 - **`webui/Main.tsx`** — the right-hand pane: composes `ErrorBox`, `Todos`,
   `Messages`, and `InputBar` (or a "select a session" placeholder when none is
   selected). The session status/actions no longer live here — they moved into
@@ -168,7 +170,7 @@ primary interface — the UI is just one client of it.
   `isVisionModel`, `reasoningText`, `timeAgo`, `prettyArgs`, `parseArgs`,
   `parseTodos`, `extractTodos`), exported
   by name and pulled in with `import { … } from './util'`. `SLASH_COMMANDS` is
-  the composer's command table (`{ name, hint }` — the datalist options + the
+  the composer's command table (`{ name, hint }` — the palette rows + the
   action-bar hints); `fmtTokens(n)` compacts the session's token count for the
   header (`1234` → `1.2k`, `2048000` → `2m`). `parseCommand(text)`
   parses a composer `/cmd [arg]` line (returns `null` for a plain message),
@@ -354,12 +356,18 @@ primary interface — the UI is just one client of it.
 - **Composer** — textarea, Enter to send, Shift+Enter for newline; it also
   accepts `/cmd` slash-commands (see **Commands**). The placeholder hints at
   this: `message (Enter to send, / for commands)`. While the text starts with
-  `/` the textarea carries a native **`<datalist>`** of the commands — the
-  browser's own popup filters as you type (pick one and the box takes over);
-  the datalist is detached for non-`/` text so it never fires on ordinary
-  typing. A **one-line description** of the command being typed takes the
-  action bar's slack space (the datalist popup can't carry descriptions), and
-  hides once an argument is typed (so `/trim` hints its optional `[turns]`). While the
+  `/` the app shows a **command palette** above the field — a popup the UI
+  renders itself (Chrome never shows a native `<datalist>` on a
+  `<textarea>`, so a browser-filtered one would be dead there). It lists
+  every command whose name extends the typed prefix (case-insensitive),
+  each row with its one-line hint; it only shows while the whole text is
+  that single `/token`, so it never fires on ordinary typing. Hover
+  highlights a row; ↑/↓ move the highlight (wrapping), and Tab or Enter —
+  or a click — picks it (filling `/name ` with a trailing space for an
+  arg); Esc dismisses until the text changes. As soon as an argument is
+  typed — or the full name is complete — the list hides and the
+  command's **one-line description** takes the action bar's slack space
+  instead (so `/trim` hints its optional `[turns]` there). While the
   session is running the box **looks disabled** (faded, `opacity-50`) but stays
   **enabled and editable**, so you keep focus and can type ahead; Enter is a
   no-op until the session is idle (single-flight, so it never fires a second
@@ -395,7 +403,7 @@ primary interface — the UI is just one client of it.
   instead of sending a message. On
   Enter, `send()` runs `parseCommand()` first: if the trimmed text starts with
   `/`, the command (lowercased, first whitespace-delimited token) is dispatched
-  by `runCommand()`; otherwise it is a normal message. The commands map 1:1 to
+  by `runCommand()`; otherwise it is a normal message. The commands map to
   the §7.4 control endpoints and reuse the existing handlers (no new endpoint):
   `/stop`, `/retry`, `/retry-turn`, `/init`, `/compact`, `/clear`,
   `/trim [turns]`, `/undo`, `/fork` →
@@ -406,16 +414,19 @@ primary interface — the UI is just one client of it.
   menu's entries can't carry, so it lives in the composer: with no arg it keeps
   the last 5,
   and a non-numeric/negative arg flashes `usage: /trim [turns]` and keeps the
-  text in the box). A command is parsed **before** the running no-op
+  text in the box). `/help` is client-side only — it prints the command list
+  in the error banner and keeps the text in the box. A command is parsed
+  **before** the running no-op
   guard, so
   `/stop` and the implicit-stop commands (`/undo`, `/clear`, `/trim`)
   work while a run is in flight; plain messages still no-op while running
   (type-ahead preserved). The command text is cleared on a recognized command
   (and re-filled for `/undo`); an unknown `/…` keeps the text in the box so it
   can be edited and is reported in the error banner. The commands are
-  **discoverable** without knowing them: the composer's datalist palette
-  (see **Composer**) filters `SLASH_COMMANDS` as you type, and each entry's
-  one-line hint doubles as its documentation.
+  **discoverable** without knowing them: the composer's palette (see
+  **Composer**) filters `SLASH_COMMANDS` as you type, and each entry's
+  one-line hint doubles as its documentation; `/help` prints the command
+  list on demand.
 - **Deep links** — the URL hash routes: selecting a session writes
   `#/session/<id>` (the hash is the routing source; `select()` writes it, the
   header's `×` clears it via `history.pushState`, so browser **back re-opens
@@ -441,7 +452,8 @@ primary interface — the UI is just one client of it.
     history, copied verbatim unless the running source ends with pending
     `tool_calls`, in which case the dangling tail is stripped; 201 — and
     immediately **selects the copy**, so the diverging conversation can
-    start right away; the source stays open in the sidebar).
+    start right away; the source stays open in the sidebar), and `/help`
+    (client-side only — prints the command list).
   - **Send/stop** — the composer's send button (`POST …/messages`, with the
     model picker's value as the required `model` body field and the picked
     reasoning effort as the optional `reasoning_effort` field — see

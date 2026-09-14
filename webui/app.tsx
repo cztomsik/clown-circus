@@ -1,7 +1,7 @@
 import { render } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { api, post } from './api';
-import { baseName, parseCommand } from './util';
+import { baseName, parseCommand, SLASH_COMMANDS } from './util';
 import { prepareImageDataURL } from './image';
 import {
   useLocalStorage, useModels, useSessions, useSessionView, useAttachments, useFlash, useTheme,
@@ -197,6 +197,8 @@ const App = () => {
         setInput(''); void handleAction('trim', n); return;
       }
       case 'fork': setInput(''); void handleAction('fork'); return;
+      // Informational: the text stays in the composer (like /trim usage).
+      case 'help': flashMsg(`commands: ${SLASH_COMMANDS.filter((c) => c.name !== 'help').map((c) => `/${c.name}`).join(' ')}`); return;
       default: flashMsg(`unknown command: /${name}`);
     }
   };
