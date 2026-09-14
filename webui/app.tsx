@@ -1,7 +1,3 @@
-// Browser-side Tailwind v4 JIT: processes the <style type="text/tailwindcss">
-// block in index.html and watches the DOM for new classes (Preact renders).
-// Bundled first (side-effect IIFE), so it runs before the UI paints.
-import '@tailwindcss/browser';
 import { render } from 'preact';
 import { useState, useEffect } from 'preact/hooks';
 import { api, post } from './api';

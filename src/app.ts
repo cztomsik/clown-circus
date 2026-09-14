@@ -14,10 +14,10 @@ export const buildApp = ({ manager }) => {
   const app = express();
   app.use(express.json({ limit: '25mb' }));
   app.disable('x-powered-by');
-  // The web UI is esbuild-bundled at every server start, so a cached copy is
-  // always stale: never let the browser hold onto index.html / the bundle.
+  // The web UI (bundle + stylesheet) is rebuilt at every server start, so a
+  // cached copy is always stale: never let the browser hold onto them.
   app.use((req, res, next) => {
-    if (req.path === '/' || req.path === '/vendor/bundle.js') res.setHeader('Cache-Control', 'no-cache');
+    if (req.path === '/' || req.path.startsWith('/vendor/')) res.setHeader('Cache-Control', 'no-cache');
     next();
   });
   app.use(express.static(WEBUI_DIR)); // web UI at / (see WEB_UI.md)

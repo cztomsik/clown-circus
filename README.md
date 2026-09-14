@@ -8,7 +8,7 @@ in a local **SQLite** database, so state survives restarts.
 
 - **Target runtime**: Node.js 24.x, TypeScript (`.ts`, ESM). The server has no build step (Node strips the types at runtime).
 - **Storage**: the builtin `node:sqlite` module. No external DB server.
-- **Dependencies**: `express` for the server; `esbuild` + the web UI's browser libraries (`preact`, `marked`, `dompurify`, `@tailwindcss/browser`) — esbuild inlines them all into `webui/vendor/bundle.js` at startup, so the UI works offline (no CDN).
+- **Dependencies**: `express` for the server; `esbuild` + `@tailwindcss/cli` (both build the web UI at startup) + the web UI's browser libraries (`preact`, `marked`, `dompurify`) — esbuild inlines them all into `webui/vendor/bundle.js` at startup, so the UI works offline (no CDN).
 - **LLM**: any OpenAI-compatible `/v1/chat/completions` endpoint (llama.cpp by default).
 
 See [`SPEC.md`](SPEC.md) for the full specification.

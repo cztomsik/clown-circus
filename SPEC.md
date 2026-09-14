@@ -436,11 +436,13 @@ Event types (SSE `event:` field):
 ### 7.7 Web UI
 
 A web UI is served at `GET /` from `webui/`: a thin `index.html` shell
-(Tailwind v4, a single `#root` mount) plus a set of small **Preact JSX**
+(a single `#root` mount) plus a set of small **Preact JSX**
 (`.tsx`) modules and helpers (the file list is in [AGENTS.md](AGENTS.md)).
 At server startup, esbuild bundles the modules and their browser dependencies
 (from `node_modules`) into `webui/vendor/bundle.js`, the only `<script>` in
-the shell; a background watch keeps it fresh. No network CDNs, no
+the shell, and `@tailwindcss/cli` compiles `webui/styles.css` (Tailwind v4 +
+the colour tokens + plain CSS) into `webui/vendor/tailwind.css`, the shell's
+one `<link>`; background watches keep both fresh. No network CDNs, no
 `node_modules` static mounts — the UI works fully offline. It is a **pure
 client** of the API in this section — it adds no server logic, routes, or
 dependencies.
@@ -630,8 +632,9 @@ Each tool invocation receives a `ToolContext`:
 - **Native `fetch`** for LLM calls (OpenAI-compatible), with an abort signal
   for timeout + stop.
 - **`node:child_process`** for `run_command` (abortable child process).
-- Minimal dependencies: `express`, `esbuild`, and the web UI's browser
-  libraries (`preact`, `marked`, `dompurify`, `@tailwindcss/browser`) —
+- Minimal dependencies: `express`, `esbuild`, `@tailwindcss/cli` (builds the
+  web-UI stylesheet at startup), and the web UI's browser libraries
+  (`preact`, `marked`, `dompurify`) —
   everything else is built into Node. `typescript` + `@types/node` are
   dev-only and check-only (`npm run typecheck` → `tsc --noEmit`, config in
   `tsconfig.json`); they never emit and are not part of the runtime or build.

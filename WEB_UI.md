@@ -12,21 +12,21 @@ primary interface — the UI is just one client of it.
 ## What it is
 
 - **`webui/index.html`** — a thin page shell, served at `GET /` via
-  `express.static` in `src/app.ts`. The `<head>` holds a
-  `<style type="text/tailwindcss">` block, and styling is **Tailwind CSS v4**
-  via the `@tailwindcss/browser` JIT (bundled into `/vendor/bundle.js` — see
-  **esbuild bundle**) with the colour palette as
-  `--color-*` tokens in an `@theme` block (the default **dark** theme). It also
-  holds a plain `<style>` block with the **light** palette (overriding the same
-  tokens under `:root[data-theme="light"]`), the `dot-bounce` keyframes behind
-  the transcript's working indicator (see `webui/Message.tsx`), the `.md`
-  typography rules behind Markdown message rendering (see `webui/Markdown.tsx`), and
-  a tiny
-  inline `<script>` that
-  re-applies the saved theme before first paint (no flash on reload). The
-  `<body>` contains only a single `<div id="root">` mount point plus
-  `<script type="module" src="/vendor/bundle.js">` — no static UI markup (the
-  whole UI is rendered by Preact at runtime).
+  `express.static` in `src/app.ts`. The `<head>` holds one
+  `<link rel="stylesheet" href="/vendor/tailwind.css">` (see **Tailwind CSS
+  build**); the `<body>` contains only a single `<div id="root">` mount point
+  plus `<script type="module" src="/vendor/bundle.js">` — no static UI markup
+  (the whole UI is rendered by Preact at runtime).
+- **`webui/styles.css`** — the **single source of all web-UI styles**,
+  compiled at startup into `/vendor/tailwind.css` (see **Tailwind CSS build**):
+  `@import "tailwindcss"`, the colour palette as `--color-*` tokens in an
+  `@theme` block (the default **dark** theme, plus tokens used only from plain
+  CSS — `--color-code`, `--color-material`, `--color-accent2`), the **light**
+  palette (overriding the same tokens under `:root[data-theme="light"]`), and
+  the plain CSS the utilities don't cover (`.material`, `.menu-card`,
+  `.grad-accent`, `.sw` toggle, `.spinner`, scrollbars, keyframes, the user
+  bubble). Markdown `.md` typography is a runtime-injected `<style>` in
+  `webui/Markdown.tsx` (shared by every `<Markdown>` instance).
 - **esbuild bundle** — `src/main.ts` runs an esbuild build (runtime
   `dependency`, not dev-only) **at server startup**: entry `webui/app.tsx`,
   `bundle: true`, `format: esm`, `target: es2022`, `jsx: automatic` +
@@ -37,14 +37,22 @@ primary interface — the UI is just one client of it.
   keep bare imports (`import { render } from "preact"`, `import { useState }
   from "preact/hooks"`, `import { marked } from "marked"`,
   `import DOMPurify from "dompurify"`); esbuild resolves and inlines them from
-  `node_modules` at build time — **no network, fully offline**. The Tailwind
-  browser JIT is in the bundle too: `webui/app.tsx`'s first line is
-  `import "@tailwindcss/browser"` (a side-effect IIFE, not ESM), so the JIT is
-  installed before the UI renders. The packages
+  `node_modules` at build time — **no network, fully offline**. The packages
   are real `dependencies` in `package.json`: esbuild bundles them at runtime,
   and `tsc --noEmit` resolves the bare imports for the check-only type
   declarations. `webui/vendor/` is generated output (git-ignored, excluded
   from the tsconfig).
+- **Tailwind CSS build** — `src/main.ts` also compiles **Tailwind CSS v4** at
+  startup, via `@tailwindcss/cli` (a real `dependency`, run as a child `node`
+  process): input `webui/styles.css` → output
+  `webui/vendor/tailwind.css` (served at `/vendor/tailwind.css`), a blocking
+  build before `listen`. A recursive `fs.watch` on `webui/` (150 ms debounce,
+  `vendor/` output skipped to avoid a rebuild loop) re-runs it when any class
+  string, `index.html` class, or `styles.css` itself changes. Because the CLI
+  scans **source files** for class candidates (the old `@tailwindcss/browser`
+  JIT scanned the *live DOM*), utilities used only by conditionally rendered
+  elements are always emitted — no DOM-dependent styling. Everything is
+  built locally from `node_modules` — **no network, fully offline**.
 - **`webui/app.tsx`** — the entry module (bundled to
   `webui/vendor/bundle.js`, served at `/vendor/bundle.js`). Holds **only**
   the stateful `App`
@@ -173,11 +181,11 @@ primary interface — the UI is just one client of it.
   Preact — kept separate from the no-DOM `util.ts`.
 - Bundled at server startup (consistent with SPEC §7.7). The modules are plain
   static files in `webui/`; esbuild bundles `webui/app.tsx` + its deps
-  (**Preact (+ `jsx-runtime`) + marked + DOMPurify + the Tailwind browser
-  JIT**) into
+  (**Preact (+ `jsx-runtime`) + marked + DOMPurify**) into
   `webui/vendor/bundle.js` from `node_modules` at startup (see **esbuild
-  bundle** above). Nothing is fetched from a network CDN, so the UI works
-  offline.
+  bundle** above), and `@tailwindcss/cli` compiles `webui/styles.css` into
+  `webui/vendor/tailwind.css` (see **Tailwind CSS build** above). Nothing is
+  fetched from a network CDN, so the UI works offline.
 - The UI is a **pure client**: every action goes through the existing REST +
   SSE endpoints (the lone exception is `open in vscode`, a local `vscode://`
   URI). It adds no server-side logic, routes, or dependencies.
@@ -415,12 +423,13 @@ primary interface — the UI is just one client of it.
 
 ## Constraints / invariants
 
-- **Static modules, esbuild-bundled at startup.** All UI source lives in
-  `webui/` and is served as-is by `express.static`; the only bundled asset is
-  the esbuild output `webui/vendor/bundle.js` (rebuilt at every startup +
-  background watch — see **esbuild bundle** above). The runtime libraries
-  (Preact, marked, DOMPurify, the Tailwind browser JIT) are all inlined
-  from `node_modules` by esbuild — no `node_modules` static mounts remain.
+- **Static modules, built at startup.** All UI source lives in `webui/` and
+  is served as-is by `express.static`; the built assets are the esbuild output
+  `webui/vendor/bundle.js` and the Tailwind stylesheet
+  `webui/vendor/tailwind.css` (both rebuilt at every startup + background
+  watch — see **esbuild bundle** / **Tailwind CSS build** above). The runtime
+  libraries (Preact, marked, DOMPurify) are all inlined from `node_modules`
+  by esbuild — no `node_modules` static mounts remain.
   Nothing is fetched from a network CDN, so the UI works fully
   offline; upgrading a UI library means bumping the version in `package.json`
   + `npm install` (esbuild resolves each package's standard ESM entry).

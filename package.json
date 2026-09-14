@@ -15,7 +15,7 @@
     "node": ">=24"
   },
   "dependencies": {
-    "@tailwindcss/browser": "^4",
+    "@tailwindcss/cli": "^4.3.3",
     "dompurify": "^3.4.14",
     "esbuild": "^0.28.2",
     "express": "^5.1.0",
