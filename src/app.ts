@@ -121,7 +121,7 @@ export const buildApp = ({ manager }) => {
     const keep = Number(req.body?.keep);
     if (!Number.isInteger(keep) || keep < 0)
       throw new HttpError(400, 'bad_request', 'keep must be a non-negative integer');
-    res.json(s.trimKeep(keep));
+    res.json(s.trim(keep));
   });
 
   app.post('/sessions/:id/compact', session((s, res) => {

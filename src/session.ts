@@ -8,7 +8,7 @@ import { llm } from './llm.ts';
 import { tools, toolSchemas } from './tools.ts';
 
 const MAX_EVENTS = 200; // bounded per-session replay ring for SSE `?since`
-// trimKeep truncates a tool result (replacing its content with a marker) once
+// trim() truncates a tool result (replacing its content with a marker) once
 // it exceeds this many bytes; smaller results are kept verbatim.
 const TOOL_RESULT_KEEP_BYTES = 1024;
 
@@ -384,7 +384,7 @@ export class Session {
   // turns. `k` may exceed the turn count (a no-op) or be 0 (trim everything).
   // Idempotent: a second run finds nothing left to trim. Synchronous edit —
   // implicitly stops a running loop first (matching clear/undo).
-  trimKeep(k) {
+  trim(k) {
     if (this.running) this.stop();
     const n = Math.max(0, countTurns(this.messages) - k); // turns to trim
     const boundary = turnBoundary(this.messages, n);
