@@ -40,6 +40,11 @@ export const runLoop = async (session) => {
     }
   }
 
+  // A stop can land mid-tool-batch: the in-flight tool's result was appended
+  // but the rest of the batch is unanswered, leaving a dangling tool_call that
+  // is invalid to send back. Roll the tail to a valid boundary and resync the
+  // client (a granular `message` event already went out for the partial result).
+  if (status === 'stopped' && session.settle()) session.emitHistory();
   session.end(status, error);
   if (status !== 'error') session.emit('done', { total_tokens: session.totalTokens });
 };

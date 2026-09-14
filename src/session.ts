@@ -394,9 +394,11 @@ export class Session {
     let i = this.messages.length - 1;
     while (i >= 0 && this.messages[i].role === 'tool') i--;
     const a = this.messages[i];
-    if (!a || a.role !== 'assistant' || !a.tool_calls?.length) return;
+    if (!a || a.role !== 'assistant' || !a.tool_calls?.length) return false;
     const answered = new Set(this.messages.slice(i + 1).map((m) => m.tool_call_id));
-    if (a.tool_calls.some((tc) => !answered.has(tc.id))) this.truncateTo(i);
+    const partial = a.tool_calls.some((tc) => !answered.has(tc.id));
+    if (partial) this.truncateTo(i);
+    return partial;
   }
 
   init() {
