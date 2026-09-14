@@ -1,3 +1,4 @@
+import { createPortal } from 'preact/compat';
 import { useState, useEffect } from 'preact/hooks';
 
 // ── mini UI kit ──────────────────────────────────────────────────────────
@@ -57,7 +58,10 @@ export const Switch = ({ on, onToggle, label = null }) => (
 // ── modal ──────────────────────────────────────────────────────────────
 // Centered card over a dimmed backdrop — for anything bigger than the ⋮
 // dropdowns (the model picker). Controlled: the parent owns `open` so it can
-// close on a selection; Escape and a backdrop tap close too.
+// close on a selection; Escape and a backdrop tap close too. Portaled to
+// document.body: a `backdrop-filter`/`transform` on an ancestor (the header
+// is `material`) would otherwise become the containing block for `position:
+// fixed` and pin/clip the overlay to that element.
 const MODAL_CARD = 'menu-card relative w-[min(380px,calc(100vw-2rem))] max-h-[min(75vh,600px)] overflow-y-auto rounded-xl border border-line shadow-2xl';
 export const Modal = ({ open, onClose, title, children }) => {
   useEffect(() => {
@@ -67,14 +71,15 @@ export const Modal = ({ open, onClose, title, children }) => {
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
   if (!open) return null;
-  return (
+  return createPortal(
     <div class="fixed inset-0 z-50 grid place-items-center p-4">
       <div class="absolute inset-0 bg-black/50" onClick={onClose}></div>
       <div class={MODAL_CARD}>
         {title ? <div class="text-[.62rem] font-bold tracking-[.05em] uppercase text-text3 px-4 pt-3.5 pb-2">{title}</div> : null}
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
