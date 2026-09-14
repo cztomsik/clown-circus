@@ -174,7 +174,17 @@ export const buildApp = ({ manager }) => {
     const sinceRaw = req.query.since ?? req.headers['last-event-id'];
     if (sinceRaw !== undefined && sinceRaw !== '') {
       const since = Number(sinceRaw) || 0;
-      for (const rec of s.eventsSince(since)) sseFrame(res, rec);
+      const recs = s.eventsSince(since);
+      if (recs[0]?.seq > since + 1) {
+        // Gap: the ring no longer covers the client's backlog. Granular
+        // `message` events can't be partially replayed without desyncing the
+        // transcript, so send the full transcript once — a synthetic `history`
+        // event at the current seq (the client replaces its state; everything
+        // in the ring is already contained in it, so no ring replay follows).
+        sseFrame(res, { seq: s.seq, event: 'history', data: { messages: s.messages } });
+      } else {
+        for (const rec of recs) sseFrame(res, rec);
+      }
     }
 
     const onEvent = (rec) => sseFrame(res, rec);

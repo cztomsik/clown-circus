@@ -3,7 +3,7 @@
 A **headless, multi-session** port of [`clown-code`](../clown-code/) exposed as an
 **Express** HTTP server. Clown-Circus manages any number of independent agent
 **sessions** — each with its own working directory, conversation state, and
-running agent loop — all driven over **REST + Server-Sent Events**. Every session and its full conversation snapshot are persisted
+running agent loop — all driven over **REST + Server-Sent Events**. Every session and its full conversation (one row per message) are persisted
 in a local **SQLite** database, so state survives restarts.
 
 - **Target runtime**: Node.js 24.x, TypeScript (`.ts`, ESM). The server has no build step (Node strips the types at runtime).
@@ -83,7 +83,7 @@ Errors: `{ "error": { "code", "message" } }`.
 |---|---|---|
 | `GET` | `/sessions` | List as `SessionMeta[]`. Optional `?cwd=<path>` (exact match). |
 | `POST` | `/sessions` | Create. Body: `{ cwd, model }` (both required) → `201` |
-| `GET` | `/sessions/:id` | Full session: `SessionMeta` + `snapshot` |
+| `GET` | `/sessions/:id` | Full session: `SessionMeta` + `messages` (incl. derived system prompt) |
 | `DELETE` | `/sessions/:id` | Stop and delete (memory + DB) → `204` |
 
 `POST /sessions` body — both `cwd` and `model` are required. `cwd` **must** be an
@@ -137,22 +137,29 @@ run is active. `stop` (and the metadata-only `archive`/`unarchive`) are allowed 
 |---|---|---|
 | `GET` | `/sessions/:id/events` | `text/event-stream` of session activity |
 
-Event types: `snapshot`, `status`, `error`, `done`, `pong`. Each event carries an
-incremental `id:` (a per-session sequence number). Reconnect with `?since=<seq>` (or a
-`Last-Event-ID` header) to replay missed events. A `: keep-alive` comment is sent every 15s.
+Event types: `message` (every appended message), `history` (full transcript after
+undo/clear/trim/retry/retry-turn, and as a gap recovery on resume), `status`, `error`,
+`done`, `pong`. Each event carries an incremental `id:` (a per-session sequence
+number). Reconnect with `?since=<seq>` (or a `Last-Event-ID` header) to replay
+missed events — if the bounded replay ring no longer covers the gap, a synthetic
+`history` with the full transcript is sent instead. A `: keep-alive` comment is sent
+every 15s.
 
 ---
 
 ## Storage
 
 A single SQLite **file** at `~/.clowndb` (override with `--db-file`/`DB_FILE`). The DB is the
-system of record: state is upserted on every transition (create, message, tool result, status
-change, error, delete). On startup all sessions are loaded into memory; any session persisted
+system of record: each appended message is one `messages` row written the moment it exists,
+and the `sessions` row is upserted on every other transition (create, status change, error,
+delete). On startup all sessions are loaded into memory; any session persisted
 as `running`/`stopped` (killed mid-run) is reset to `idle`.
 
-The `snapshot` column stores `{ messages, total_tokens }` — the internal
-conversation format, persisted per session (the todo list is *not* stored; the
-web UI derives it from the last `write_todos` tool call). It may evolve freely as the tool grows.
+Each message is one `messages` table row (`data` = the internal conversation
+format) plus a `total_tokens` column on the session row. The system prompt is
+*not* stored — it is derived from the session's `cwd` at load time and on
+`/clear` (the todo list is *not* stored either; the web UI derives it from the
+last `write_todos` tool call). The format may evolve freely as the tool grows.
 
 ---
 

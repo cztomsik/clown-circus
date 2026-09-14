@@ -2,6 +2,9 @@ import { LlmError } from './llm.ts';
 
 // The agent loop. Never throws: it converts all outcomes
 // into a terminal status + events. Runs to completion for a single `run`.
+// Each appended message (next/accept) is persisted + emitted as a granular
+// `message` event the moment it exists, so the DB and the stream are current
+// before the loop advances to the next turn.
 export const runLoop = async (session) => {
   let status = 'idle';
   let error = null;
@@ -13,11 +16,7 @@ export const runLoop = async (session) => {
         status = 'stopped';
         break;
       }
-      const toolCalls = await session.next(); // one LLM turn; appends assistant msg
-      // Persist + emit the assistant turn (incl. its tool calls) BEFORE executing
-      // them: the intent must be durable and visible to the client first.
-      session.emit('snapshot', session.snapshot());
-      session.persist();
+      const toolCalls = await session.next(); // one LLM turn; appends the assistant msg
       if (!toolCalls) break; // final turn: no tool batch
       if (session.signal?.aborted) {
         status = 'stopped';
@@ -30,8 +29,6 @@ export const runLoop = async (session) => {
         }
         await session.accept(tc); // execute tool, append tool-result msg
       }
-      session.emit('snapshot', session.snapshot());
-      session.persist();
     }
   } catch (err) {
     if (err instanceof LlmError && err.kind === 'aborted') {

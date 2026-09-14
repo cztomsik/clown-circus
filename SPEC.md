@@ -20,7 +20,7 @@ local **SQLite** database.
 - Implement the **agent core** (system-prompt composition, agentic tool loop,
   tools, compaction, retry/undo) in JavaScript.
 - Run **many sessions concurrently** in a single long-lived server process.
-- **Persist every session** (metadata + full conversation snapshot) in a local
+- **Persist every session** (metadata + full conversation, one row per message) in a local
   SQLite database using Node's builtin `node:sqlite`, so state survives restarts.
 - Provide a **headless REST + SSE API** that a client (web UI, CLI, CI, other
   services) can drive entirely over HTTP.
@@ -52,12 +52,12 @@ local **SQLite** database.
 | Sessions      | Many, each a `Session` object in a registry |
 | Commands      | REST endpoints |
 | Streaming     | SSE event stream per session |
-| Persistence   | SQLite DB (`~/.clowndb`), one row per session, always written |
+| Persistence   | SQLite DB (`~/.clowndb`), one row per session + one row per message, always written |
 | CWD           | Per-session `cwd` (stored per row) |
 | Tools         | Built-in tool set (§12) |
 | System prompt | Base prompt + project instructions file, composed per session cwd (§9) |
 
-The agent loop's contract per session — "run the agent loop, emit snapshots,
+The agent loop's contract per session — "run the agent loop, emit messages,
 report errors" — is implemented as an async loop plus event emitter. The
 SQLite store is the sole system of record.
 
@@ -114,15 +114,21 @@ runs of the same session interleave**.
 
 ## 5. Data Model
 
-### 5.1 Snapshot (conversation content)
+### 5.1 Transcript (conversation content)
 
-The per-session conversation content, persisted as a JSON string in the
-`snapshot` column: `{ messages, total_tokens }`. `messages` follows the
-OpenAI chat shape (`role`; `content` as a string or an array of content parts;
-`tool_calls` on assistant messages; `tool_call_id` on tool-result messages).
-A user message carrying images is an array of content parts with base64
-data-URLs. It is an internal format and may evolve freely as the tool grows —
-no DB migration is required.
+The per-session conversation is persisted **one message per row** in the
+`messages` table: `data` is the JSON of one OpenAI chat message (`role`;
+`content` as a string or an array of content parts; `tool_calls` on assistant
+messages; `tool_call_id` on tool-result messages). A user message carrying
+images is an array of content parts with base64 data-URLs. Rows are in
+transcript order by rowid. It is an internal format and may evolve freely as
+the tool grows — no DB migration is required.
+
+The **system prompt is not stored**: it is derived from the session's `cwd`
+at load time and at `clear` (§9), lives in memory as `messages[0]`, and is
+included in `GET /sessions/:id` and `history` events so the web UI can show
+it. `total_tokens` (the last LLM `usage.total_tokens`) is a column on the
+`sessions` row.
 
 ### 5.2 SQLite schema
 
@@ -139,33 +145,42 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at    TEXT NOT NULL,                  -- ISO 8601
   last_activity TEXT NOT NULL,                  -- ISO 8601
   last_error    TEXT,                           -- nullable
-  snapshot      TEXT NOT NULL,                  -- JSON: { messages, total_tokens }
+  total_tokens  INTEGER NOT NULL DEFAULT 0,     -- last LLM usage.total_tokens
   archived      INTEGER NOT NULL DEFAULT 0      -- 0/1; hidden from the default list
 );
 
+CREATE TABLE IF NOT EXISTS messages (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,  -- global; per-session order = order of id (gaps after deletes are fine)
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  data       TEXT NOT NULL                      -- JSON message (the system prompt is never stored)
+);
+
 CREATE INDEX IF NOT EXISTS idx_sessions_cwd ON sessions (cwd);
+CREATE INDEX IF NOT EXISTS idx_messages_session ON messages (session_id);
 ```
 
 > `archived` (schema v2) is a plain boolean flag: archived sessions persist in
 > the DB and stay in the in-memory registry, but are excluded from the default
 > `GET /sessions` list (§7.2). Adding the
 > column to a v1 database is the v2 migration (`ALTER TABLE ... ADD COLUMN`,
-> §10.2).
+> §10.2). The `messages` table, the `total_tokens` column, and the removal of
+> the old `snapshot` column are the v3 migration (§10.2).
 
 ### 5.3 Runtime model
 
-A `Session` object (in memory) = the DB row's fields + the parsed `snapshot` +
+A `Session` object (in memory) = the DB row's fields + the transcript loaded
+from the session's `messages` rows (with the derived system prompt prepended) +
 runtime state (`running`, `abortController`, `EventEmitter`, LLM client).
 
-A **`SessionMeta`** is what the API exposes for listing (derived from the row +
-snapshot; the raw `messages` are not included in list responses):
+A **`SessionMeta`** is what the API exposes for listing (derived from the row;
+the raw `messages` are not included in list responses):
 
 ```js
 // SessionMeta
 // {
 //   id, cwd, model, status, created_at, last_activity, last_error?,
-//   message_count,   // = snapshot.messages.length
-//   total_tokens,    // = snapshot.total_tokens
+//   message_count,   // = messages.length (incl. the derived system prompt)
+//   total_tokens,    // = sessions.total_tokens
 //   archived         // boolean; false by default
 // }
 ```
@@ -194,8 +209,10 @@ fully addressable by id (detail, controls, SSE) and deletable.
 
 **Persistence is continuous**: the DB is the system of record, so state is
 written on every transition (create, message, tool result, status change, error,
-delete) — not just on an explicit save. This is the natural consequence of
-SQLite being the store (it is not an optional "auto-save" feature).
+delete) — not just on an explicit save. Each appended message is one `messages`
+row written the moment it exists; the `sessions` row is upserted on the other
+transitions. This is the natural consequence of SQLite being the store (it is
+not an optional "auto-save" feature).
 
 **Restart semantics**: at startup the `SessionManager` loads all rows into
 memory. A session whose persisted `status` is `running`/`stopped` (i.e. it was
@@ -229,7 +246,7 @@ endpoint and the static web UI (§7.7). Errors use `4xx`/`5xx` with
 |--------|----------------------|-------------|
 | `GET`  | `/sessions`          | List sessions as `SessionMeta[]`. Optional `?cwd=<path>` to filter by working directory (exact match), and `?archived=` (see below). |
 | `POST` | `/sessions`          | Create a session |
-| `GET`  | `/sessions/:id`      | Full session: `SessionMeta` + current `snapshot` |
+| `GET`  | `/sessions/:id`      | Full session: `SessionMeta` + current `messages` (incl. the derived system prompt) |
 | `DELETE`| `/sessions/:id`     | Stop and delete the session (from memory and DB) |
 
 `GET /sessions`:
@@ -258,7 +275,7 @@ endpoint and the static web UI (§7.7). Errors use `4xx`/`5xx` with
   specifies the model for its run and the value is persisted — the web UI
   pre-fills its model picker from it, and `retry`/`init`/`compact` reuse it.
   There is no server-side default: the client always says which model to use.
-- `201` on success, returning the created session (meta + snapshot).
+- `201` on success, returning the created session (meta + messages).
 - `400` if `cwd` or `model` is missing or `cwd` is not absolute; `500` if the
   `cwd` path is not a directory.
 
@@ -276,7 +293,7 @@ endpoint and the static web UI (§7.7). Errors use `4xx`/`5xx` with
   "total_tokens": 18334,
   "last_error": null,
   "archived": false,
-  "snapshot": { "messages": [], "total_tokens": 18334 }
+  "messages": [ { "role": "system", "content": "…" }, { "role": "user", "content": "…" } ]
 }
 ```
 
@@ -319,7 +336,7 @@ UI's composer command that dispatches the same action.
 | `POST` | `/sessions/:id/trim`       | `/trim [n]`     | Trim the transcript, **keeping the last n assistant turns untouched**: in every earlier turn, truncate long `role=tool` results and delete assistant reasoning. User text, assistant text, and tool-call invocations (name + arguments) are untouched. `n` may exceed the turn count (a no-op) or be `0` (trim everything); idempotent. Body `{ "keep": n }` with `n` a non-negative integer — `400` otherwise. `200` `{ "keep", "trimmed", "truncatedResults", "reasoningRemoved" }`. |
 | `POST` | `/sessions/:id/compact`    | `/compact`     | Run the two-phase summarize-then-replace compaction. `202` (starts a run). |
 | `POST` | `/sessions/:id/init`       | `/init`        | Convenience: send the prompt that triggers the built-in `init` skill ("Could you /init this project?"). `202`. |
-| `POST` | `/sessions/:id/fork`     | `/fork`        | Fork the session into a new one: same `cwd`, `model`, and archived flag; fresh id/timestamps; `last_error` cleared; a **deep copy** of the transcript (independent of the source). If the source is running and the copy ends mid-turn (an assistant `tool_calls` whose tool results have not all arrived yet — an invalid LLM transcript), that message and its partial results are stripped; a completed transcript is copied verbatim. Allowed while the source is running. `201`, returning the new session (meta + snapshot). `404` if the source is unknown. |
+| `POST` | `/sessions/:id/fork`     | `/fork`        | Fork the session into a new one: same `cwd`, `model`, and archived flag; fresh id/timestamps; `last_error` cleared; a **deep copy** of the transcript (independent of the source). If the source is running and the copy ends mid-turn (an assistant `tool_calls` whose tool results have not all arrived yet — an invalid LLM transcript), that message and its partial results are stripped; a completed transcript is copied verbatim. Allowed while the source is running. `201`, returning the new session (meta + messages). `404` if the source is unknown. |
 | `POST` | `/sessions/:id/archive`    | —              | Mark the session as archived: kept in the DB but hidden from the default `GET /sessions` list. No body. `200` `{ "id", "archived": true }`. |
 | `POST` | `/sessions/:id/unarchive`  | —              | Restore an archived session to the default list. No body. `200` `{ "id", "archived": false }`. |
 
@@ -346,7 +363,8 @@ Event types (SSE `event:` field):
 
 | Event      | Data (JSON)                              | Emitted when |
 |------------|------------------------------------------|--------------|
-| `snapshot` | `Snapshot`                               | After each agentic turn / tool batch |
+| `message`  | `{ "message": <Message> }`               | Every appended message (user, assistant turn, tool result) |
+| `history`  | `{ "messages": <Message[]> }`            | Full transcript (incl. system) after a destructive edit (undo/clear/trim/retry/retry-turn); also sent as a synthetic resume event when the replay ring can't cover the gap (below) |
 | `status`   | `{ "status": "running"\|"idle"\|"error"\|"stopped" }` | On state transitions |
 | `error`    | `{ "message": "..." }`                   | On a loop error |
 | `done`     | `{ "total_tokens": n }`                  | When a run completes |
@@ -355,11 +373,16 @@ Event types (SSE `event:` field):
 - The stream supports an optional `?since=<seq>` query (monotonic per-session
   sequence number) to replay missed events after a reconnect. Each event carries
   an incremental `id:` (the seq) for `Last-Event-ID` resume.
+- **Gap recovery**: the replay ring is bounded. If the client's `since` is
+  older than the ring's oldest event, a partial replay of granular `message`
+  events would desync the transcript — instead the server sends a single
+  synthetic `history` event (id = current seq) with the full transcript and no
+  ring replay follows; the client replaces its state.
 - A **fresh** connection (no `?since` and no `Last-Event-ID`) does **not**
   replay the backlog — it streams live events only. A client loads the current
-  snapshot from `GET /sessions/:id` and uses the (bounded) ring buffer purely to
-  catch up after a brief disconnect; replaying the whole history on first connect
-  would just make it re-render / flicker through every past transition.
+  transcript from `GET /sessions/:id` and uses the (bounded) ring buffer purely
+  to catch up after a brief disconnect; replaying the whole history on first
+  connect would just make it re-render / flicker through every past transition.
 - The connection stays open until the client disconnects or the session is
   destroyed (server sends a final `status: stopped` + close).
 - Heartbeat: an SSE comment line (`: keep-alive`) every 15s to keep proxies open.
@@ -403,18 +426,16 @@ The core loop, once `send` is called, is:
 ```
 running = true; emit status=running; persist(status)
 loop:
-    turn = await agent.next()        # one LLM chat completion; appends the assistant msg
-    emit snapshot; persist(snapshot, last_activity)   # persist + stream the assistant turn (incl. tool calls) BEFORE running them
+    turn = await agent.next()        # one LLM chat completion; appends the assistant msg (persist + emit `message`)
     if !turn.tool_calls: break
     for tc in turn.tool_calls:       # cooperative: check the abort signal between calls
-        await tools[tc.function.name](tc.function.arguments, sessionCtx)   # appends a role=tool result
-    emit snapshot; persist(snapshot, last_activity)   # persist + stream the tool results
+        await tools[tc.function.name](tc.function.arguments, sessionCtx)   # appends a role=tool result (persist + emit `message`)
 emit status=idle, done; persist(status)
 ```
 
 - `agent.next()` is one call to the LLM with `messages` + tool definitions. It
   appends the assistant message (with any `tool_calls`) before returning, so the
-  turn is already in history by the time we persist.
+  turn is already in history by the time the loop advances.
 - `acceptAll` = execute every requested tool, append `role=tool` results, and
   loop again so the model can react.
 - The loop ends when the model returns a turn with **no** tool calls.
@@ -422,11 +443,13 @@ emit status=idle, done; persist(status)
   cleanly, emits `status=stopped`, and persists.
 - Token accounting uses the `usage` field from the LLM response
   (analog of `agent.total_tokens`).
-- **Persist + emit the assistant turn before executing its tool calls.** The
-  turn is streamed and written to the DB as soon as `next()` returns, *then* the
-  tools run. This makes the model's intent durable and visible to the client
-  before any (possibly long or destructive) side effect, and keeps the DB current
-  if the process dies mid-run (recoverable as far as the last persisted state).
+- **Persist + emit each appended message the moment it exists.** The assistant
+  turn is written to its `messages` row and streamed as a `message` event as
+  soon as `next()` returns, *then* the tools run; each tool result is
+  persisted + streamed the same way. This makes the model's intent durable and
+  visible to the client before any (possibly long or destructive) side effect,
+  and keeps the DB current if the process dies mid-run (recoverable as far as
+  the last persisted message).
 
 ### Cancellation
 
@@ -442,8 +465,10 @@ thing that can delay a stop.
 
 ## 9. System Prompt
 
-Composed **per session, from the session's `cwd`**, at session creation and
-re-composed on `clear`-style resets:
+Composed **per session, from the session's `cwd`**, at session creation, and
+re-composed on `clear`-style resets. It is **never persisted** — it is
+re-derived from the on-disk `AGENTS.md`/`CLOWN.md` at every server restart as
+well, so an out-of-band edit to those files is picked up on the next start:
 
 ```
 <PREFIX.md>                       (from ./src/PREFIX.md)
@@ -477,9 +502,11 @@ Current working directory: <realpath of cwd>
   default keeps the database a single self-contained file, which is the whole
   point of `~/.clowndb`. (The transient `-journal` file only exists mid-write
   and is removed on commit.)
-- **Writes**: synchronous, one row upsert per state change. The DB is owned by
-  exactly one server process (single-writer assumption), so WAL's read
-  concurrency benefit is not needed here.
+- **Writes**: synchronous — each appended message is one `messages` INSERT (or
+  DELETE/UPDATE for the transcript edits), each session state change a
+  `sessions` upsert. The DB is owned by exactly one server process
+  (single-writer assumption), so WAL's read concurrency benefit is not needed
+  here.
 
 ### 10.2 Migration
 
@@ -493,6 +520,7 @@ get the version bump.
 |---------|--------|
 | 1 | Initial schema |
 | 2 | `ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0` (§5.2) |
+| 3 | `messages` table (one row per message); `sessions.total_tokens` column; v2 `snapshot` blobs imported into `messages` (system prompts dropped) and `ALTER TABLE sessions DROP COLUMN snapshot` (§5.2) |
 
 ---
 

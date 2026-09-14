@@ -7,7 +7,7 @@ import { db } from './db.ts';
 import { llm } from './llm.ts';
 import { tools, toolSchemas } from './tools.ts';
 
-const MAX_EVENTS = 200; // bounded per-session replay ring for SSE `?since`
+const MAX_EVENTS = 500; // bounded per-session replay ring for SSE `?since`
 // trim() truncates a tool result (replacing its content with a marker) once
 // it exceeds this many bytes; smaller results are kept verbatim.
 const TOOL_RESULT_KEEP_BYTES = 1024;
@@ -51,9 +51,11 @@ const countTurns = (messages) =>
 
 
 
-// Session. Owns the message list, token counter, the agentic loop,
-// an event emitter (SSE source), and persistence. The run is an in-process
-// async loop guarded by the `running` single-flight flag.
+// Session. Owns the message list (system prompt in memory at [0] + the stored
+// transcript), token counter, the agentic loop, an event emitter (SSE source),
+// and persistence. Each stored message is one `messages` table row (rowid in
+// `msgIds`, parallel to `messages[1..]`). The run is an in-process async loop
+// guarded by the `running` single-flight flag.
 export class Session {
   id: string;
   cwd: string;
@@ -64,6 +66,7 @@ export class Session {
   lastError: string | null;
   archived: boolean;
   messages: any[];
+  msgIds: number[];
   totalTokens: number;
   running: boolean;
   compacting: boolean;
@@ -72,7 +75,9 @@ export class Session {
   seq: number;
   events: any[];
 
-  constructor({ row }) {
+  // `transcript` is the session's stored rows ({ id, data }[], rowid-ordered);
+  // the system prompt is always derived from cwd (never stored).
+  constructor({ row, transcript = [] }) {
     this.id = row.id;
     this.cwd = row.cwd;
     this.model = row.model;
@@ -81,11 +86,12 @@ export class Session {
     this.lastActivity = row.last_activity ?? this.createdAt;
     this.lastError = row.last_error ?? null;
     this.archived = !!row.archived;
-
-    const snap = row.snapshot ? JSON.parse(row.snapshot) : {};
-    this.messages = Array.isArray(snap.messages) ? snap.messages : [];
-    this.totalTokens = snap.total_tokens ?? 0;
-    if (this.messages.length === 0) this.messages = [{ role: 'system', content: buildSystemPrompt(this.cwd) }];
+    this.totalTokens = row.total_tokens ?? 0;
+    this.msgIds = transcript.map((r) => r.id);
+    this.messages = [
+      { role: 'system', content: buildSystemPrompt(this.cwd) },
+      ...transcript.map((r) => JSON.parse(r.data)),
+    ];
 
     this.running = false;
     this.compacting = false;
@@ -101,10 +107,6 @@ export class Session {
   }
 
   // --- Views / persistence --------------------------------------------------
-
-  snapshot() {
-    return { messages: this.messages, total_tokens: this.totalTokens };
-  }
 
   meta() {
     return {
@@ -122,7 +124,7 @@ export class Session {
   }
 
   detail() {
-    return { ...this.meta(), snapshot: this.snapshot() };
+    return { ...this.meta(), messages: this.messages };
   }
 
   row() {
@@ -134,17 +136,67 @@ export class Session {
       created_at: this.createdAt,
       last_activity: this.lastActivity,
       last_error: this.lastError,
-      snapshot: JSON.stringify(this.snapshot()),
+      total_tokens: this.totalTokens,
       archived: this.archived,
     };
   }
 
-  // Persist the row to SQLite, bumping last_activity first — a persist IS
-  // activity. `touch: false` for writes that aren't (the startup reload that
-  // rewrites a pre-restart status must not clobber the stored timestamp).
+  // Persist the session row to SQLite, bumping last_activity first — a
+  // persist IS activity. `touch: false` for writes that aren't (the startup
+  // reload that rewrites a pre-restart status must not clobber the stored
+  // timestamp).
   persist(touch = true) {
     if (touch) this.lastActivity = new Date().toISOString();
     db.upsert(this.row());
+  }
+
+  // --- Transcript edits (memory + DB + SSE in one place) --------------------
+
+  // Append a message: in-memory push, DB row, a `message` SSE event (the
+  // client appends it), and a session-row persist. The system prompt is never
+  // appended — it is derived and lives only in memory.
+  append(msg) {
+    this.messages.push(msg);
+    this.msgIds.push(db.insertMessage(this.id, JSON.stringify(msg)));
+    this.emit('message', { message: msg });
+    this.persist();
+  }
+
+  // Pop trailing assistant/tool messages (a run's un-answered tail), deleting
+  // their rows as they go. The system prompt is never popped.
+  popTrailing() {
+    const gone = [];
+    while (this.messages.length > 1) {
+      const m = this.messages.at(-1);
+      if (m.role !== 'assistant' && m.role !== 'tool') break;
+      this.messages.pop();
+      gone.push(this.msgIds.pop());
+    }
+    if (gone.length) db.deleteMessages(gone);
+  }
+
+  // Truncate the transcript to messages[0..i) — memory + DB. `i` is clamped so
+  // the derived system prompt is always kept.
+  truncateTo(i) {
+    const gone = this.msgIds.splice(Math.max(i, 1) - 1);
+    this.messages.length = Math.max(i, 1);
+    if (gone.length) db.deleteMessages(gone);
+  }
+
+  // Append a deep copy of `msgs` (memory + DB rows, no events) — the fork's
+  // transcript must be fully independent of the source's message objects.
+  importTranscript(msgs) {
+    for (const m of msgs) {
+      const json = JSON.stringify(m); // round-trip = deep copy
+      this.messages.push(JSON.parse(json));
+      this.msgIds.push(db.insertMessage(this.id, json));
+    }
+  }
+
+  // Full transcript (incl. the derived system prompt) after a destructive edit
+  // (undo/clear/trim/retry/retry-turn): the client replaces its copy.
+  emitHistory() {
+    this.emit('history', { messages: this.messages });
   }
 
   // --- Events (SSE source) --------------------------------------------------
@@ -232,7 +284,7 @@ export class Session {
         try { JSON.parse(args); return false; } catch { return true; }
       });
       if (empty || corrupt) continue; // retry on empty or corrupt choice
-      this.messages.push(message); // record the real response in the full transcript
+      this.append(message); // memory + DB + `message` event + persist
       return message.tool_calls ?? null;
     }
     throw new Error('LLM returned no usable completion');
@@ -257,7 +309,7 @@ export class Session {
         content = `Error: ${err?.message ?? err}`; // tool errors become content, loop continues
       }
     }
-    this.messages.push({ role: 'tool', content, tool_call_id: tc.id });
+    this.append({ role: 'tool', content, tool_call_id: tc.id });
   }
 
   toolContext() {
@@ -271,12 +323,10 @@ export class Session {
 
   // --- Operations -----------------------------------------------------------
 
-  // Append a user message and push a snapshot so the live transcript shows it
-  // immediately (before the loop's first LLM turn) — same pattern as undo/clear.
+  // Append a user message — the `message` event shows it in the live
+  // transcript immediately (before the loop's first LLM turn).
   appendUser(text) {
-    this.messages.push({ role: 'user', content: text });
-    this.emit('snapshot', this.snapshot());
-    this.persist();
+    this.append({ role: 'user', content: text });
   }
 
   // Append a user message and start the loop (fire-and-forget; the caller gets 202).
@@ -299,17 +349,11 @@ export class Session {
     await runLoop(this);
   }
 
-  popTrailing() {
-    while (this.messages.length) {
-      const m = this.messages.at(-1);
-      if (m.role !== 'assistant' && m.role !== 'tool') break;
-      this.messages.pop();
-    }
-  }
-
   retry() {
     this.assertIdle();
     this.popTrailing();
+    this.emitHistory();
+    this.persist();
     void runLoop(this);
   }
 
@@ -325,8 +369,8 @@ export class Session {
     this.assertIdle();
     const i = lastIndexOf(this.messages, (m) => m.role === 'assistant');
     if (i === -1) throw new HttpError(400, 'bad_request', 'no assistant message to retry');
-    this.messages.length = i; // strip the last assistant msg and everything after it
-    this.emit('snapshot', this.snapshot());
+    this.truncateTo(i);
+    this.emitHistory();
     this.persist();
     void runLoop(this);
   }
@@ -344,7 +388,7 @@ export class Session {
     const a = this.messages[i];
     if (!a || a.role !== 'assistant' || !a.tool_calls?.length) return;
     const answered = new Set(this.messages.slice(i + 1).map((m) => m.tool_call_id));
-    if (a.tool_calls.some((tc) => !answered.has(tc.id))) this.messages.length = i;
+    if (a.tool_calls.some((tc) => !answered.has(tc.id))) this.truncateTo(i);
   }
 
   init() {
@@ -355,10 +399,11 @@ export class Session {
     if (this.running) this.stop();
     this.popTrailing();
     let undone = '';
-    if (this.messages.length && this.messages.at(-1).role === 'user') {
+    if (this.messages.length > 1 && this.messages.at(-1).role === 'user') {
       undone = textOf(this.messages.pop().content);
+      db.deleteMessages([this.msgIds.pop()]);
     }
-    this.emit('snapshot', this.snapshot());
+    this.emitHistory();
     this.persist();
     return undone;
   }
@@ -366,7 +411,10 @@ export class Session {
   clear() {
     if (this.running) this.stop();
     this.messages = [{ role: 'system', content: buildSystemPrompt(this.cwd) }];
-    this.emit('snapshot', this.snapshot());
+    const gone = this.msgIds;
+    this.msgIds = [];
+    if (gone.length) db.deleteMessages(gone);
+    this.emitHistory();
     this.persist();
   }
 
@@ -390,6 +438,7 @@ export class Session {
     const boundary = turnBoundary(this.messages, n);
     let truncatedResults = 0;
     let reasoningRemoved = 0;
+    const changed = [];
     for (let i = 0; i < boundary; i++) {
       const m = this.messages[i];
       if (m.role === 'tool') {
@@ -398,15 +447,18 @@ export class Session {
           const bytes = Buffer.byteLength(m.content, 'utf8');
           m.content = `[tool result truncated — was ${bytes} bytes]`;
           truncatedResults += 1;
+          changed.push(i);
         }
       } else if (m.role === 'assistant'
                  && ('reasoning_content' in m || 'reasoning' in m)) {
         delete m.reasoning_content;
         delete m.reasoning;
         reasoningRemoved += 1;
+        changed.push(i);
       }
     }
-    this.emit('snapshot', this.snapshot());
+    for (const i of changed) db.updateMessage(this.msgIds[i - 1], JSON.stringify(this.messages[i]));
+    this.emitHistory();
     this.persist();
     return { keep: k, trimmed: n, truncatedResults, reasoningRemoved };
   }

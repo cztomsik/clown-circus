@@ -61,7 +61,7 @@ primary interface — the UI is just one client of it.
 - **`webui/api.ts`** — all client → server traffic, kept apart from the
   components (no DOM, no Preact, no JSX): the JSON `api()`/`post()` REST helpers
   and `openSessionEvents(id, handlers)`, which opens the per-session SSE
-  `EventSource`, fans its events out to a `{snapshot, status, done,
+  `EventSource`, fans its events out to a `{message, history, status, done,
   error}` handler map (each `data` JSON-parsed), swallows connection failures,
   and returns a `close()` used as the effect cleanup.
 - **`webui/Header.tsx`** — the **unified top bar**: sidebar toggle, brand, the
@@ -80,7 +80,7 @@ primary interface — the UI is just one client of it.
   while a run is in flight.
   The list **auto-scrolls to the newest turn only while the reader is
   "pinned"** near the bottom (within 80px); once scrolled up, incoming
-  snapshots leave the view alone and a floating bottom-centre `↓ latest` pill
+  messages leave the view alone and a floating bottom-centre `↓ latest` pill
   smooth-scrolls back down and re-pins. `Messages` is keyed by session id
   (in `Main.tsx`), so a session switch remounts it and lands at the bottom of
   the new transcript.
@@ -93,7 +93,7 @@ primary interface — the UI is just one client of it.
   rel="noopener"` on links and strips `javascript:` URLs), and the output is
   injected into one `<div class="md …">` via `dangerouslySetInnerHTML` — the
   **only** `dangerouslySetInnerHTML` in the UI. One parse per text change
-  (re-parsing on each SSE snapshot is cheap at transcript scale). Typography
+  (re-parsing on each SSE message is cheap at transcript scale). Typography
   lives in the `.md` rules in `index.html`, which reference the `--color-*`
   tokens so theming is free.
 - **`webui/ToolCall.tsx`** — bespoke rendering of a tool **call** (the
@@ -233,7 +233,8 @@ primary interface — the UI is just one client of it.
   (resize / rotation), and selecting a session on a narrow viewport closes
   the drawer, so one tap on a session lands you in the chat.
 - **Session view** — full detail from `GET /sessions/:id`. Messages rendered
-  from the snapshot as a flat transcript — no boxed cards or role headers;
+  as a flat transcript (the derived system prompt is the first, collapsed
+  entry) — no boxed cards or role headers;
   consecutive assistant turns (one agent run's worth of LLM calls, ending
   in the tool-less final turn) are grouped into a single tight-spacing
   unit (`gap-1` inside, `gap-3` between runs) so a run reads as one
@@ -273,7 +274,8 @@ primary interface — the UI is just one client of it.
   checkbox parsing) in a collapsible floating panel overlaying the
   transcript (top-right of the main pane; see `webui/Todos.tsx`).
 - **Live updates** — browser `EventSource` on `GET /sessions/:id/events`:
-  - `snapshot` → re-render messages (todos derived from them), token count
+  - `message` → append to the transcript (todos derived from it)
+  - `history` → replace the transcript (undo/clear/trim/retry/retry-turn, and the server's gap recovery after a long disconnect)
   - `status` → update badge, swap send↔stop, refresh the sidebar
   - `error` → transient error banner
   - `done` → update token count

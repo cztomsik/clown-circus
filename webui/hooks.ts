@@ -118,7 +118,8 @@ export const useSessionView = (current, { refresh, onFlash }) => {
   useEffect(() => {
     if (!current) return;
     return openSessionEvents(current, {
-      snapshot: (snap) => patch({ messages: snap.messages, tokens: snap.total_tokens }),
+      message: (d) => setView((v) => (v ? { ...v, messages: [...v.messages, d.message] } : v)),
+      history: (h) => patch({ messages: h.messages }),
       status: (s) => { patch({ status: s.status }); refresh(); },
       done: (d) => patch({ tokens: d.total_tokens }),
       error: (err) => { patch({ status: 'error' }); onFlash(err.message); refresh(); },

@@ -96,7 +96,7 @@ const App = () => {
       const d = await api(`/sessions/${id}`);
       setView({
         id: d.id ?? id, cwd: d.cwd, model: d.model, status: d.status, last_error: d.last_error,
-        messages: d.snapshot.messages, tokens: d.snapshot.total_tokens,
+        messages: d.messages, tokens: d.total_tokens,
         archived: d.archived,
       });
       setNewCwd(d.cwd);
@@ -128,7 +128,7 @@ const App = () => {
         // edited and re-sent.
         if (name === 'undo' && r?.undone) setInput(r.undone);
         const d = await api(`/sessions/${current}`);
-        patch({ status: d.status, last_error: d.last_error, messages: d.snapshot.messages, tokens: d.snapshot.total_tokens });
+        patch({ status: d.status, last_error: d.last_error, messages: d.messages, tokens: d.total_tokens });
       } else if (name === 'archive' || name === 'unarchive') {
         // metadata-only flag: reflect it in the open view, refresh the list.
         const r = await post(`/sessions/${current}/${name}`);

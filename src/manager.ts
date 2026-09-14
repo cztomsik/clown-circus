@@ -18,16 +18,24 @@ export class SessionManager {
   _track(s) {
     if (config.verbose)
       s.emitter.on('event', (rec) => {
-        if (rec.event === 'snapshot') return;
+        // Transcript events (message/history) can carry MB-scale payloads.
+        if (rec.event === 'message' || rec.event === 'history') return;
         console.log(`[${new Date().toISOString()}] session=${s.id} ${rec.event} ${JSON.stringify(rec.data)}`);
       });
   }
 
   _load() {
+    // One pass over the messages table, grouped per session (rowid order =
+    // transcript order).
+    const bySession = new Map();
+    for (const r of db.allMessages()) {
+      if (!bySession.has(r.session_id)) bySession.set(r.session_id, []);
+      bySession.get(r.session_id).push(r);
+    }
     for (const row of db.all()) {
       // An in-flight loop can't survive a restart: running/stopped -> idle.
       const status = row.status === 'running' || row.status === 'stopped' ? 'idle' : row.status;
-      const s = new Session({ row: { ...row, status } });
+      const s = new Session({ row: { ...row, status }, transcript: bySession.get(row.id) ?? [] });
       this.sessions.set(s.id, s);
       s.persist(false); // status rewrite is not activity: keep the stored timestamp
       this._track(s);
@@ -36,7 +44,6 @@ export class SessionManager {
 
   create({ cwd, model }) {
     const now = new Date().toISOString();
-    const snap = { messages: [], total_tokens: 0 };
     const row = {
       id: randomUUID(),
       cwd,
@@ -45,7 +52,7 @@ export class SessionManager {
       created_at: now,
       last_activity: now,
       last_error: null,
-      snapshot: JSON.stringify(snap),
+      total_tokens: 0,
       archived: false,
     };
     const s = new Session({ row });
@@ -57,11 +64,12 @@ export class SessionManager {
 
   // Fork a session: a new session with the same cwd/model/archived, fresh
   // id/timestamps, last_error cleared, and a deep copy of the transcript
-  // (the JSON round-trip in the row makes the copy fully independent of the
-  // source's message array). Allowed while the source is running: if the
-  // copy ends mid-turn (an assistant tool_calls whose tool results have not
-  // all arrived yet — an invalid LLM transcript), settle() strips that
-  // message and its partial results; completed transcripts are copied verbatim.
+  // (the JSON round-trip in importTranscript makes the copy fully independent
+  // of the source's message objects). Allowed while the source is running: if
+  // the copy ends mid-turn (an assistant tool_calls whose tool results have
+  // not all arrived yet — an invalid LLM transcript), settle() strips that
+  // message and its partial results; completed transcripts are copied
+  // verbatim.
   fork(id) {
     const src = this.require(id);
 
@@ -74,12 +82,13 @@ export class SessionManager {
       created_at: now,
       last_activity: now,
       last_error: null,
-      snapshot: JSON.stringify(src.snapshot()), // JSON round-trip → deep copy
+      total_tokens: 0,
       archived: src.archived,
     };
     const s = new Session({ row });
+    s.persist(); // the session row must exist before its message rows (FK)
+    s.importTranscript(src.messages.slice(1)); // system prompt is re-derived
     s.settle(); // a running source may end with pending tool_calls
-    s.persist();
     this.sessions.set(s.id, s);
     this._track(s);
     return s;
