@@ -62,7 +62,7 @@ export class SessionManager {
   // copy ends mid-turn (an assistant tool_calls whose tool results have not
   // all arrived yet — an invalid LLM transcript), settle() strips that
   // message and its partial results; completed transcripts are copied verbatim.
-  duplicate(id) {
+  fork(id) {
     const src = this.require(id);
 
     const now = new Date().toISOString();

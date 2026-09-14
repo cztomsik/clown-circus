@@ -149,8 +149,8 @@ export const buildApp = ({ manager }) => {
   // Fork the session: a new session with the same cwd/model and a deep copy of
   // the transcript (rolled back to the last user turn). Allowed while the
   // source is running — the copy is independent. Returns the new session.
-  app.post('/sessions/:id/duplicate', (req, res) => {
-    const s = manager.duplicate(req.params.id);
+  app.post('/sessions/:id/fork', (req, res) => {
+    const s = manager.fork(req.params.id);
     res.status(201).json(s.detail());
   });
 

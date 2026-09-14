@@ -134,10 +134,10 @@ const App = () => {
         const r = await post(`/sessions/${current}/${name}`);
         patch({ archived: r.archived });
         refresh();
-      } else if (name === 'duplicate') {
+      } else if (name === 'fork') {
         // fork: the server returns the new session; jump to it so the branch
         // continues immediately (the source stays open in the sidebar).
-        const r = await post(`/sessions/${current}/duplicate`);
+        const r = await post(`/sessions/${current}/fork`);
         await select(r.id);
       } else {
         // agent actions (retry/init/compact): fire-and-forget; SSE streams it.
@@ -168,7 +168,7 @@ const App = () => {
         if (!Number.isInteger(n) || n < 0) { flashMsg(`usage: /trim [turns] — keep the last n (default ${TRIM_KEEP_DEFAULT})`); return; }
         setInput(''); void handleAction('trim', n); return;
       }
-      case 'duplicate': setInput(''); void handleAction('duplicate'); return;
+      case 'fork': setInput(''); void handleAction('fork'); return;
       default: flashMsg(`unknown command: /${name}`);
     }
   };

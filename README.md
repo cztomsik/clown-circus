@@ -125,7 +125,7 @@ reuse it). There is no server-side default:
 | `POST` | `/sessions/:id/init` | `/init` | Send the `/init` prompt → `202` / `409`. |
 | `POST` | `/sessions/:id/archive` | ⋮ menu | Metadata only: hide from the default session list (kept for later) → `200 { id, archived }`. Allowed mid-run. |
 | `POST` | `/sessions/:id/unarchive` | ⋮ menu | Restore to the default session list → `200 { id, archived }`. Allowed mid-run. |
-| `POST` | `/sessions/:id/duplicate` | `/duplicate` | Fork: a new session with the same `cwd`/`model` and a deep-copied transcript (settled to a valid turn seam) → `201` with the new session. |
+| `POST` | `/sessions/:id/fork` | `/fork` | Fork: a new session with the same `cwd`/`model` and a deep-copied transcript (settled to a valid turn seam) → `201` with the new session. |
 
 Run-starting controls (`retry`, `retry-turn`, `compact`, `init`) reject with `409` while a
 run is active. `stop` (and the metadata-only `archive`/`unarchive`) are allowed mid-run;

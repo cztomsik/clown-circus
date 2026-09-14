@@ -46,7 +46,7 @@ const buildBlocks = (messages) => {
 // — rendered by ToolCall (webui/ToolCall.tsx) with a bespoke view per tool, or
 // the generic pretty-JSON <pre> for unknown ones — above the result, which keeps
 // the original args/result distinction (bg-line tint vs bg-bg tint). A call
-// without a result (e.g. a duplicate of a running session, which strips a
+// without a result (e.g. a fork of a running session, which strips a
 // dangling partial turn) shows just the call block.
 const ToolPair = ({ tc, result }) => {
   const name = tc.function.name;
