@@ -132,7 +132,7 @@ const Reasoning = ({ text }) => (
                     rounded hover:bg-material2 transition-colors">
       <Dot />
       <span class="text-dim font-medium whitespace-nowrap">reasoning</span>
-      <span class="text-text3 whitespace-nowrap overflow-hidden text-ellipsis font-mono">{firstLine(text, 60)}</span>
+      <span class="text-text3 whitespace-nowrap overflow-hidden text-ellipsis">{firstLine(text, 60)}</span>
     </summary>
     <Guide>
       <Pre text={text} cls="m-0 text-dim text-xs whitespace-pre-wrap break-words" />
