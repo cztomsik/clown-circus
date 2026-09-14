@@ -7,6 +7,31 @@ import { Markdown } from './Markdown';
 
 const Pre = ({ text, cls = PRE }) => <pre class={cls}>{text ?? ''}</pre>;
 
+// Whether a tool-result text looks like a failure: accept() renders tool
+// exceptions as `Error: …` content, run_command returns `Error running
+// command: …` (spawn failed) or `Command failed with exit code N …`
+// (non-zero exit). A display-only heuristic — the transcript (and what the
+// model sees) is untouched.
+const isToolError = (c) =>
+  typeof c === 'string' && (/^Error\b/.test(c) || c.startsWith('Command failed with exit code'));
+
+// A tool call's result: plain dim <pre> — except a failed result, whose
+// first line renders in the error tint so the failure stands out even when
+// the detail is collapsed to the one-line preview.
+const ToolResult = ({ content }) => {
+  if (content == null) return null;
+  const text = String(content);
+  if (!isToolError(text))
+    return <pre class="m-0 text-dim text-xs font-mono whitespace-pre-wrap break-words">{text}</pre>;
+  const nl = text.indexOf('\n');
+  return (
+    <pre class="m-0 text-xs font-mono whitespace-pre-wrap break-words">
+      <span class="text-err">{nl === -1 ? text : text.slice(0, nl)}</span>
+      <span class="text-dim">{nl === -1 ? '' : text.slice(nl)}</span>
+    </pre>
+  );
+};
+
 // Pair an assistant turn's tool_calls with the tool results that immediately
 // follow it (matched by tool_call_id). `consumed` is how many messages were
 // absorbed, so the caller can skip past them.
@@ -56,13 +81,14 @@ const Activity = ({ label, status = null, mono = false, children }) => (
 // One quiet call+result line. The collapsed line is a 4-column grid:
 // dot · name · arg · state — three tints, matching the mockup. Expanded,
 // a faint guide holds the call (rendered by ToolCall) above the result.
-const ToolPair = ({ tc, result }) => {
+const ToolPair = ({ tc, result, cwd }) => {
   const name = tc.function.name;
   const args = parseArgs(tc.function.arguments);
   const raw = prettyArgs(tc.function.arguments);
   // Split the title into name / arg for the 3-tint layout.
   const title = toolCallTitle(name, args);
   const arg = title ? title.slice(name.length).trim() : (raw ? firstLine(raw, 60) : '');
+  const failed = isToolError(result?.content);
   return (
     <details class="q-activity group">
       <summary class="grid grid-cols-[6px_minmax(0,auto)_minmax(0,1fr)_auto] items-baseline gap-x-2.5
@@ -71,11 +97,11 @@ const ToolPair = ({ tc, result }) => {
         <span class="w-[5px] h-[5px] rounded-full bg-text3 flex-none self-center opacity-85"></span>
         <span class="text-dim font-medium whitespace-nowrap">{name}</span>
         {arg ? <span class="text-text3 whitespace-nowrap overflow-hidden text-ellipsis font-mono">{arg}</span> : null}
-        {result ? <span class="text-text3 text-[.72rem] justify-self-end whitespace-nowrap opacity-90 font-mono">{firstLine(result.content, 40)}</span> : null}
+        {result ? <span class={`${failed ? 'text-err' : 'text-text3'} text-[.72rem] justify-self-end whitespace-nowrap opacity-90 font-mono`}>{firstLine(result.content, 40)}</span> : null}
       </summary>
       <div class="mb-1.5 ml-[7px] py-1 pl-3.5 border-l border-line/70 space-y-1.5">
-        <ToolCall name={name} args={args} raw={raw} />
-        {result ? <pre class="m-0 text-dim text-xs font-mono whitespace-pre-wrap break-words">{result.content ?? ''}</pre> : null}
+        <ToolCall name={name} args={args} raw={raw} cwd={cwd} />
+        {result ? <ToolResult content={result.content} /> : null}
       </div>
     </details>
   );
@@ -105,7 +131,7 @@ const Reasoning = ({ text }) => (
 // reasoning, prose, and tool-call. Rendered with uniform spacing and no
 // per-turn wrapper, all of a run's reasoning + tool calls read as ONE inline
 // list instead of a separate fragment per turn.
-const runRows = (blocks) => {
+const runRows = (blocks, cwd) => {
   const rows = [];
   let k = 0;
   for (const b of blocks) {
@@ -113,7 +139,7 @@ const runRows = (blocks) => {
     const r = reasoningText(m);
     if (r) rows.push(<Reasoning key={k++} text={r} />);
     if (m.content) rows.push(<Markdown key={k++} text={m.content} />);
-    if (b.pairs) for (const p of b.pairs) rows.push(<ToolPair key={k++} tc={p.tc} result={p.result} />);
+    if (b.pairs) for (const p of b.pairs) rows.push(<ToolPair key={k++} tc={p.tc} result={p.result} cwd={cwd} />);
   }
   return rows;
 };
@@ -147,7 +173,7 @@ const Message = ({ m }) => {
   if (m.role === 'tool') {
     return (
       <Activity label="tool result" mono status={firstLine(m.content, 60)}>
-        <Pre text={m.content} cls="m-0 text-dim text-xs font-mono whitespace-pre-wrap break-words" />
+        <ToolResult content={m.content} />
       </Activity>
     );
   }
@@ -236,7 +262,7 @@ const NEAR_BOTTOM = 80;
 // back; a floating "↓ latest" pill (bottom-centre of the pane) smooth-scrolls
 // back and re-pins. `pinned` mirrors `pinnedRef` for the pill's visibility;
 // the ref is what the layout effect reads (no effect-ordering dependency).
-export const Messages = ({ messages, running = false }) => {
+export const Messages = ({ messages, running = false, cwd = '' }) => {
   const ref = useRef(null);
   const [pinned, setPinned] = useState(true);
   const pinnedRef = useRef(true);
@@ -270,7 +296,7 @@ export const Messages = ({ messages, running = false }) => {
       <div ref={ref} class="flex-1 overflow-y-auto" onScroll={onScroll}>
         <div class="max-w-3xl mx-auto w-full p-3 flex flex-col gap-3">
           {groups.map((g, i) => g.blocks
-            ? <div key={i} class="flex flex-col gap-1">{runRows(g.blocks)}</div>
+            ? <div key={i} class="flex flex-col gap-1">{runRows(g.blocks, cwd)}</div>
             : <Message key={i} m={g.m} />)}
           {running ? <Working tool={inFlightTool(blocks)} /> : null}
         </div>

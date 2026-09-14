@@ -4,28 +4,48 @@ import { parseTodos, firstLine } from './util';
 // rendered separately (and unchanged) by Message.tsx. Every tool registered in
 // src/tools.js gets a view; anything else (or an unparseable `arguments`
 // string) falls back to the generic pretty-JSON <pre>. All values are
-// untrusted, LLM-supplied text and are rendered as text nodes only — never HTML.
+// untrusted, LLM-supplied text and are rendered as text nodes only — never
+// HTML. Paths are clickable vscode:// links (open in the local VS Code, the
+// same mechanism as the header's "open in vscode").
 
 const PRE = 'm-0 px-2 py-1.5 text-dim text-xs whitespace-pre-wrap break-words rounded bg-line/50';
 const HEAD = 'px-2 py-1.5 rounded bg-line/50 text-xs font-mono break-all';
 const SCROLL = 'max-h-[300px] overflow-y-auto';
+const LINK = 'hover:text-accent hover:underline break-all';
+
+// Resolve a (possibly relative) tool path against the session cwd into the
+// absolute path vscode:// opens — mirrors the server's resolve(ctx.cwd,
+// path) — and build its vscode://file/ URI (encodeURI keeps the slashes).
+const vscodeLink = (cwd, p) => {
+  if (!p) return null;
+  const abs = /^\//.test(p) ? p : `${String(cwd ?? '').replace(/\/+$/, '')}/${p}`;
+  return `vscode://file/${encodeURI(abs)}`;
+};
+
+// A tool path: a vscode:// link when resolvable, plain text otherwise.
+const Path = ({ cwd, p, cls }) => {
+  const href = vscodeLink(cwd, p);
+  return href
+    ? <a class={cls} href={href} title="open in VS Code">{p}</a>
+    : <span class={cls}>{p ?? ''}</span>;
+};
 
 // read_file — the path, plus a "raw" flag when the line-number gutter is off.
-const ReadFile = ({ a }) => (
+const ReadFile = ({ a, cwd }) => (
   <div class={HEAD}>
-    <span class="text-dim">read </span><span class="text-ink">{a.path ?? ''}</span>
+    <span class="text-dim">read </span><Path cwd={cwd} p={a.path} cls={`text-ink ${LINK}`} />
     {a.raw ? <span class="text-dim/70"> · raw</span> : null}
   </div>
 );
 
 // write_file — path + line count, then the full content (the real payload).
-const WriteFile = ({ a }) => {
+const WriteFile = ({ a, cwd }) => {
   const c = a.content ?? '';
   const lines = c.length ? c.split('\n').length : 0;
   return (
     <div class="space-y-1">
       <div class={HEAD}>
-        <span class="text-dim">write </span><span class="text-ink">{a.path ?? ''}</span>
+        <span class="text-dim">write </span><Path cwd={cwd} p={a.path} cls={`text-ink ${LINK}`} />
         {lines ? <span class="text-dim/70"> · {lines} line{lines === 1 ? '' : 's'}</span> : null}
       </div>
       {c ? <pre class={`${PRE} ${SCROLL}`}>{c}</pre> : null}
@@ -36,14 +56,14 @@ const WriteFile = ({ a }) => {
 // edit_file — path, then a stacked mini-diff: the removed old content (err
 // tint, − gutter) above the added new content (ok tint, + gutter). The star of
 // the set: turns a big JSON blob with embedded newlines into a red/green pair.
-const EditFile = ({ a }) => {
+const EditFile = ({ a, cwd }) => {
   const old = a.old_content ?? '';
   const neu = a.new_content ?? '';
   const diff = 'px-2 py-1.5 text-xs font-mono whitespace-pre-wrap break-words border-l-2 ' + SCROLL;
   return (
     <div class="space-y-1">
       <div class={HEAD}>
-        <span class="text-dim">edit </span><span class="text-ink">{a.path ?? ''}</span>
+        <span class="text-dim">edit </span><Path cwd={cwd} p={a.path} cls={`text-ink ${LINK}`} />
         {a.replace_all ? <span class="text-dim/70"> · all</span> : null}
       </div>
       <div class={`${diff} border-err bg-err/10`}><span class="text-err">− </span>{old}</div>
@@ -53,10 +73,10 @@ const EditFile = ({ a }) => {
 };
 
 // run_command — a $-prefixed prompt line, with the cwd noted when set.
-const RunCommand = ({ a }) => (
+const RunCommand = ({ a, cwd }) => (
   <div class="space-y-1">
     <pre class={PRE}><span class="text-accent">$ </span><span class="text-ink">{a.command ?? ''}</span></pre>
-    {a.cwd ? <div class="px-2 text-xs font-mono break-all"><span class="text-dim/70">cwd </span><span class="text-dim">{a.cwd}</span></div> : null}
+    {a.cwd ? <div class="px-2 text-xs font-mono break-all"><span class="text-dim/70">cwd </span><Path cwd={cwd} p={a.cwd} cls={`text-dim ${LINK}`} /></div> : null}
   </div>
 );
 
@@ -122,8 +142,9 @@ export const toolCallTitle = (name, args) => {
 };
 
 // The expanded body for one tool call's arguments. `args` is the parsed object
-// (or null) and `raw` is the pretty-JSON string used by the fallback.
-export const ToolCall = ({ name, args, raw }) => {
+// (or null), `raw` is the pretty-JSON string used by the fallback, and `cwd`
+// (the session working dir) is what relative paths link against.
+export const ToolCall = ({ name, args, raw, cwd }) => {
   const R = RENDERERS[name];
-  return R && args ? <R a={args} /> : <Generic raw={raw} />;
+  return R && args ? <R a={args} cwd={cwd} /> : <Generic raw={raw} />;
 };

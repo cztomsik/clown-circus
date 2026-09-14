@@ -85,8 +85,16 @@ const App = () => {
   // Reflect the selected session in the tab title; fall back to the app name
   // when none is open.
   useEffect(() => {
-    document.title = view?.cwd ? `${baseName(view.cwd)} · Clown-Circus` : 'Clown-Circus';
-  }, [view?.cwd]);
+    document.title = view?.cwd ? `${view.title ?? baseName(view.cwd)} · Clown-Circus` : 'Clown-Circus';
+  }, [view?.cwd, view?.title]);
+
+  // SSE events carry transcript + status, not meta — so a title set by the
+  // first send only reaches the list poll. Mirror the open session's title
+  // from the polled list into the view (the header + tab title read it).
+  useEffect(() => {
+    const s = current ? sessions.find((x) => x.id === current) : null;
+    if (s && view?.title !== s.title) patch({ title: s.title });
+  }, [sessions, current, view?.title]);
 
   const select = async (id) => {
     if (!isWide()) setSideOpen(false); // on mobile, a tap on a session reveals the chat
@@ -97,7 +105,7 @@ const App = () => {
       setView({
         id: d.id ?? id, cwd: d.cwd, model: d.model, status: d.status, last_error: d.last_error,
         messages: d.messages, tokens: d.total_tokens,
-        archived: d.archived,
+        archived: d.archived, title: d.title,
       });
       setNewCwd(d.cwd);
       setModel(d.model); // pre-fill the select (useModels drops stale values)
@@ -128,7 +136,7 @@ const App = () => {
         // edited and re-sent.
         if (name === 'undo' && r?.undone) setInput(r.undone);
         const d = await api(`/sessions/${current}`);
-        patch({ status: d.status, last_error: d.last_error, messages: d.messages, tokens: d.total_tokens });
+        patch({ status: d.status, last_error: d.last_error, messages: d.messages, tokens: d.total_tokens, title: d.title });
       } else if (name === 'archive' || name === 'unarchive') {
         // metadata-only flag: reflect it in the open view, refresh the list.
         const r = await post(`/sessions/${current}/${name}`);

@@ -23,7 +23,7 @@ export const Main = (p) => !p.view
       <Todos todos={extractTodos(p.view.messages)} />
       {/* keyed by session: remount resets the scroll "pinned" state so a
            switch always lands at the bottom of the new transcript */}
-      <Messages key={p.view.id} messages={p.view.messages} running={p.view.status === 'running'} />
+      <Messages key={p.view.id} messages={p.view.messages} running={p.view.status === 'running'} cwd={p.view.cwd} />
       <InputBar running={p.view.status === 'running'} current={p.view.id} value={p.input}
                 onInput={(e) => p.setInput(e.target.value)} onKey={p.onKey} onSend={p.onSend} onStop={p.onStop}
                 attachments={p.attachments} onAddFiles={p.onAddFiles} onRemoveAttachment={p.onRemoveAttachment}

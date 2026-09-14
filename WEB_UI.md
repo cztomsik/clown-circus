@@ -107,15 +107,20 @@ primary interface — the UI is just one client of it.
   lives in the `.md` rules in `index.html`, which reference the `--color-*`
   tokens so theming is free.
 - **`webui/ToolCall.tsx`** — bespoke rendering of a tool **call** (the
-  arguments only; the tool **result** stays a plain dim `<pre>` in
-  `Message.tsx`). One view per registered tool: `read_file`/`write_file`/
-  `edit_file` show the path (`edit_file` as a stacked red-gutter old over
-  green-gutter new diff), `run_command` as a `$`-prompt line (+ cwd),
-  `write_todos` as a count + the parsed checkbox list, and `load_skill` as the
-  skill name. Exports `ToolCall({ name, args, raw })` (the body; unknown tools
-  or an unparseable `arguments` string fall back to the generic pretty-JSON
-  `<pre>`) and `toolCallTitle(name, args)` (the short collapsed-summary title,
-  or `null` when the tool has none).
+  arguments only; the tool **result** is rendered by `Message.tsx`, whose
+  failed results get an error-tinted first line). One view per registered
+  tool: `read_file`/`write_file`/`edit_file` show the path (`edit_file` as a
+  stacked red-gutter old over green-gutter new diff), `run_command` as a
+  `$`-prompt line (+ cwd), `write_todos` as a count + the parsed checkbox
+  list, and `load_skill` as the skill name. Every shown path (and
+  `run_command`'s cwd) is a **clickable `vscode://file/` link** — resolved
+  against the session cwd (threaded down as the `cwd` prop) and opened in
+  the local VS Code via the browser's external-app prompt, the same
+  mechanism as the header's `open in vscode`. Exports
+  `ToolCall({ name, args, raw, cwd })` (the body; unknown tools or an
+  unparseable `arguments` string fall back to the generic pretty-JSON
+  `<pre>`) and `toolCallTitle(name, args)` (the short collapsed-summary
+  title, or `null` when the tool has none).
 - **`webui/Todos.tsx`** — the live todo panel: a **collapsible, floating**
   overlay anchored top-right inside the main pane (`<main>` is `relative`;
   the panel is `absolute`, semi-transparent `bg-panel/95` + backdrop blur,
@@ -266,8 +271,11 @@ primary interface — the UI is just one client of it.
   `tool  path`-style summary title plus a bespoke argument view — see
   `webui/ToolCall.tsx` — e.g. a stacked red/green diff for `edit_file`, a
   `$`-prompt for `run_command`, the parsed list for `write_todos`; unknown
-  tools fall back to pretty-JSON) and whose **result** stays a plain dim
-  `<pre>`; a turn that carries the provider's chain-of-thought
+  tools fall back to pretty-JSON) and whose **result** is a plain dim
+  `<pre>` — except a failed one (`Error…` / `Command failed with exit
+  code…` — a display-only heuristic over the result text), whose first line
+  renders in the error tint (and whose collapsed preview is tinted to
+  match); a turn that carries the provider's chain-of-thought
   (llama.cpp's `reasoning_content` or vLLM's `reasoning`, read via
   `reasoningText`) shows it as a collapsed dim italic `reasoning` details
   above the visible response;
