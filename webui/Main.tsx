@@ -13,12 +13,12 @@ const ErrorBox = ({ message }) => message
 // the floating Todos overlay (top-right, see Todos.tsx).
 export const Main = (p) => !p.view
   ? (
-    <main class="relative flex-1 flex flex-col min-w-0">
+    <main class="relative flex-1 flex flex-col min-w-0 bg-content">
       <div class="flex-1 flex items-center justify-center text-dim">select or create a session</div>
     </main>
   )
   : (
-    <main class="relative flex-1 flex flex-col min-w-0">
+    <main class="relative flex-1 flex flex-col min-w-0 bg-content">
       <ErrorBox message={p.flash ?? p.view.last_error} />
       <Todos todos={extractTodos(p.view.messages)} />
       {/* keyed by session: remount resets the scroll "pinned" state so a

@@ -19,7 +19,7 @@
 - **Storage**: builtin **`node:sqlite`** (`DatabaseSync`), single file `~/.clowndb` by default. One row per session + one row per message (`messages` table, global autoincrement id); the system prompt is derived from `cwd` and never stored. Emits a harmless `ExperimentalWarning`.
 - **LLM**: OpenAI-compatible `/v1/chat/completions` (llama.cpp by default). Base URL from `--base-url`/`CLOWN_API` (default `http://127.0.0.1:8080`); optional `CLOWN_API_KEY` sent as Bearer.
 - **Spec**: the authoritative spec is [`SPEC.md`](SPEC.md) (16 sections); `SPEC.md` and this repo's code are the source of truth.
-- **Web UI**: a first-class feature, described authoritatively in [`WEB_UI.md`](WEB_UI.md). A thin `webui/index.html` shell (Tailwind v4 via the `@tailwindcss/browser` JIT, `@theme` tokens) plus small **Preact JSX (`.tsx`) and TypeScript (`.ts`)** modules, esbuild-bundled at startup into `webui/vendor/bundle.js` (served at `/vendor/bundle.js`) — `app.tsx` is the root component (all state + side effects), with `Header/Sidebar/Main/Message/InputBar/Todos/ToolCall/Markdown.tsx` for the components and `api/util/image/ui.ts` for the API client, pure helpers, image helpers, and shared class tokens (full list in the Source Structure table). Pure client of the REST + SSE API: project-grouped session sidebar, model picker (`GET /models`), session-level header actions (open-in-vscode, archive, delete) + composer slash commands (retry, init, compact, undo, clear, etc.), live chat over SSE, todos panel.
+- **Web UI**: a first-class feature, described authoritatively in [`WEB_UI.md`](WEB_UI.md). A thin `webui/index.html` shell (Tailwind v4 via the `@tailwindcss/browser` JIT, `@theme` tokens) plus small **Preact JSX (`.tsx`) and TypeScript (`.ts`)** modules, esbuild-bundled at startup into `webui/vendor/bundle.js` (served at `/vendor/bundle.js`) — `app.tsx` is the root component (all state + side effects), with `Header/Sidebar/Main/Message/InputBar/Todos/ToolCall/Markdown.tsx` for the components, `primitives.tsx` for the mini UI kit (shared building blocks), and `api/util/image/ui.ts` for the API client, pure helpers, image helpers, and shared class tokens (full list in the Source Structure table). Pure client of the REST + SSE API: project-grouped session sidebar, model picker (`GET /models`), session-level header actions (open-in-vscode, archive, delete) + composer slash commands (retry, init, compact, undo, clear, etc.), live chat over SSE, todos panel.
 
 ## Source Structure
 
@@ -42,6 +42,7 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 | `src/skills/init.md` | Built-in `/init` skill: explore the project and write an `AGENTS.md`. |
 | `webui/index.html` | Web UI shell served at `/`. Thin page: Tailwind v4 `@theme` tokens + a `<style type="text/tailwindcss">` block, a `#root` mount, and `<script type="module" src="/vendor/bundle.js">` — no static UI markup. |
 | `webui/app.tsx` | Root Preact component (bundle entry): owns all state + side effects (config/models fetch, 10s poll, SSE, per-session drafts, actions) and composes the layout. |
+| `webui/primitives.tsx` | Mini UI kit: the small shared building blocks — `IconBtn`, `PrimaryBtn`, `StatusDot`, `Spinner`, `Switch`, `Menu` (dropdown). Class tokens used by only one primitive live with it; multi-component tokens live in `ui.ts`. |
 | `webui/Header.tsx` | Unified top bar: sidebar toggle, session status, model picker, theme toggle, and the ⋮ actions menu (open-in-vscode/archive/delete; open-in-vscode is a client-side `vscode://` URI, not a REST call). |
 | `webui/Sidebar.tsx` | Project-grouped session list + new-session form + the "show archived" toggle. |
 | `webui/Main.tsx` | Right-hand pane composition (error banner, todos, transcript, composer). |
@@ -50,10 +51,10 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 | `webui/InputBar.tsx` | Composer: textarea, send/stop, slash commands, image attachments (paste + drag). |
 | `webui/Todos.tsx` | Floating collapsible todo panel. |
 | `webui/api.ts` | REST + SSE client helpers (no Preact/DOM). |
-| `webui/util.ts` | Pure helpers (no DOM/Preact): baseName, parseCommand, modelId, isVisionModel, reasoningText, timeAgo, prettyArgs, parseArgs, parseTodos, extractTodos. |
+| `webui/util.ts` | Pure helpers (no DOM/Preact): baseName, firstLine, parseCommand, modelId, isVisionModel, reasoningText, timeAgo, prettyArgs, parseArgs, parseTodos, extractTodos. |
 | `webui/image.ts` | Client-side image helpers (FileReader read, canvas downscale). |
 | `webui/Markdown.tsx` | Markdown component (marked + DOMPurify → `dangerouslySetInnerHTML`); the sole `dangerouslySetInnerHTML` in the UI. |
-| `webui/ui.ts` | Shared Tailwind class tokens (`BTN`, `PRE`). |
+| `webui/ui.ts` | Shared Tailwind class tokens used by more than one component (`PRE`). |
 | `WEB_UI.md` | Authoritative description of the web UI: features, constraints/invariants, and current gaps (it is a scoped feature, expected to grow). |
 
 ## Architecture Notes

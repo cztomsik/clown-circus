@@ -1,15 +1,10 @@
-import { parseTodos } from './util';
+import { parseTodos, firstLine } from './util';
 
 // Bespoke rendering of a tool *call* — the arguments only. The tool *result* is
 // rendered separately (and unchanged) by Message.tsx. Every tool registered in
 // src/tools.js gets a view; anything else (or an unparseable `arguments`
 // string) falls back to the generic pretty-JSON <pre>. All values are
 // untrusted, LLM-supplied text and are rendered as text nodes only — never HTML.
-
-const firstLine = (s, n = 80) => {
-  const l = (s ?? '').split('\n')[0];
-  return l.length > n ? l.slice(0, n) + '…' : l;
-};
 
 const PRE = 'm-0 px-2 py-1.5 text-dim text-xs whitespace-pre-wrap break-words rounded bg-line/50';
 const HEAD = 'px-2 py-1.5 rounded bg-line/50 text-xs font-mono break-all';

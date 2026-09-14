@@ -56,8 +56,18 @@ primary interface — the UI is just one client of it.
   modules below and mounts into `#root` via Preact's `render`. Markup is
   plain **Preact JSX** (`.tsx`, automatic runtime → `preact/jsx-runtime`;
   esbuild does the transform — no `h`/`htm` prelude anywhere).
+- **`webui/primitives.tsx`** — the **mini UI kit**: the small shared
+  building blocks, one component per idiom, headless of data (no API calls,
+  no session state): `IconBtn` (the square ghost icon button), `PrimaryBtn`
+  (the gradient CTA), `StatusDot` (the session status dot; the colour map —
+  incl. the running pulse — lives here so header and sidebar can't drift),
+  `Spinner` (the CSS spinner), `Switch` (the iOS-style toggle), and `Menu`
+  (icon-triggered dropdown: owns its open state — backdrop click / Escape /
+  item select close it; items may be `danger` and/or carry a `rule`
+  separator). A class token lives with its primitive here when only that
+  component uses it; in `ui.ts` when shared.
 - **`webui/ui.ts`** — the shared Tailwind class tokens
-  (`BTN`, `PRE`). Component modules import them where needed.
+  (`PRE`). Component modules import them where needed.
 - **`webui/api.ts`** — all client → server traffic, kept apart from the
   components (no DOM, no Preact, no JSX): the JSON `api()`/`post()` REST helpers
   and `openSessionEvents(id, handlers)`, which opens the per-session SSE

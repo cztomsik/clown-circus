@@ -1,15 +1,11 @@
 import { useRef, useState, useEffect, useLayoutEffect } from 'preact/hooks';
 import { PRE } from './ui';
-import { prettyArgs, parseArgs, reasoningText } from './util';
+import { Spinner } from './primitives';
+import { prettyArgs, parseArgs, reasoningText, firstLine } from './util';
 import { ToolCall, toolCallTitle } from './ToolCall';
 import { Markdown } from './Markdown';
 
 const Pre = ({ text, cls = PRE }) => <pre class={cls}>{text ?? ''}</pre>;
-
-const firstLine = (s, n = 120) => {
-  const l = (s ?? '').split('\n')[0];
-  return l.length > n ? l.slice(0, n) + '…' : l;
-};
 
 // Pair an assistant turn's tool_calls with the tool results that immediately
 // follow it (matched by tool_call_id). `consumed` is how many messages were
@@ -40,91 +36,143 @@ const buildBlocks = (messages) => {
   return blocks;
 };
 
-// One collapsible call+result pair. The summary shows a short, bounded per-tool
-// title (e.g. `edit_file src/foo.js`) plus a first-line preview of the result,
-// so a large payload can't stretch the collapsed line. The body stacks the call
-// — rendered by ToolCall (webui/ToolCall.tsx) with a bespoke view per tool, or
-// the generic pretty-JSON <pre> for unknown ones — above the result, which keeps
-// the original args/result distinction (bg-line tint vs bg-bg tint). A call
-// without a result (e.g. a fork of a running session, which strips a
-// dangling partial turn) shows just the call block.
+// A quiet "thing that happened" line: a small bullet + a short dim label, with
+// an optional right-aligned muted status; it expands to a faint, indented detail
+// under a hairline left guide (no box). Used by reasoning, unpaired tools, and
+// any non-system disclosure. The native <details> triangle is hidden (see
+// index.html) in favour of the bullet dot.
+const Activity = ({ label, status = null, mono = false, children }) => (
+  <details class="q-activity group">
+    <summary class="grid grid-cols-[6px_minmax(0,1fr)_auto] items-center gap-x-2 py-1 pl-1
+                    text-xs cursor-pointer select-none list-none">
+      <span class="w-1 h-1 rounded-full bg-dim/50 flex-none group-hover:bg-dim"></span>
+      <span class={`truncate text-dim group-hover:text-ink/70 ${mono ? 'font-mono' : 'italic'}`}>{label}</span>
+      {status ? <span class="hidden sm:block justify-self-end truncate max-w-[48%] text-dim/55 whitespace-nowrap">{status}</span> : null}
+    </summary>
+    {children ? <div class="mb-1.5 ml-[6px] py-1 pl-3 border-l border-line/70">{children}</div> : null}
+  </details>
+);
+
+// One quiet call+result line. The collapsed line is a 4-column grid:
+// dot · name · arg · state — three tints, matching the mockup. Expanded,
+// a faint guide holds the call (rendered by ToolCall) above the result.
 const ToolPair = ({ tc, result }) => {
   const name = tc.function.name;
-  const raw = prettyArgs(tc.function.arguments);
   const args = parseArgs(tc.function.arguments);
-  const title = toolCallTitle(name, args) ?? `${name}(${firstLine(raw, 80)})`;
+  const raw = prettyArgs(tc.function.arguments);
+  // Split the title into name / arg for the 3-tint layout.
+  const title = toolCallTitle(name, args);
+  const arg = title ? title.slice(name.length).trim() : (raw ? firstLine(raw, 60) : '');
   return (
-    <details class="border-l-2 border-line/60 open:bg-panel/70 open:rounded-r-md">
-      <summary class="py-1 px-2.5 text-dim text-xs cursor-pointer select-none break-words hover:text-ink/70">
-        {title} {result ? <span class="opacity-60">— {firstLine(result.content)}</span> : null}
+    <details class="q-activity group">
+      <summary class="grid grid-cols-[6px_minmax(0,auto)_minmax(0,1fr)_auto] items-baseline gap-x-2.5
+                      py-[3px] pl-1 pr-1.5 text-xs cursor-pointer select-none list-none
+                      rounded hover:bg-material2 transition-colors">
+        <span class="w-[5px] h-[5px] rounded-full bg-text3 flex-none self-center opacity-85"></span>
+        <span class="text-dim font-medium whitespace-nowrap">{name}</span>
+        {arg ? <span class="text-text3 whitespace-nowrap overflow-hidden text-ellipsis font-mono">{arg}</span> : null}
+        {result ? <span class="text-text3 text-[.72rem] justify-self-end whitespace-nowrap opacity-90 font-mono">{firstLine(result.content, 40)}</span> : null}
       </summary>
-      <div class="p-1.5 space-y-1">
+      <div class="mb-1.5 ml-[7px] py-1 pl-3.5 border-l border-line/70 space-y-1.5">
         <ToolCall name={name} args={args} raw={raw} />
-        {result ? <pre class="m-0 px-2 py-1.5 text-dim text-xs whitespace-pre-wrap break-words rounded bg-bg/80">{result.content ?? ''}</pre> : null}
+        {result ? <pre class="m-0 text-dim text-xs font-mono whitespace-pre-wrap break-words">{result.content ?? ''}</pre> : null}
       </div>
     </details>
   );
 };
 
 // The model's chain-of-thought, when the provider emits reasoning on an
-// assistant turn (llama.cpp: `reasoning_content`, vLLM: `reasoning`). Rendered
-// collapsed + dim/italic so it reads as secondary to the visible response.
+// assistant turn (llama.cpp: `reasoning_content`, vLLM: `reasoning`).
+// Rendered as the same quiet line as a tool call — dot · "reasoning" · a
+// one-line preview — so it reads as just another step in the run's inline
+// list rather than a separate kind of line.
 const Reasoning = ({ text }) => (
-  <details class="border-l-2 border-line/50 open:bg-panel/40 open:rounded-r-md">
-    <summary class="py-1 px-2.5 text-dim/70 text-xs italic cursor-pointer select-none hover:text-dim">reasoning</summary>
-    <Pre text={text} cls="m-0 px-2.5 pb-1.5 pt-0.5 text-dim text-xs italic whitespace-pre-wrap break-words" />
+  <details class="q-activity group">
+    <summary class="grid grid-cols-[6px_minmax(0,auto)_minmax(0,1fr)_auto] items-baseline gap-x-2.5
+                    py-[3px] pl-1 pr-1.5 text-xs cursor-pointer select-none list-none
+                    rounded hover:bg-material2 transition-colors">
+      <span class="w-[5px] h-[5px] rounded-full bg-text3 flex-none self-center opacity-85"></span>
+      <span class="text-dim font-medium whitespace-nowrap">reasoning</span>
+      <span class="text-text3 whitespace-nowrap overflow-hidden text-ellipsis font-mono">{firstLine(text, 60)}</span>
+    </summary>
+    <div class="mb-1.5 ml-[7px] py-1 pl-3.5 border-l border-line/70">
+      <Pre text={text} cls="m-0 text-dim text-xs whitespace-pre-wrap break-words" />
+    </div>
   </details>
 );
 
-// Assistant turn: optional reasoning + text, followed by its tool-call pairs.
-const AssistantBlock = ({ m, pairs }) => {
-  const r = reasoningText(m);
-  return (
-    <div>
-      {r ? <Reasoning text={r} /> : null}
-      {m.content ? <Markdown text={m.content} /> : null}
-      {pairs.map((p, i) => <ToolPair key={p.tc.id ?? i} tc={p.tc} result={p.result} />)}
-    </div>
-  );
+// Flatten a run's assistant turns into one transcript-ordered list of rows:
+// reasoning, prose, and tool-call. Rendered with uniform spacing and no
+// per-turn wrapper, all of a run's reasoning + tool calls read as ONE inline
+// list instead of a separate fragment per turn.
+const runRows = (blocks) => {
+  const rows = [];
+  let k = 0;
+  for (const b of blocks) {
+    const m = b.m;
+    const r = reasoningText(m);
+    if (r) rows.push(<Reasoning key={k++} text={r} />);
+    if (m.content) rows.push(<Markdown key={k++} text={m.content} />);
+    if (b.pairs) for (const p of b.pairs) rows.push(<ToolPair key={k++} tc={p.tc} result={p.result} />);
+  }
+  return rows;
 };
 
-// Roles are distinguished by colour / weight / tint instead of boxed cards:
-// user = accent amber on a faint amber wash, assistant = plain ink (tool calls
-// render as ToolPair blocks above), system/tool = collapsed dim details with
-// a thin left rule (a tool message reaching here is unpaired, e.g. after an
-// inconsistent edit — the fallback keeps it visible).
+// Roles are distinguished by colour / weight / alignment instead of boxed
+// cards: user = a right-aligned blue bubble (white text, image attachments
+// above it), system = a circular disc disclosure, tool = the same quiet
+// Activity line (a tool message reaching here is unpaired, e.g. after an
+// inconsistent edit — the fallback keeps it visible). Assistant turns are
+// grouped and rendered by runRows as one inline list, so they never reach
+// here.
 const Message = ({ m }) => {
   if (m.role === 'system') {
+    // System prompt: a circular disclosure disc with a rotating chevron,
+    // replacing the generic bullet.
     return (
-      <details class="border-l-2 border-line pl-2.5">
-        <summary class="py-0.5 text-dim/70 text-xs italic cursor-pointer select-none">system</summary>
-        <Pre text={m.content} cls="m-0 pt-1.5 pb-1 text-dim text-xs italic whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto" />
+      <details class="q-activity disc">
+        <summary class="flex items-center gap-2 py-1.5 cursor-pointer select-none list-none">
+          <span class="w-4 h-4 rounded-full bg-field grid place-items-center flex-none">
+            <svg class="disc-chevron text-text3" width="8" height="8" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 6l6 6-6 6"/>
+            </svg>
+          </span>
+          <span class="text-xs text-text3">system prompt</span>
+        </summary>
+        <pre class="mt-2.5 text-dim text-xs font-mono whitespace-pre-wrap break-words rounded-[10px] border border-hairline p-3 max-h-[220px] overflow-y-auto">{m.content}</pre>
       </details>
     );
   }
   if (m.role === 'tool') {
-    const first = firstLine(m.content);
     return (
-      <details class="border-l-2 border-line/60 open:bg-panel/70 open:rounded-r-md">
-        <summary class="py-1 px-2.5 text-dim text-xs cursor-pointer select-none hover:text-ink/70">tool result — {first}</summary>
-        <Pre text={m.content} cls="m-0 pt-0.5 pb-1.5 px-2.5 text-dim text-xs whitespace-pre-wrap break-words" />
-      </details>
+      <Activity label="tool result" mono status={firstLine(m.content, 60)}>
+        <Pre text={m.content} cls="m-0 text-dim text-xs font-mono whitespace-pre-wrap break-words" />
+      </Activity>
     );
   }
-  const isUser = m.role === 'user';
   const content = m.content;
-  const cls = isUser ? 'font-medium text-accent' : undefined;
-  const r = reasoningText(m);
-  return (
-    <div class={isUser ? 'border-l-2 border-accent bg-accent/10 rounded-r-md pl-3 pr-2 py-1.5' : ''}>
-      {r ? <Reasoning text={r} /> : null}
-      {Array.isArray(content)
-        ? content.map((part, i) => part.type === 'text'
-            ? <Markdown key={i} text={part.text} cls={cls} />
-            : <img key={i} src={part.image_url?.url} alt="attachment" class="max-h-64 max-w-full rounded border border-line my-1" />)
-        : content ? <Markdown text={content} cls={cls} /> : null}
-    </div>
-  );
+
+  // User message: a right-aligned blue bubble (iMessage-style) with white text.
+  // The .user-bubble CSS class adds the pop entrance animation + shadow.
+  if (m.role === 'user') {
+    const parts = Array.isArray(content) ? content : content ? [{ type: 'text', text: content }] : [];
+    const images = parts.filter((p) => p.type === 'image_url');
+    const text = parts.filter((p) => p.type === 'text').map((p) => p.text).join('\n');
+    return (
+      <div class="flex flex-col items-end gap-1.5">
+        {images.map((p, i) => (
+          <img key={i} src={p.image_url?.url} alt="attachment" class="max-h-64 max-w-full rounded border border-line" />
+        ))}
+        {text ? (
+          <div class="user-bubble bg-accent text-white rounded-2xl rounded-br-md max-w-[85%] px-3.5 py-2">
+            <Markdown text={text} />
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
 };
 
 // Consecutive assistant turns (one agent run's worth of LLM calls, ending in
@@ -160,10 +208,9 @@ const fmtElapsed = (total) => {
   return m ? `${m}m ${String(s).padStart(2, '0')}s` : `${s}s`;
 };
 
-// Shown after the last message while a run is in flight: three small staggered-
-// bouncing dim dots (keyframes in index.html), the in-flight tool's name when
-// it's known, and a live elapsed-time readout (tabular nums, so it doesn't
-// jitter as the digits change).
+// Shown after the last message while a run is in flight: a CSS spinner (see
+// index.html), "Working · `toolname`" when the in-flight tool is known, and a
+// live elapsed-time readout.
 const Working = ({ tool }) => {
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
@@ -172,14 +219,10 @@ const Working = ({ tool }) => {
     return () => clearInterval(t);
   }, []);
   return (
-    <div class="flex items-center gap-2 py-0.5" aria-label="working">
-      <span class="flex items-end gap-[3px] h-3">
-        <span class="working-dot inline-block w-1.5 h-1.5 rounded-full bg-dim"></span>
-        <span class="working-dot inline-block w-1.5 h-1.5 rounded-full bg-dim"></span>
-        <span class="working-dot inline-block w-1.5 h-1.5 rounded-full bg-dim"></span>
-      </span>
-      {tool ? <span class="text-dim/70 text-xs font-mono">{tool}…</span> : null}
-      <span class="text-dim/70 text-xs font-mono tabular-nums">{fmtElapsed(elapsed)}</span>
+    <div class="flex items-center gap-2.5 py-0.5" aria-label="working">
+      <Spinner />
+      <span class="text-dim text-xs">Working{tool ? ` · <code class="font-mono text-text3">${tool}</code>` : ''}</span>
+      <span class="text-text3 text-xs font-mono tabular-nums">{fmtElapsed(elapsed)}</span>
     </div>
   );
 };
@@ -224,17 +267,13 @@ export const Messages = ({ messages, running = false }) => {
   const groups = groupRuns(blocks);
   return (
     <div class="relative flex-1 flex flex-col min-h-0">
-      <div ref={ref} class="flex-1 overflow-y-auto p-3 flex flex-col gap-3" onScroll={onScroll}>
-        {groups.map((g, i) => g.blocks
-          ? (
-            <div key={i} class="flex flex-col gap-1">
-              {g.blocks.map((b, j) => b.pairs
-                ? <AssistantBlock key={j} m={b.m} pairs={b.pairs} />
-                : <Message key={j} m={b.m} />)}
-            </div>
-          )
-          : <Message key={i} m={g.m} />)}
-        {running ? <Working tool={inFlightTool(blocks)} /> : null}
+      <div ref={ref} class="flex-1 overflow-y-auto" onScroll={onScroll}>
+        <div class="max-w-3xl mx-auto w-full p-3 flex flex-col gap-3">
+          {groups.map((g, i) => g.blocks
+            ? <div key={i} class="flex flex-col gap-1">{runRows(g.blocks)}</div>
+            : <Message key={i} m={g.m} />)}
+          {running ? <Working tool={inFlightTool(blocks)} /> : null}
+        </div>
       </div>
       {!pinned ? (
         <button class="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 text-xs text-ink bg-panel border border-line rounded-full shadow-lg cursor-pointer hover:border-accent"

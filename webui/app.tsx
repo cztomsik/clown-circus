@@ -229,7 +229,7 @@ const App = () => {
           // desktop (>=md): display:contents wrapper, so the <aside>
           // joins the parent flex row as the in-flow column
           <div class="fixed inset-0 z-40 flex md:contents">
-            <Sidebar cls="w-[280px] max-w-[85vw] md:max-w-none min-w-[220px] border-r border-line flex flex-col bg-bg shadow-xl md:shadow-none"
+            <Sidebar cls="w-[280px] max-w-[85vw] md:max-w-none min-w-[220px] border-r border-hairline flex flex-col material shadow-xl md:shadow-none"
                      sessions={sessions} current={current}
                      onNew={onNew} onSelect={select} newCwd={newCwd} setNewCwd={setNewCwd}
                      showArchived={showArchived} onToggleArchived={() => setShowArchived((v) => !v)}

@@ -4,6 +4,12 @@
 
 export const baseName = (cwd: string) => cwd.split('/').filter(Boolean).at(-1) || cwd;
 
+// First line of a string, truncated to n chars with an ellipsis.
+export const firstLine = (s, n = 80) => {
+  const l = (s ?? '').split('\n')[0];
+  return l.length > n ? l.slice(0, n) + '…' : l;
+};
+
 // Parse a `/cmd [arg]` line from the composer. Returns null for a plain message
 // (no leading slash); otherwise { name, arg } with the command lowercased and
 // everything after the first run of whitespace as `arg`.
