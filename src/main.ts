@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { watch } from 'node:fs';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import * as esbuild from 'esbuild';
 import { config } from './config.ts';
@@ -37,19 +36,16 @@ const main = async () => {
   // emitted, so there's no runtime DOM guessing.
   // The CLI's bin is dist/index.mjs (only ./package.json is in its exports map).
   const cssCli = join(dirname(createRequire(import.meta.url).resolve('@tailwindcss/cli/package.json')), 'dist', 'index.mjs');
+  const cssArgs = ['-i', join(WEBUI_DIR, 'styles.css'), '-o', join(WEBUI_DIR, 'vendor', 'tailwind.css')];
   const buildCss = () => new Promise<void>((resolve, reject) =>
-    execFile(process.execPath, [cssCli, '-i', join(WEBUI_DIR, 'styles.css'), '-o', join(WEBUI_DIR, 'vendor', 'tailwind.css')],
-      (err) => err ? reject(err) : resolve()));
+    execFile(process.execPath, [cssCli, ...cssArgs], (err) => err ? reject(err) : resolve()));
   await buildCss(); // blocks startup until the stylesheet is on disk
-  // Keep it fresh: any webui/ edit (a class string in a .tsx, a utility in
-  // index.html, styles.css itself) rebuilds it. `vendor/` is our own output —
-  // watching it would loop (each rebuild rewrites it and re-fires the watch).
-  let cssTimer;
-  watch(WEBUI_DIR, { recursive: true }, (evt, file) => {
-    if (!file || String(file).startsWith('vendor')) return;
-    clearTimeout(cssTimer);
-    cssTimer = setTimeout(() => buildCss().catch((e) => log(`css rebuild failed: ${e.message}`)), 150);
-  });
+  // Keep it fresh: the CLI's own watcher — its source detection tracks
+  // styles.css, index.html, and every .tsx class string, and skips vendor/
+  // (gitignored), so our output can't loop it. `--watch=always` keeps it
+  // alive despite the closed stdin of a spawned (non-TTY) process.
+  const cssWatch = spawn(process.execPath, [cssCli, ...cssArgs, '--watch=always', '--silent'], { stdio: 'ignore' });
+  cssWatch.on('close', (code) => { if (code) log(`css watch exited with code ${code}`); });
 
   const manager = new SessionManager();
   const app = buildApp({ manager });
@@ -66,6 +62,7 @@ const main = async () => {
     closing = true;
     log(`${sig} received, shutting down`);
     server.close(() => {
+      cssWatch.kill();
       webuiCtx.dispose();
       db.close();
       process.exit(0);

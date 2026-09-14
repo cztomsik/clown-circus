@@ -46,9 +46,11 @@ primary interface — the UI is just one client of it.
   startup, via `@tailwindcss/cli` (a real `dependency`, run as a child `node`
   process): input `webui/styles.css` → output
   `webui/vendor/tailwind.css` (served at `/vendor/tailwind.css`), a blocking
-  build before `listen`. A recursive `fs.watch` on `webui/` (150 ms debounce,
-  `vendor/` output skipped to avoid a rebuild loop) re-runs it when any class
-  string, `index.html` class, or `styles.css` itself changes. Because the CLI
+  build before `listen`, then a second CLI process runs with `--watch=always`
+  (`always` keeps a non-TTY spawned child watching despite its closed stdin)
+  and its own source detection tracks `styles.css`, `index.html`, and every
+  `.tsx` class string — `vendor/` is git-ignored so the output can't loop the
+  watcher. Killed on shutdown. Because the CLI
   scans **source files** for class candidates (the old `@tailwindcss/browser`
   JIT scanned the *live DOM*), utilities used only by conditionally rendered
   elements are always emitted — no DOM-dependent styling. Everything is
