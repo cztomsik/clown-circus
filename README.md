@@ -1,6 +1,6 @@
 # Clown-Circus
 
-A **headless, multi-session** port of [`clown-code`](../clown-code/) exposed as an
+A **headless, multi-session** port of [`clown-code`](https://github.com/cztomsik/clown-code) exposed as an
 **Express** HTTP server. Clown-Circus manages any number of independent agent
 **sessions** — each with its own working directory, conversation state, and
 running agent loop — all driven over **REST + Server-Sent Events**. Every session and its full conversation (one row per message) are persisted
