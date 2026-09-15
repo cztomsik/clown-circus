@@ -13,6 +13,8 @@ in a local **SQLite** database, so state survives restarts.
 
 See [`SPEC.md`](SPEC.md) for the full specification.
 
+![Clown-Circus web UI](screenshot.png)
+
 ---
 
 ## Quick start
