@@ -77,7 +77,7 @@ export const InputBar = ({ running, current, value, onValue, onKey, onSend, onSt
   const slashing = value != null && value.startsWith('/') && !/\s/.test(value);
   const typed = slashing ? value.slice(1).toLowerCase() : '';
   const matches = slashing
-    ? SLASH_COMMANDS.filter((c) => c.name.startsWith(typed) && c.name !== typed)
+    ? SLASH_COMMANDS.filter((c) => c.name.startsWith(typed))
     : [];
   const showPal = matches.length > 0 && !palDismissed;
   const hint = slashing ? SLASH_COMMANDS.find((c) => c.name === typed)?.hint ?? null : null;
