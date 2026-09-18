@@ -328,13 +328,8 @@ export class Session {
     if (!t) {
       content = `Unknown tool: ${tc.function.name}`;
     } else {
-      let args = {};
       try {
-        args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
-      } catch {
-        args = {};
-      }
-      try {
+        const args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
         const result = await t.run(this.toolContext(), args);
         // A tool may return plain content (string, or a structured value we
         // serialize to JSON) or an OpenAI content-part array (e.g. read_file
@@ -343,7 +338,9 @@ export class Session {
           : typeof result === 'string' ? result
           : JSON.stringify(result, null, 2);
       } catch (err) {
-        content = `Error: ${err?.message ?? err}`; // tool errors become content, loop continues
+        // An unparseable arguments string or a tool error becomes content —
+        // the loop continues and the LLM gets a chance to react.
+        content = `Error: ${err?.message ?? err}`;
       }
     }
     this.append({ role: 'tool', content, tool_call_id: tc.id });
