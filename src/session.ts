@@ -343,6 +343,10 @@ export class Session {
         content = `Error: ${err?.message ?? err}`;
       }
     }
+    // A stop can land mid-tool; appending now would orphan this result (a
+    // `tool` msg whose tool_call_id references no assistant msg → LLM 400s).
+    // Skip it — the unanswered tool_call is a partial batch settle() rolls back.
+    if (this.signal?.aborted || this.destroyed) return;
     this.append({ role: 'tool', content, tool_call_id: tc.id });
   }
 

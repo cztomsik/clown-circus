@@ -259,7 +259,7 @@ endpoint and the static web UI (§7.7). Errors use `4xx`/`5xx` with
 |--------|-----------------|-------------|
 | `GET`  | `/health`       | Liveness probe → `{ "ok": true, "sessions": <n> }` |
 | `GET`  | `/models`       | Proxy `GET /v1/models` to the LLM (analog of `/models` command) |
-| `GET`  | `/config`       | Read-only effective server config (base_url, db_file, timeouts) |
+| `GET`  | `/config`       | Read-only effective server config (base_url, home, timeout_ms, host, port) |
 
 ### 7.2 Sessions
 

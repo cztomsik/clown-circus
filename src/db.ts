@@ -38,37 +38,37 @@ const openDb = (dbFile) => {
     CREATE INDEX IF NOT EXISTS idx_sessions_cwd ON sessions (cwd);
     CREATE INDEX IF NOT EXISTS idx_messages_session ON messages (session_id);
   `);
-  // Versioned migrations: user_version tracks the schema. A fresh DB is born
-  // at 0 and already matches SCHEMA_VERSION (the DDL above), so it only needs
-  // the bump; v1 DBs get the `archived` column added; v2 DBs get their
-  // snapshot blobs imported into the messages table (system prompts dropped)
-  // and the column removed; v3 DBs get the `title` column added; v4 DBs get
-  // the `reasoning_effort` column added.
+  // Versioned migrations: user_version tracks the schema. A DB at version v has
+  // migrations 1..v applied; apply the pending ones (v+1 .. SCHEMA_VERSION) in
+  // order. A fresh DB is v0 and the DDL above already carries every column, so
+  // it only needs the bump below.
   const v = Number(db.prepare('PRAGMA user_version').get().user_version);
-  if (v === 1) db.exec('ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0');
-  if (v === 3) db.exec('ALTER TABLE sessions ADD COLUMN title TEXT');
-  if (v === 4) db.exec('ALTER TABLE sessions ADD COLUMN reasoning_effort TEXT');
-  if (v >= 1 && v <= 2) {
-    db.exec('BEGIN');
-    try {
-      db.exec('ALTER TABLE sessions ADD COLUMN total_tokens INTEGER NOT NULL DEFAULT 0');
-      const upTok = db.prepare('UPDATE sessions SET total_tokens = ? WHERE id = ?');
-      const insMsg = db.prepare('INSERT INTO messages (session_id, data) VALUES (?, ?)');
-      for (const r of db.prepare('SELECT id, snapshot FROM sessions').all()) {
-        const snap = r.snapshot ? JSON.parse(String(r.snapshot)) : {};
-        const tokens = snap.total_tokens ?? 0;
-        if (tokens) upTok.run(tokens, r.id);
-        for (const m of snap.messages ?? []) {
-          if (m.role === 'system') continue; // derived at load time, not stored
-          insMsg.run(r.id, JSON.stringify(m));
+  if (v >= 1) {
+    if (v < 2) db.exec('ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0');
+    if (v < 3) {
+      db.exec('BEGIN');
+      try {
+        db.exec('ALTER TABLE sessions ADD COLUMN total_tokens INTEGER NOT NULL DEFAULT 0');
+        const upTok = db.prepare('UPDATE sessions SET total_tokens = ? WHERE id = ?');
+        const insMsg = db.prepare('INSERT INTO messages (session_id, data) VALUES (?, ?)');
+        for (const r of db.prepare('SELECT id, snapshot FROM sessions').all()) {
+          const snap = r.snapshot ? JSON.parse(String(r.snapshot)) : {};
+          const tokens = snap.total_tokens ?? 0;
+          if (tokens) upTok.run(tokens, r.id);
+          for (const m of snap.messages ?? []) {
+            if (m.role === 'system') continue; // derived at load time, not stored
+            insMsg.run(r.id, JSON.stringify(m));
+          }
         }
+        db.exec('ALTER TABLE sessions DROP COLUMN snapshot');
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
       }
-      db.exec('ALTER TABLE sessions DROP COLUMN snapshot');
-      db.exec('COMMIT');
-    } catch (err) {
-      db.exec('ROLLBACK');
-      throw err;
     }
+    if (v < 4) db.exec('ALTER TABLE sessions ADD COLUMN title TEXT');
+    if (v < 5) db.exec('ALTER TABLE sessions ADD COLUMN reasoning_effort TEXT');
   }
   db.exec(`PRAGMA user_version = ${SCHEMA_VERSION};`);
 
