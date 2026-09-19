@@ -626,8 +626,8 @@ skill in a closer root wins):
 The built-in `init` skill (`<home>/skills/init/SKILL.md`: explore the project
 and write an `AGENTS.md`) is seeded on startup when missing; the user may
 edit or delete the seeded file. Discovered skills are listed in the system
-prompt (§9) as `name: description (path)` — the description is the routing
-signal.
+prompt (§9) — one bullet per skill: **name**, description, and its
+`SKILL.md` path; the description is the routing signal.
 
 Tool result values are returned to the model as text (strings / structured
 values serialized to JSON). A tool may instead return an OpenAI content-part

@@ -56,7 +56,7 @@ Current working directory: ${real}
 ### When Writing Code
 - Follow existing code style and patterns
 - Add appropriate error handling
-- Include helpful comments for complex logic
+- Comment only non-obvious logic (explain why, not what)
 
 ### When Modifying Code
 - Use \`edit_file\` for targeted changes
