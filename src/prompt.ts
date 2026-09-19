@@ -1,5 +1,6 @@
 import { readFileSync, realpathSync } from 'node:fs';
-import { join } from 'node:path';
+import { homedir } from 'node:os';
+import { join, sep } from 'node:path';
 import { scanSkills } from './skills.ts';
 
 const readContext = (cwd, name) => {
@@ -17,11 +18,22 @@ const today = () => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 };
 
+// Shorten a path for the prompt: ./ under the session cwd, ~ under the user
+// home, absolute otherwise (e.g. a custom --home outside the home dir).
+const shortPath = (cwd, p) => {
+  const base = cwd.endsWith(sep) ? cwd.slice(0, -1) : cwd;
+  if (p.startsWith(base + sep)) return `./${p.slice(base.length + 1)}`;
+  const home = homedir();
+  if (p.startsWith(home + sep)) return `~/${p.slice(home.length + 1)}`;
+  return p;
+};
+
 // Skill list: one bullet per skill — **name**, description, then its SKILL.md
-// path. init is always seeded, so this is always non-empty.
+// path (shortened — the prefix also signals the origin root). init is always
+// seeded, so this is always non-empty.
 const skillsList = (cwd) =>
   scanSkills(cwd)
-    .map((s) => `- **${s.name}** — ${s.description}\n  \`${s.location}\``)
+    .map((s) => `- **${s.name}** — ${s.description}\n  \`${shortPath(cwd, s.location)}\``)
     .join('\n');
 
 // Compose the system prompt per-session from its cwd.

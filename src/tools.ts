@@ -1,6 +1,7 @@
 import { readFile as fsReadFile, writeFile as fsWriteFile, mkdir } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
-import { dirname, resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 
 const MAX = 2 * 1024 * 1024; // 2MB cap
 
@@ -25,10 +26,15 @@ const IMAGE_MAGIC = [
 const detectImageMime = (buf) =>
   buf.length >= 12 ? (IMAGE_MAGIC.find((m) => m.test(buf))?.mime ?? null) : null;
 
+// A leading ~/ (or bare ~) expands to the user home — node:path.resolve does not.
+const fromHome = (p) => (p === '~' ? homedir() : p.startsWith('~/') ? join(homedir(), p.slice(2)) : p);
+// Resolve a tool path: ~/ against the user home, then relative against the session cwd.
+const resolvePath = (cwd, p) => resolve(cwd, fromHome(p));
+
 // --- Core tools -------------------------------------------------------------
 
 const readFile = async (ctx, args) => {
-  const buf = await fsReadFile(resolve(ctx.cwd, args.path));
+  const buf = await fsReadFile(resolvePath(ctx.cwd, args.path));
   if (buf.length > MAX) throw new Error('File too large');
   const mime = detectImageMime(buf);
   if (mime)
@@ -42,14 +48,14 @@ const readFile = async (ctx, args) => {
 };
 
 const writeFile = async (ctx, args) => {
-  const p = resolve(ctx.cwd, args.path);
+  const p = resolvePath(ctx.cwd, args.path);
   await mkdir(dirname(p), { recursive: true });
   await fsWriteFile(p, args.content);
   return 'File written successfully';
 };
 
 const editFile = async (ctx, args) => {
-  const p = resolve(ctx.cwd, args.path);
+  const p = resolvePath(ctx.cwd, args.path);
   const content = (await fsReadFile(p)).toString('utf8');
   let next;
   if (args.replace_all) {

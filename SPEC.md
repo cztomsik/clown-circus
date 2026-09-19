@@ -598,10 +598,11 @@ Via CLI flags and/or environment variables, resolved at startup into a
 ## 12. Tools
 
 Each tool is registered with a **snake_case name**, a one-line description, a
-JSON-Schema for args, and an implementation. Relative paths resolve against
-the session's `cwd` (the same directory `run_command` runs in). There is
-**no path sandbox**: the agent may read, write, and execute anywhere the
-server process can reach.
+JSON-Schema for args, and an implementation. A leading `~/` (or bare `~`)
+expands to the user home; relative paths then resolve against the session's
+`cwd` (the same directory `run_command` runs in). There is **no path
+sandbox**: the agent may read, write, and execute anywhere the server
+process can reach.
 
 | Tool            | Args                                            | Notes |
 |-----------------|--------------------------------------------------|-------|
@@ -627,7 +628,8 @@ The built-in `init` skill (`<home>/skills/init/SKILL.md`: explore the project
 and write an `AGENTS.md`) is seeded on startup when missing; the user may
 edit or delete the seeded file. Discovered skills are listed in the system
 prompt (§9) — one bullet per skill: **name**, description, and its
-`SKILL.md` path; the description is the routing signal.
+`SKILL.md` path (shortened: `./` under the session cwd, `~` under the user
+home, absolute otherwise); the description is the routing signal.
 
 Tool result values are returned to the model as text (strings / structured
 values serialized to JSON). A tool may instead return an OpenAI content-part
@@ -675,8 +677,9 @@ Each tool invocation receives a `ToolContext`:
 ## 14. Security & Safety
 
 - Bind to `127.0.0.1` by default; the server is not assumed to be public.
-- **No path sandbox**: file and shell tools resolve relative paths against the
-  session `cwd` and otherwise run with the server process's own permissions, so
+- **No path sandbox**: file and shell tools expand a leading `~/` to the user
+  home, resolve relative paths against the session `cwd`, and otherwise run
+  with the server process's own permissions, so
   the agent can reach any path it can address. The trust boundary is
   the local user plus the `127.0.0.1` bind.
 - `run_command` runs with the session `cwd` as the working directory; no
