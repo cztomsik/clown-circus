@@ -260,7 +260,7 @@ const Working = ({ tool }) => {
   return (
     <div class="flex items-center gap-2.5 py-0.5" aria-label="working">
       <Spinner />
-      <span class="text-dim text-xs">Working{tool ? ` · <code class="font-mono text-text3">${tool}</code>` : ''}</span>
+      <span class="text-dim text-xs">Working{tool ? <> · <code class="font-mono text-text3">{tool}</code></> : ''}</span>
       <span class="text-text3 text-xs font-mono tabular-nums">{fmtElapsed(elapsed)}</span>
     </div>
   );

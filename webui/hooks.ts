@@ -49,10 +49,16 @@ export const useFlash = () => {
 };
 
 // Light/dark theme, persisted and reflected on <html data-theme> so the CSS
-// tokens recolour. Toggling flips between the two.
+// tokens recolour. Toggling flips between the two. The
+// meta[name=theme-color] (mobile status bar, see index.html) follows the
+// palette's --color-bg.
+const THEME_COLOR = { dark: '#1c1c1e', light: '#f4f4f6' };
 export const useTheme = () => {
   const [theme, setTheme] = useLocalStorage('clown-circus-theme', 'dark');
-  useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_COLOR[theme] ?? THEME_COLOR.dark);
+  }, [theme]);
   return { theme, toggleTheme: () => setTheme((t) => (t === 'dark' ? 'light' : 'dark')) };
 };
 

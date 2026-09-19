@@ -226,8 +226,8 @@ primary interface — the UI is just one client of it.
   new-session form, off by default) is instant and the 10s poll stays
   toggle-agnostic. When off, archived sessions simply don't render. When on,
   they appear in a flat, dimmed **"archived"** section at the bottom of the
-  list (server sort order kept), each item dimmed with a small `archived`
-  tag. Archived sessions are fully selectable — opening one works exactly
+  list (server sort order kept), each item dimmed. Archived sessions are
+  fully selectable — opening one works exactly
   like any other session.
 - **Header (unified top bar)** — one row that merges what used to be a
   separate global header and a per-session toolbar. Left to right: a `☰`
@@ -461,7 +461,9 @@ primary interface — the UI is just one client of it.
     from SPEC §7.4.
 - **Theme toggle** — a compact icon button in the `Header` (top-right)
   switches the `--color-*` palette between the default dark and the light
-  theme by setting `data-theme` on `<html>`; the icon shows the theme it
+  theme by setting `data-theme` on `<html>` and updating
+  `<meta name="theme-color">` (the mobile browser status-bar colour) to the
+  active palette's `--color-bg`; the icon shows the theme it
   switches **to** (☀ in dark mode, 🌙 in light mode).
   The choice is persisted in `localStorage` under `clown-circus-theme`, and a
   tiny inline `<script>` in `index.html` re-applies it before first paint so

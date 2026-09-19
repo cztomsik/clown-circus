@@ -47,6 +47,12 @@ const MD_CSS = `
 .md pre code { background: none; border: 0; padding: 0; font-size: .85em; }
 .md table { border-collapse: collapse; margin: 0 0 .5em; display: block; max-width: 100%; overflow-x: auto; }
 .md th, .md td { border: 1px solid var(--color-line); padding: .25em .6em; text-align: left; }
+/* Mobile: code / file names must not break mid-token inside cells — let the
+   table (display:block + overflow-x above) scroll horizontally instead of
+   crushing its columns. Desktop wrapping is untouched. */
+@media (max-width: 767px) {
+  .md th, .md td { overflow-wrap: normal; word-break: normal; }
+}
 .md th { background: var(--color-panel); font-weight: 600; }
 .md hr { border: 0; border-top: 1px solid var(--color-line); margin: .8em 0; }
 .md img { max-width: 100%; }
