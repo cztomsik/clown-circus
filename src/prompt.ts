@@ -10,6 +10,13 @@ const readContext = (cwd, name) => {
   }
 };
 
+// Local date as YYYY-MM-DD (a UTC slice would be off by a day near midnight).
+const today = () => {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
+
 // Skill list: one bullet per skill — **name**, description, then its SKILL.md
 // path. init is always seeded, so this is always non-empty.
 const skillsList = (cwd) =>
@@ -22,16 +29,16 @@ const skillsList = (cwd) =>
 export const buildSystemPrompt = (cwd) => {
   const context = readContext(cwd, 'AGENTS.md') ?? readContext(cwd, 'CLOWN.md') ?? '';
   const skills = skillsList(cwd);
-  const date = new Date().toISOString().slice(0, 10);
   let real = cwd;
   try {
     real = realpathSync(cwd);
   } catch {
     /* keep cwd */
   }
-  return `# Clown-Circus System Prompt
+  return `You are a helpful AI coding assistant with access to file system and shell commands.
 
-You are a helpful AI coding assistant with access to file system and shell commands.
+Current date: ${today()}
+Current working directory: ${real}
 
 ## Guidelines
 
@@ -78,10 +85,5 @@ Skills are short instruction files for specific tasks. When a task matches a
 skill's description, read its file with \`read_file\` before starting.
 
 ${skills}
-
-${context}
-
-Current date: ${date}
-Current working directory: ${real}
-`;
+${context ? `\n${context}\n` : ''}`;
 };

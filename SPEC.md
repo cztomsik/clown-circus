@@ -509,6 +509,9 @@ re-derived from the on-disk `AGENTS.md`/`CLOWN.md` at every server restart as
 well, so an out-of-band edit to those files is picked up on the next start:
 
 ```
+Current date: <YYYY-MM-DD, local>
+Current working directory: <realpath of cwd>
+
 <PREFIX>                          (inlined template in ./src/prompt.ts;
                                    its "When Using Skills" section carries
                                    the discovered skill list, §12.1)
@@ -516,9 +519,6 @@ well, so an out-of-band edit to those files is picked up on the next start:
 <AGENTS.md>                       (from cwd) if present,
   else <CLOWN.md>                 (from cwd) if present,
   else (omitted)
-
-Current date: <YYYY-MM-DD>
-Current working directory: <realpath of cwd>
 ```
 
 - The exact fallback chain is `AGENTS.md → CLOWN.md → (none)`.
