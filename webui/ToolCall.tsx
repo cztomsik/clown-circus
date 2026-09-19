@@ -103,13 +103,6 @@ const WriteTodos = ({ a }) => {
   );
 };
 
-// load_skill — just the skill name.
-const LoadSkill = ({ a }) => (
-  <div class={HEAD}>
-    <span class="text-dim">load_skill </span><span class="text-ink">{a.skill_name ?? ''}</span>
-  </div>
-);
-
 // Fallback for unknown tools / unparseable args — the original pretty-JSON view.
 const Generic = ({ raw }) => <pre class={PRE}>{raw ?? ''}</pre>;
 
@@ -119,7 +112,6 @@ const RENDERERS = {
   edit_file: EditFile,
   run_command: RunCommand,
   write_todos: WriteTodos,
-  load_skill: LoadSkill,
 };
 
 // Short, bounded title for the collapsed <summary> line. Returns null when the
@@ -136,7 +128,6 @@ export const toolCallTitle = (name, args) => {
       const n = parseTodos(args.content ?? '').filter((t) => t.done !== undefined).length;
       return n ? `write_todos (${n} items)` : 'write_todos';
     }
-    case 'load_skill': return `load_skill ${args.skill_name ?? ''}`.trim();
     default: return null;
   }
 };

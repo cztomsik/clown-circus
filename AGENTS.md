@@ -16,14 +16,14 @@
 - **Tech stack**: Node.js 24.x. The **server** is TypeScript (`.ts`, ESM, `"type": "module"`) that Node runs directly via its built-in type stripping (no build step); the **web UI** is Preact **JSX (`.tsx`)** modules that esbuild bundles at startup (the only build step). `tsc` is a **dev-only, check-only** dependency (`tsc --noEmit`, see below) — it is never run or emitted.
 - **Run command**: `node src/main.ts` (or `npm start`). esbuild bundles the web UI automatically at startup; type-check via `npm run typecheck`.
 - **Dependency**: `express` (v5) for the server, `esbuild` for bundling the web UI at startup, `@tailwindcss/cli` for compiling the web-UI stylesheet at startup, plus the web UI's browser libraries (`preact`, `marked`, `dompurify`) as runtime deps — esbuild inlines them all into `webui/vendor/bundle.js` from `node_modules` so the UI works offline (no CDN, no `node_modules` static mounts). Dev deps (check-only, never emitted): `typescript`, `@types/node`. Everything else — SQLite, crypto, http, child_process — is built into Node.
-- **Storage**: builtin **`node:sqlite`** (`DatabaseSync`), single file `~/.clowndb` by default. One row per session + one row per message (`messages` table, global autoincrement id); the system prompt is derived from `cwd` and never stored. Emits a harmless `ExperimentalWarning`.
+- **Storage**: builtin **`node:sqlite`** (`DatabaseSync`), single file `clown.db` in the clown home dir (default `~/.clown`, `--home`/`CLOWN_HOME`; a legacy `~/.clowndb` is auto-migrated on the first run with the default home). One row per session + one row per message (`messages` table, global autoincrement id); the system prompt is derived from `cwd` and never stored. Emits a harmless `ExperimentalWarning`.
 - **LLM**: OpenAI-compatible `/v1/chat/completions` (llama.cpp by default). Base URL from `--base-url`/`CLOWN_API` (default `http://127.0.0.1:8080`); optional `CLOWN_API_KEY` sent as Bearer.
 - **Spec**: the authoritative spec is [`SPEC.md`](SPEC.md) (16 sections); `SPEC.md` and this repo's code are the source of truth.
 - **Web UI**: a first-class feature, described authoritatively in [`WEB_UI.md`](WEB_UI.md). A thin `webui/index.html` shell (links `/vendor/tailwind.css`) plus `webui/styles.css` (Tailwind v4 `@theme` tokens + plain CSS, compiled at startup by `@tailwindcss/cli` into `webui/vendor/tailwind.css`) and small **Preact JSX (`.tsx`) and TypeScript (`.ts`) modules, esbuild-bundled at startup into `webui/vendor/bundle.js` (served at `/vendor/bundle.js`) — `app.tsx` is the root component (all state + side effects), with `Header/Sidebar/Main/Message/InputBar/Todos/ToolCall/Markdown.tsx` for the components, `primitives.tsx` for the mini UI kit (shared building blocks), and `api/util/image/ui.ts` for the API client, pure helpers, image helpers, and shared class tokens (full list in the Source Structure table). Pure client of the REST + SSE API: project-grouped session sidebar, model picker (`GET /models`), session-level header actions (open-in-vscode, archive, delete) + composer slash commands (retry, init, compact, undo, clear, etc.), live chat over SSE, todos panel.
 
 ## Source Structure
 
-The tree is deliberately flat: one file per concern, no per-feature subdirectories. `src/skills/` is the only subdirectory.
+The tree is deliberately flat: one file per concern, no per-feature subdirectories.
 
 | File | Purpose |
 |------|---------|
@@ -35,11 +35,10 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 | `src/session.ts` | `Session`. Owns the transcript (derived system prompt in memory at `[0]` + stored messages tracked by rowid in `msgIds`), tokens, the single-flight `running` flag, an `AbortController`, an `EventEmitter` (SSE source) with a bounded seq ring buffer, and all operations (`send/retry/retryTurn/undo/clear/trim/compact/init/stop/destroy`) + persistence. |
 | `src/loop.ts` | `runLoop` — the agent loop: `next()` → execute tool calls → repeat; each appended message is persisted + emitted as a granular `message` event in place (`append`); converts every outcome to a terminal status and never throws. |
 | `src/llm.ts` | OpenAI-compatible chat client: `chat()` + `listModels()`. Distinguishes stop-abort from timeout (504) / network-HTTP (502) via `LlmError.kind`. |
-| `src/prompt.ts` | `buildSystemPrompt(cwd)`: `PREFIX.md` + `AGENTS.md`→`CLOWN.md` fallback (1MB cap) + date + realpath. |
+| `src/prompt.ts` | `buildSystemPrompt(cwd)`: inlined base prompt (with the discovered skill list in its "When Using Skills" section) + `AGENTS.md`→`CLOWN.md` fallback + date + realpath. |
 | `src/tools.ts` | All tools + `tools`/`toolSchemas` singletons. Relative paths resolve against the session cwd (no path sandbox). |
 | `src/errors.ts` | `HttpError` + `mapError()` (thrown errors → the §7.6 status/code table). Small module added to keep the import graph cycle-free. |
-| `src/PREFIX.md` | Base system prompt with guidelines. |
-| `src/skills/init.md` | Built-in `/init` skill: explore the project and write an `AGENTS.md`. |
+| `src/skills.ts` | Skill discovery (`.agents/skills` roots, precedence, frontmatter parsing) + the built-in `init` content, seeded into `<home>/skills/init/SKILL.md` on first run. |
 | `webui/index.html` | Web UI shell served at `/`. Thin page: one `<link>` to `/vendor/tailwind.css`, a `#root` mount, and `<script type="module" src="/vendor/bundle.js">` — no static UI markup. |
 | `webui/styles.css` | Single source of all web-UI styles: `@import "tailwindcss"`, the `@theme` colour tokens (dark + light), and the plain CSS utilities don't cover (`.material`, `.menu-card`, `.sw`, `.spinner`, …). Compiled at startup by `@tailwindcss/cli` into `webui/vendor/tailwind.css` (rebuilt on any `webui/` change). |
 | `webui/app.tsx` | Root Preact component (bundle entry): owns all state + side effects (config/models fetch, 10s poll, SSE, per-session drafts, `#/session/<id>` hash routing, actions) and composes the layout. |
@@ -71,7 +70,7 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 ## Working conventions
 
 - **Type-check**: `npm run typecheck` (i.e. `tsc --noEmit`, config in `tsconfig.json`: `noEmit`+`allowImportingTsExtensions`, `strict:false`, `types:["node"]`). `src/` is `.ts` and `webui/` is `.ts`/`.tsx` — the whole tree is TypeScript (type-checked directly, no `checkJs`/`allowJs`). Dev deps `typescript`/`@types/node` are check-only — never emitted (the web UI's libraries are runtime deps that esbuild bundles into `webui/vendor/bundle.js`, and which `tsc` resolves for the bare imports in `webui/*.{ts,tsx}`). **Current state: clean** — both `src/` and `webui/` pass with no errors (the SSE `onmessage` handler is cast to `MessageEvent` in `webui/api.ts`).
-- **No test framework.** Verify by running the server and exercising the API (e.g. `node src/main.ts --port 8899 --db-file /tmp/x.clowndb`, then `curl`). Keep the default DB `~/.clowndb` clean by using a throwaway `--db-file` during dev.
+- **No test framework.** Verify by running the server and exercising the API (e.g. `node src/main.ts --port 8899 --home /tmp/x`, then `curl`). Keep the default home `~/.clown` clean by using a throwaway `--home` during dev.
 - **Config precedence**: CLI flag > env var > default.
 - **Localhost by default** (`127.0.0.1`), no auth — single-user local tool.
 

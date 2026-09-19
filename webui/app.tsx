@@ -52,7 +52,7 @@ const App = () => {
   const [cfg, setCfg] = useState('loading…');
   useEffect(() => {
     (async () => {
-      try { const c = await api('/config'); setCfg(`${c.base_url} · db: ${c.db_file}`); }
+      try { const c = await api('/config'); setCfg(`${c.base_url} · home: ${c.home}`); }
       catch { setCfg(''); }
     })();
   }, []);

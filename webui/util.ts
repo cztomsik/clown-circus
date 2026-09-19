@@ -84,7 +84,7 @@ export const prettyArgs = (a: string) => { try { return JSON.stringify(JSON.pars
 export const parseArgs = (a: string) => { try { const o = JSON.parse(a); return o && typeof o === 'object' ? o : null; } catch { return null; } };
 
 // Best-effort parse of the todos markdown string (checkbox convention lives in
-// PREFIX.md). Returns one entry per non-empty line:
+// src/prompt.ts). Returns one entry per non-empty line:
 //   task line:  { done, inProgress, text }   // - [x] / - [ ] … (in progress) / - [ ]
 //   other line: { text }                     // shown as-is
 const CHECKBOX = /^\s*[-*+]\s+\[( |x|X)\]\s*(.*)$/;

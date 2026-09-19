@@ -1,11 +1,8 @@
 import { readFile as fsReadFile, writeFile as fsWriteFile, mkdir } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { readFileSync } from 'node:fs';
 
 const MAX = 2 * 1024 * 1024; // 2MB cap
-const BUILTIN_INIT = readFileSync(fileURLToPath(new URL('./skills/init.md', import.meta.url)), 'utf8');
 
 const tool = (name, description, parameters, run) => ({ name, description, parameters, run });
 
@@ -120,20 +117,10 @@ const runCommand = (ctx, args) =>
     child.on('close', () => finish(render()));
   });
 
-// The todo list is a user-visible markdown string (see PREFIX.md for the
+// The todo list is a user-visible markdown string (see prompt.ts for the
 // checkbox convention). The tool is a no-op: the tool call's presence in the
 // transcript IS the todo list — the web UI derives it from messages.
 const writeTodos = (_ctx, _args) => 'Todos updated';
-
-const loadSkill = async (ctx, args) => {
-  const name = args.skill_name;
-  if (name === 'init') return BUILTIN_INIT;
-  // A skill is a bare file name under <cwd>/skills — reject anything that
-  // could escape that directory (path separators / `..` traversal).
-  if (typeof name !== 'string' || /[/\\]/.test(name) || name === '.' || name === '..')
-    throw new Error(`invalid skill name: ${name}`);
-  return (await fsReadFile(resolve(ctx.cwd, `skills/${name}.md`))).toString('utf8');
-};
 
 // --- Registration -----------------------------------------------------------
 
@@ -149,8 +136,6 @@ const buildTools = () =>
       obj({ command: S() }, ['command']), runCommand),
     tool('write_todos', "Set the session's todo list — a markdown string, shown to the user. Full replace: pass the entire updated list.",
       obj({ content: { type: 'string', description: 'The full todo list as markdown.' } }, ['content']), writeTodos),
-    tool('load_skill', 'Load a set of specialized instructions (a skill) into the current context to improve performance on a specific task.',
-      obj({ skill_name: S() }, ['skill_name']), loadSkill),
   ].map((t) => [t.name, t]));
 
 // OpenAI `tools` array for the LLM, derived from a registry.

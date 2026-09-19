@@ -36,7 +36,7 @@ export const buildApp = ({ manager }) => {
   app.get('/config', (req, res) =>
     res.json({
       base_url: config.baseUrl,
-      db_file: config.dbFile,
+      home: config.home,
       timeout_ms: config.timeoutMs,
       host: config.host,
       port: config.port,

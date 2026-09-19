@@ -57,7 +57,7 @@ CLI flags take precedence over environment variables, which take precedence over
 |---|---|---|---|
 | `--port` / `PORT` | `PORT` | `8790` | HTTP listen port |
 | `--host` / `HOST` | `HOST` | `127.0.0.1` | Bind address (localhost by default) |
-| `--db-file` / `DB_FILE` | `DB_FILE` | `~/.clowndb` | Path to the SQLite database file |
+| `--home` / `CLOWN_HOME` | `CLOWN_HOME` | `~/.clown` | Clown home dir: `clown.db` + `skills/` (created if missing) |
 | `--base-url` / `CLOWN_API` | `CLOWN_API` | `http://127.0.0.1:8080` | LLM OpenAI-compatible base URL |
 | `--timeout` / `CLOWN_TIMEOUT_MS` | `CLOWN_TIMEOUT_MS` | `900000` | Per-LLM-request timeout (ms) |
 | `--verbose` | — | off | Log per-session events to stdout |
@@ -151,7 +151,9 @@ every 15s.
 
 ## Storage
 
-A single SQLite **file** at `~/.clowndb` (override with `--db-file`/`DB_FILE`). The DB is the
+A single SQLite **file** `clown.db` in the clown home dir (default `~/.clown`;
+override the home with `--home`/`CLOWN_HOME`; a legacy `~/.clowndb` is migrated
+in on the first run). The DB is the
 system of record: each appended message is one `messages` row written the moment it exists,
 and the `sessions` row is upserted on every other transition (create, status change, error,
 delete). On startup all sessions are loaded into memory; any session persisted
@@ -177,7 +179,13 @@ There is **no path sandbox**: the agent may read, write, and execute anywhere th
 | `edit_file` | `path`, `old_content`, `new_content`, `replace_all?` | Exact-match replace. |
 | `run_command` | `command`, `cwd?` | `sh -c`; captures stdout+stderr; abortable on stop. |
 | `write_todos` | `content: string (markdown)` | No-op: the tool call's presence in the transcript IS the todo list (the web UI derives it from messages); returns "Todos updated". |
-| `load_skill` | `skill_name` | Built-in `init`, else `skills/<name>.md` in cwd. |
+
+Skills (`<root>/<name>/SKILL.md` with a `description` frontmatter) are loaded
+by the agent **via `read_file`** — no dedicated tool. Discovery roots,
+highest precedence first: `<cwd>/.agents/skills/` → `~/.agents/skills/` →
+`<home>/skills/`. The built-in `init` skill is seeded into
+`<home>/skills/init/` on first run; discovered skills are listed in the
+system prompt so the model can route to them.
 
 ---
 
@@ -193,11 +201,10 @@ src/
 ├─ session.ts    # Session (messages, run loop, SSE events, persistence)
 ├─ loop.ts       # agent loop
 ├─ llm.ts        # OpenAI-compatible chat client
-├─ prompt.ts     # system-prompt composition
+├─ prompt.ts     # system prompt (inlined base + skills + project context)
 ├─ tools.ts      # tools + registration
 ├─ errors.ts     # HttpError + error mapping
-├─ PREFIX.md     # base system prompt
-└─ skills/init.md
+└─ skills.ts     # skill discovery + built-in init seed
 ```
 
 `webui/` — the web UI served at `/` (Preact JSX (`.tsx`) and TypeScript (`.ts`)

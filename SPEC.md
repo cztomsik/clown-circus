@@ -52,10 +52,10 @@ local **SQLite** database.
 | Sessions      | Many, each a `Session` object in a registry |
 | Commands      | REST endpoints |
 | Streaming     | SSE event stream per session |
-| Persistence   | SQLite DB (`~/.clowndb`), one row per session + one row per message, always written |
+| Persistence   | SQLite DB (`<home>/clown.db`), one row per session + one row per message, always written |
 | CWD           | Per-session `cwd` (stored per row) |
 | Tools         | Built-in tool set (§12) |
-| System prompt | Base prompt + project instructions file, composed per session cwd (§9) |
+| System prompt | Base prompt + project instructions + discovered skills, composed per session cwd (§9) |
 
 The agent loop's contract per session — "run the agent loop, emit messages,
 report errors" — is implemented as an async loop plus event emitter. The
@@ -73,7 +73,7 @@ SQLite store is the sole system of record.
    (REST + SSE)          │                    │                          │
                          │                    ├─ map<id, Session>        │
                          │                    │   (in-memory, hot state) │
-                         │                    └──▶ SQLite (~/.clowndb)   │
+                         │               └──▶ SQLite (~/.clown/clown.db)│
                          │                         system of record      │
                          │  ┌───────────────────────────────────────┐     │
                          │  │  Session (one per conversation)       │     │
@@ -132,9 +132,11 @@ it. `total_tokens` (the last LLM `usage.total_tokens`) is a column on the
 
 ### 5.2 SQLite schema
 
-A single database **file**: `~/.clowndb` by default (a file, not a directory).
-Overridable via `--db-file`/`DB_FILE`. Created/migrated on startup
-(`CREATE TABLE IF NOT EXISTS` ...).
+A single database **file**: `<home>/clown.db` in the clown home dir (default
+`~/.clown`), which also holds the built-in skills (§12.1). Home is overridable
+via `--home`/`CLOWN_HOME`. Created/migrated on startup
+(`CREATE TABLE IF NOT EXISTS` ...); a legacy `~/.clowndb` is moved in on the
+first run with the default home (§10.1).
 
 ```sql
 CREATE TABLE IF NOT EXISTS sessions (
@@ -507,10 +509,12 @@ re-derived from the on-disk `AGENTS.md`/`CLOWN.md` at every server restart as
 well, so an out-of-band edit to those files is picked up on the next start:
 
 ```
-<PREFIX.md>                       (from ./src/PREFIX.md)
+<PREFIX>                          (inlined template in ./src/prompt.ts;
+                                   its "When Using Skills" section carries
+                                   the discovered skill list, §12.1)
 
-<AGENTS.md>                       (from cwd, up to 1MB) if present,
-  else <CLOWN.md>                 (from cwd, up to 1MB) if present,
+<AGENTS.md>                       (from cwd) if present,
+  else <CLOWN.md>                 (from cwd) if present,
   else (omitted)
 
 Current date: <YYYY-MM-DD>
@@ -520,8 +524,12 @@ Current working directory: <realpath of cwd>
 - The exact fallback chain is `AGENTS.md → CLOWN.md → (none)`.
 - The system message is `messages[0]` and is the only message retained by
   `clear`.
-- `PREFIX.md` supplies the base guidelines; its tool list matches the
+- The base guidelines are inlined in `prompt.ts`; their tool names match the
   registered tools.
+- The prefix's "When Using Skills" section lists every discovered skill
+  (**name**, description, `SKILL.md` path) plus the instruction to load one
+  with `read_file` — the description is the routing signal; there is no
+  dedicated skill tool (§12.1).
 
 ---
 
@@ -529,14 +537,19 @@ Current working directory: <realpath of cwd>
 
 ### 10.1 Storage
 
-- **Location**: a single database **file**, `~/.clowndb` by default (a file,
-  not a directory). Overridable via `--db-file`/`DB_FILE`.
+- **Location**: a single database **file** `<home>/clown.db` inside the clown
+  home dir (default `~/.clown`), which also holds the built-in skills
+  (§12.1). Home is overridable via `--home`/`CLOWN_HOME`.
+- **Legacy migration**: on the first run with the **default** home, an
+  existing `~/.clowndb` is moved to `<home>/clown.db` (never overwriting an
+  existing `clown.db`). An explicit `--home`/`CLOWN_HOME` disables the
+  migration.
 - **Engine**: Node's builtin `node:sqlite` (`node:sqlite` `DatabaseSync`). No
   external server, no npm dependency.
 - **Journal mode**: use the default rollback journal (do **not** enable WAL).
   WAL would create `-wal`/`-shm` sidecar files next to the DB; staying on the
   default keeps the database a single self-contained file, which is the whole
-  point of `~/.clowndb`. (The transient `-journal` file only exists mid-write
+  point of a single-file home. (The transient `-journal` file only exists mid-write
   and is removed on commit.)
 - **Writes**: synchronous — each appended message is one `messages` INSERT (or
   DELETE/UPDATE for the transcript edits), each session state change a
@@ -571,11 +584,12 @@ Via CLI flags and/or environment variables, resolved at startup into a
 |----------------------------|------------------|--------------------------|---------|
 | `--port` / `PORT`          | `PORT`           | `8790`                   | HTTP listen port |
 | `--host` / `HOST`          | `HOST`           | `127.0.0.1`              | Bind address (localhost default for safety) |
-| `--db-file` / `DB_FILE`    | `DB_FILE`        | `~/.clowndb`             | Path to the SQLite database file |
+| `--home` / `CLOWN_HOME`    | `CLOWN_HOME`     | `~/.clown`               | Clown home dir — holds `clown.db` + `skills/`; created if missing |
 | `--base-url` / `CLOWN_API` | `CLOWN_API`      | `http://127.0.0.1:8080`  | LLM OpenAI-compatible base URL |
 | `--timeout` / `CLOWN_TIMEOUT_MS` | `CLOWN_TIMEOUT_MS` | `900000` (15 min)      | Per-LLM-request timeout |
 
-- The parent directory of the DB file is created (with parents) if missing.
+- The home dir is created (with parents) if missing; with the default home
+  only, a legacy `~/.clowndb` is migrated in on first run (§10.1).
 - LLM auth (`Authorization` header) is passed through from an optional
   `CLOWN_API_KEY` env var, sent with every LLM request.
 
@@ -596,7 +610,24 @@ server process can reach.
 | `edit_file`     | `path`, `old_content`, `new_content`, `replace_all?: bool` | Exact-match replace; errors on 0 or >1 matches unless `replace_all`. Exact-string semantics only (no line-range/sed edits). |
 | `run_command`   | `command`, `cwd?: string`                        | Runs `sh -c`; captures stdout+stderr (2MB limits); abortable on stop. |
 | `write_todos`  | `content: string (markdown)`                   | No-op: the tool call's presence in the transcript IS the todo list (the web UI derives it from messages). Returns `Todos updated`. |
-| `load_skill`    | `skill_name`                                     | Built-in `init` first, else `skills/<name>.md` in cwd (path-validated). |
+
+### 12.1 Skills
+
+Specialized instructions the model loads **with `read_file`** — there is no
+dedicated skill tool. Standard layout: `<root>/<name>/SKILL.md` with YAML
+frontmatter (`description` required; `name` optional, defaults to the
+directory name). Discovery roots, highest precedence first (a same-named
+skill in a closer root wins):
+
+1. `<cwd>/.agents/skills/` — project
+2. `~/.agents/skills/` — user
+3. `<home>/skills/` — clown home (built-ins)
+
+The built-in `init` skill (`<home>/skills/init/SKILL.md`: explore the project
+and write an `AGENTS.md`) is seeded on startup when missing; the user may
+edit or delete the seeded file. Discovered skills are listed in the system
+prompt (§9) as `name: description (path)` — the description is the routing
+signal.
 
 Tool result values are returned to the model as text (strings / structured
 values serialized to JSON). A tool may instead return an OpenAI content-part
@@ -650,7 +681,7 @@ Each tool invocation receives a `ToolContext`:
   the local user plus the `127.0.0.1` bind.
 - `run_command` runs with the session `cwd` as the working directory; no
   privilege escalation.
-- **DB isolation**: the SQLite file defaults to `~/.clowndb` (user-scoped).
+- **DB isolation**: the SQLite file defaults to `~/.clown/clown.db` (user-scoped).
   No cross-user access by default; `0600` on the file is recommended.
 - No auth by design (single-user, local tool).
 - LLM key never logged; request bodies are not logged by default.
