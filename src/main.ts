@@ -6,7 +6,7 @@ import { createRequire } from 'node:module';
 import * as esbuild from 'esbuild';
 import { config } from './config.ts';
 import { db } from './db.ts';
-import { seedInitSkill } from './skills.ts';
+import { seedBuiltinSkills } from './skills.ts';
 import { SessionManager } from './manager.ts';
 import { buildApp } from './app.ts';
 
@@ -48,7 +48,7 @@ const main = async () => {
   const cssWatch = spawn(process.execPath, [cssCli, ...cssArgs, '--watch=always', '--silent'], { stdio: 'ignore' });
   cssWatch.on('close', (code) => { if (code) log(`css watch exited with code ${code}`); });
 
-  seedInitSkill(); // create <home>/skills/init/SKILL.md on first run
+  seedBuiltinSkills(); // create <home>/skills/<name>/SKILL.md for each built-in on first run
   const manager = new SessionManager();
   const app = buildApp({ manager });
 

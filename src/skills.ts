@@ -3,8 +3,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { config } from './config.ts';
 
-// The built-in init skill. Seeded into <home>/skills/init/ on first run — the
-// user can edit or delete the seeded file freely; it is only (re)created when
+// Built-in skills, seeded into <home>/skills/<name>/ on first run — the user
+// can edit or delete the seeded files freely; they are only (re)created when
 // missing.
 const INIT_SKILL = `---
 name: init
@@ -33,6 +33,61 @@ Explore the project to understand its structure. Read key files (build config, e
 This section should be specific to the current project, not generic.
 
 Write the content to \`AGENTS.md\` and confirm success.
+`;
+
+const MAKE_SKILL = `---
+name: make_skill
+description: Author a new skill on user request — a direct ask, or an approved offer to make one.
+---
+# Make Skill
+
+Create a reusable **skill**: a single \`SKILL.md\` that future sessions load with \`read_file\` when a task matches its description. Skills are plain files — no registration.
+
+## Where it goes
+
+Pick the root by scope — a same-named skill in a closer root wins:
+
+| Root | Scope | Use for |
+|------|-------|---------|
+| \`<cwd>/.agents/skills/\` | project | skills specific to this repo / workflow |
+| \`~/.agents/skills/\` | user | general-purpose skills, reused across projects |
+| \`<home>/skills/\` (clown home, default \`~/.clown\`) | built-in | rarely — skills that ship with the agent |
+
+Decide, don't ask: if the skill is obviously project-specific (it references this repo's paths, files, or workflows), put it in the project root. Only general-purpose skills — no project-specific references — belong in the user root, since only those make sense to reuse across projects.
+
+Layout: \`<root>/<name>/SKILL.md\`. The skill's name is the directory name (the \`name:\` frontmatter key may override it).
+
+## Frontmatter
+
+A leading \`---\` block of single-line \`key: value\` pairs:
+
+\`\`\`
+---
+name: my-skill           # optional; defaults to the directory name
+description: <one line>  # REQUIRED — this is the routing signal
+---
+\`\`\`
+
+- The \`description\` is what the agent sees in the system prompt (one bullet: name, description, path). Write it as **when to use** — "Take browser screenshots of a URL (Playwright + system Chrome)" — not "about screenshots".
+- No other keys are needed.
+
+## Body
+
+The body is read verbatim by the model when a task matches, so make it a **concrete recipe**, not generic advice:
+
+- Terse, imperative steps with exact commands and paths (copy-pasteable).
+- Include detection / ordering steps when the tooling may vary, and **gotchas learned the hard way** — the highest-value lines in a skill.
+- End with a verification step (how to confirm success — e.g. re-read the output with \`read_file\`).
+
+Aim for well under ~150 lines: a skill the model doesn't finish reading is a skill that fails.
+
+## After writing
+
+1. Re-read the file with \`read_file\` and check the frontmatter is well-formed (a leading \`---\` block, \`description\` present).
+2. Tell the user where it landed and that it shows up in **new** sessions' system prompts — the skill list is composed at session creation and on \`/clear\`; running sessions are not refreshed.
+3. Offer to exercise it: send a matching message in a new session and confirm the model loads it with \`read_file\`.
+
+Seeded built-ins (like \`init\` and this skill) are also just files — edit or delete them freely; they are only (re)created when missing.
 `;
 
 const SKILL_FILE = 'SKILL.md';
@@ -84,11 +139,19 @@ export const scanSkills = (cwd) => {
   return [...skills.values()];
 };
 
-// Seed the built-in init skill into <home>/skills/init/ if not already there.
-export const seedInitSkill = () => {
-  const file = join(config.home, 'skills', 'init', SKILL_FILE);
-  if (existsSync(file)) return;
-  mkdirSync(join(config.home, 'skills', 'init'), { recursive: true });
-  writeFileSync(file, INIT_SKILL);
-  console.log(`[${new Date().toISOString()}] seeded built-in skill: ${file}`);
+// The built-ins, by directory name.
+const BUILTIN_SKILLS = [
+  ['init', INIT_SKILL],
+  ['make_skill', MAKE_SKILL],
+] as const;
+
+// Seed the built-in skills into <home>/skills/<name>/ if not already there.
+export const seedBuiltinSkills = () => {
+  for (const [name, content] of BUILTIN_SKILLS) {
+    const file = join(config.home, 'skills', name, SKILL_FILE);
+    if (existsSync(file)) continue;
+    mkdirSync(join(config.home, 'skills', name), { recursive: true });
+    writeFileSync(file, content);
+    console.log(`[${new Date().toISOString()}] seeded built-in skill: ${file}`);
+  }
 };

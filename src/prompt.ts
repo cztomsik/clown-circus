@@ -94,7 +94,9 @@ Current working directory: ${real}
 
 ### When Using Skills
 Skills are short instruction files for specific tasks. When a task matches a
-skill's description, read its file with \`read_file\` before starting.
+skill's description, read its file with \`read_file\` before starting. When the
+session keeps repeating the same kind of work, offer to capture it as a new
+skill (the \`make_skill\` built-in explains how).
 
 ${skills}
 ${context ? `\n${context}\n` : ''}`;

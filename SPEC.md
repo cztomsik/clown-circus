@@ -624,9 +624,10 @@ skill in a closer root wins):
 2. `~/.agents/skills/` — user
 3. `<home>/skills/` — clown home (built-ins)
 
-The built-in `init` skill (`<home>/skills/init/SKILL.md`: explore the project
-and write an `AGENTS.md`) is seeded on startup when missing; the user may
-edit or delete the seeded file. Discovered skills are listed in the system
+Built-in skills live at `<home>/skills/<name>/SKILL.md` and are seeded on
+startup when missing; the user may edit or delete the seeded files. There are
+two: `init` (explore the project and write an `AGENTS.md`) and `make_skill`
+(meta: how to author a new skill). Discovered skills are listed in the system
 prompt (§9) — one bullet per skill: **name**, description, and its
 `SKILL.md` path (shortened: `./` under the session cwd, `~` under the user
 home, absolute otherwise); the description is the routing signal.

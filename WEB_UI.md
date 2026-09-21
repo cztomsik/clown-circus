@@ -129,7 +129,7 @@ primary interface — the UI is just one client of it.
   tool: `read_file`/`write_file`/`edit_file` show the path (`edit_file` as a
   stacked red-gutter old over green-gutter new diff), `run_command` as a
   `$`-prompt line (+ cwd), `write_todos` as a count + the parsed checkbox
-  list, and `load_skill` as the skill name. Every shown path (and
+  list. Every shown path (and
   `run_command`'s cwd) is a **clickable `vscode://file/` link** — resolved
   against the session cwd (threaded down as the `cwd` prop) and opened in
   the local VS Code via the browser's external-app prompt, the same

@@ -38,7 +38,7 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 | `src/prompt.ts` | `buildSystemPrompt(cwd)`: inlined base prompt (with the discovered skill list in its "When Using Skills" section) + `AGENTS.md`→`CLOWN.md` fallback + date + realpath. |
 | `src/tools.ts` | All tools + `tools`/`toolSchemas` singletons. Relative paths resolve against the session cwd (no path sandbox). |
 | `src/errors.ts` | `HttpError` + `mapError()` (thrown errors → the §7.6 status/code table). Small module added to keep the import graph cycle-free. |
-| `src/skills.ts` | Skill discovery (`.agents/skills` roots, precedence, frontmatter parsing) + the built-in `init` content, seeded into `<home>/skills/init/SKILL.md` on first run. |
+| `src/skills.ts` | Skill discovery (`.agents/skills` roots, precedence, frontmatter parsing) + the built-in `init`/`make_skill` content, seeded into `<home>/skills/<name>/SKILL.md` on first run. |
 | `webui/index.html` | Web UI shell served at `/`. Thin page: one `<link>` to `/vendor/tailwind.css`, a `#root` mount, and `<script type="module" src="/vendor/bundle.js">` — no static UI markup. |
 | `webui/styles.css` | Single source of all web-UI styles: `@import "tailwindcss"`, the `@theme` colour tokens (dark + light), and the plain CSS utilities don't cover (`.material`, `.menu-card`, `.sw`, `.spinner`, …). Compiled at startup by `@tailwindcss/cli` into `webui/vendor/tailwind.css` (rebuilt on any `webui/` change). |
 | `webui/app.tsx` | Root Preact component (bundle entry): owns all state + side effects (config/models fetch, 10s poll, SSE, per-session drafts, `#/session/<id>` hash routing, actions) and composes the layout. |

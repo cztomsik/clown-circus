@@ -183,9 +183,9 @@ There is **no path sandbox**: the agent may read, write, and execute anywhere th
 Skills (`<root>/<name>/SKILL.md` with a `description` frontmatter) are loaded
 by the agent **via `read_file`** — no dedicated tool. Discovery roots,
 highest precedence first: `<cwd>/.agents/skills/` → `~/.agents/skills/` →
-`<home>/skills/`. The built-in `init` skill is seeded into
-`<home>/skills/init/` on first run; discovered skills are listed in the
-system prompt so the model can route to them.
+`<home>/skills/`. The built-in `init` and `make_skill` skills are seeded
+into `<home>/skills/<name>/` on first run; discovered skills are listed in
+the system prompt so the model can route to them.
 
 ---
 
@@ -204,7 +204,7 @@ src/
 ├─ prompt.ts     # system prompt (inlined base + skills + project context)
 ├─ tools.ts      # tools + registration
 ├─ errors.ts     # HttpError + error mapping
-└─ skills.ts     # skill discovery + built-in init seed
+└─ skills.ts     # skill discovery + built-in seeds (init, make_skill)
 ```
 
 `webui/` — the web UI served at `/` (Preact JSX (`.tsx`) and TypeScript (`.ts`)
