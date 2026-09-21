@@ -46,6 +46,11 @@ const App = () => {
   const [showArchived, setShowArchived] = useState(false);
   // Group the sidebar by project (cwd); persisted (see useLocalStorage).
   const [grouped, setGrouped] = useLocalStorage('clown-circus-grouped', true);
+  // Cwds of the folded project groups (only meaningful when `grouped`);
+  // persisted so the sidebar stays folded the way you left it.
+  const [collapsed, setCollapsed] = useLocalStorage('clown-circus-collapsed', []);
+  const toggleGroup = (cwd) =>
+    setCollapsed((c) => (c.includes(cwd) ? c.filter((x) => x !== cwd) : [...c, cwd]));
 
   // The /config summary (base_url · db) shown in the header when no session is
   // open — a one-shot status line, so it stays here rather than in a hook.
@@ -99,6 +104,14 @@ const App = () => {
     const s = current ? sessions.find((x) => x.id === current) : null;
     if (s && view?.title !== s.title) patch({ title: s.title });
   }, [sessions, current, view?.title]);
+
+  // The open session is always visible: selecting it unfolds its project
+  // group (the session is already in the polled list on every select path).
+  useEffect(() => {
+    if (!current) return;
+    const s = sessions.find((x) => x.id === current);
+    if (s) setCollapsed((c) => (c.includes(s.cwd) ? c.filter((x) => x !== s.cwd) : c));
+  }, [current]);
 
   // The id we last wrote into the hash — our own hashchange echo must be a
   // no-op, only external navigation (back/forward/pasted link) acts on it.
@@ -286,7 +299,8 @@ const App = () => {
                      sessions={sessions} current={current}
                      onNew={onNew} onSelect={select} newCwd={newCwd} setNewCwd={setNewCwd}
                      showArchived={showArchived} onToggleArchived={() => setShowArchived((v) => !v)}
-                     grouped={grouped} onToggleGrouped={() => setGrouped((v) => !v)} />
+                     grouped={grouped} onToggleGrouped={() => setGrouped((v) => !v)}
+                     collapsed={collapsed} onToggleGroup={toggleGroup} />
             <div class="flex-1 bg-black/50 md:hidden" onClick={() => setSideOpen(false)}></div>
           </div>
         ) : null}

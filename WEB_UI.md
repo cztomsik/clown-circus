@@ -98,8 +98,10 @@ primary interface — the UI is just one client of it.
   close-session button, and the theme toggle. All of this shares one row, so it
   stays compact on mobile.
 - **`webui/Sidebar.tsx`** — `Sidebar` + `SessionList`/`SessionItem`: the
-  project-grouped session list and the new-session form (a `cwd` input + a
-  "new session" button; the model is picked in the header's model picker).
+  project-grouped session list (each project group is individually
+  collapsible — see **Sidebar** under Features) and the new-session form (a
+  `cwd` input + a "new session" button; the model is picked in the header's
+  model picker).
 - **`webui/Message.tsx`** — `Messages` + `Message` (and the `Pre` leaf): the flat
   transcript, roles distinguished by colour/weight/tint, plus the `Working`
   indicator (three staggered-bouncing dim dots, optionally labelling the
@@ -214,7 +216,15 @@ primary interface — the UI is just one client of it.
   back to the cwd basename when the session has no title yet; the meta line
   shows cwd basename, status, last-activity, and message count, with a
   full-path tooltip). Refreshed on SSE `status` events and
-  every 10s. New-session form (a `cwd` input + a "new session" button — the
+  every 10s. **Collapsible groups** — with grouping on, each project header
+  is a click target with a chevron (pointing down when expanded, rotated
+  right when folded, animated): clicking it folds/unfolds just that group,
+  and a folded group shows its session count in parentheses so you still
+  see how much is hidden. The fold state is per-project, persisted in
+  `localStorage` (`clown-circus-collapsed` — an array of cwds), so the
+  sidebar stays folded the way you left it across reloads; and selecting a
+  session auto-unfolds its group, so the open session is always visible.
+  New-session form (a `cwd` input + a "new session" button — the
   model is chosen in the header's model picker, see **Header**) →
   `POST /sessions`. The `cwd` field is **pre-set to the selected session's
   cwd** whenever a session is chosen (state lifted into `App`, written in

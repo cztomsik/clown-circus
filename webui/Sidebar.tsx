@@ -1,7 +1,7 @@
 import { Fragment } from 'preact';
 import { baseName, timeAgo } from './util';
 import { PrimaryBtn, StatusDot, Switch } from './primitives';
-import { IcPlus } from './icons';
+import { IcChevronDown, IcPlus } from './icons';
 
 // ── session list item ─────────────────────────────────────────────────
 const SessionItem = ({ s, active, onSelect }) => (
@@ -18,7 +18,7 @@ const SessionItem = ({ s, active, onSelect }) => (
 );
 
 // ── session list (grouped by project) ─────────────────────────────────
-const SessionList = ({ sessions, current, onSelect, showArchived, grouped }) => {
+const SessionList = ({ sessions, current, onSelect, showArchived, grouped, collapsed, onToggleGroup }) => {
   const visible = sessions.filter((s) => !s.archived);
   const archived = showArchived ? sessions.filter((s) => s.archived) : [];
   const groups = new Map();
@@ -30,12 +30,21 @@ const SessionList = ({ sessions, current, onSelect, showArchived, grouped }) => 
   return (
     <div class="flex-1 overflow-y-auto px-2 py-1.5">
       {grouped
-        ? [...groups].map(([cwd, ss]) => (
-          <Fragment key={cwd}>
-            <div class="px-3 pt-3 pb-1 text-[.66rem] font-bold tracking-[.04em] uppercase text-text3">{baseName(cwd)}</div>
-            {items(ss)}
-          </Fragment>
-        ))
+        ? [...groups].map(([cwd, ss]) => {
+          const isCollapsed = collapsed.includes(cwd);
+          return (
+            <Fragment key={cwd}>
+              {/* collapsible group header: click to fold/unfold */}
+              <button class="w-full flex items-center gap-1.5 px-3 pt-3 pb-1 text-[.66rem] font-bold tracking-[.04em] uppercase text-text3 hover:text-dim transition-colors"
+                      onClick={() => onToggleGroup(cwd)}>
+                <span class={`transition-transform duration-150 ${isCollapsed ? '-rotate-90' : ''}`}><IcChevronDown /></span>
+                {baseName(cwd)}
+                {isCollapsed ? <span class="opacity-60">({ss.length})</span> : null}
+              </button>
+              {isCollapsed ? null : items(ss)}
+            </Fragment>
+          );
+        })
         : items(visible)}
       {archived.length ? (
         <Fragment key="archived">
@@ -57,7 +66,8 @@ const SwitchRow = ({ label, on, onToggle }) => (
 
 // ── sidebar ───────────────────────────────────────────────────────────
 export const Sidebar = ({ cls, sessions, current, onNew, onSelect, newCwd, setNewCwd,
-                          showArchived, onToggleArchived, grouped, onToggleGrouped }) => {
+                          showArchived, onToggleArchived, grouped, onToggleGrouped,
+                          collapsed, onToggleGroup }) => {
   const submit = async (e) => {
     e.preventDefault();
     const c = newCwd.trim();
@@ -80,7 +90,8 @@ export const Sidebar = ({ cls, sessions, current, onNew, onSelect, newCwd, setNe
       </div>
 
       {/* Session list */}
-      <SessionList sessions={sessions} current={current} onSelect={onSelect} showArchived={showArchived} grouped={grouped} />
+      <SessionList sessions={sessions} current={current} onSelect={onSelect} showArchived={showArchived}
+                   grouped={grouped} collapsed={collapsed} onToggleGroup={onToggleGroup} />
 
       {/* Toggles (iOS switches) */}
       <div class="px-4 py-2 border-t border-hairline flex flex-col gap-0.5">
