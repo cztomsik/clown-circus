@@ -1,7 +1,7 @@
 import express from 'express';
 import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { statSync } from 'node:fs';
+import { mkdirSync, statSync } from 'node:fs';
 import { HttpError, mapError } from './errors.ts';
 import { config } from './config.ts';
 import { llm, REASONING_EFFORTS } from './llm.ts';
@@ -69,16 +69,21 @@ export const buildApp = ({ manager }) => {
 
   app.post('/sessions', (req, res) => {
     const body = req.body ?? {};
-    const { cwd } = body;
+    const { cwd, create } = body;
     if (typeof cwd !== 'string' || cwd === '') throw new HttpError(400, 'bad_request', 'cwd is required');
     if (!isAbsolute(cwd)) throw new HttpError(400, 'bad_request', 'cwd must be an absolute path');
     let st;
     try {
       st = statSync(cwd);
     } catch {
-      throw new HttpError(500, 'internal', `cwd path does not exist: ${cwd}`);
+      if (create !== true) throw new HttpError(404, 'not_found', `cwd path does not exist: ${cwd}`);
+      try {
+        mkdirSync(cwd, { recursive: true });
+      } catch (err) {
+        throw new HttpError(500, 'internal', `could not create cwd path: ${cwd} — ${err.message}`);
+      }
     }
-    if (!st.isDirectory()) throw new HttpError(500, 'internal', `cwd is not a directory: ${cwd}`);
+    if (st && !st.isDirectory()) throw new HttpError(400, 'bad_request', `cwd is not a directory: ${cwd}`);
 
     const model = body.model;
     if (typeof model !== 'string' || model === '')

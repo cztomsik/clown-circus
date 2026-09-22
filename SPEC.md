@@ -285,7 +285,8 @@ endpoint and the static web UI (§7.7). Errors use `4xx`/`5xx` with
 {
   "cwd": "/abs/path/to/project",
   "model": "llama-3",
-  "reasoning_effort": "medium"
+  "reasoning_effort": "medium",
+  "create": false
 }
 ```
 
@@ -301,10 +302,14 @@ endpoint and the static web UI (§7.7). Errors use `4xx`/`5xx` with
   present it is stored as the session's last-used value and sent with every
   LLM call of its runs (§8). Absent or `null` → null (the field is then
   omitted from the LLM request); any other value → `400` `bad_request`.
+- `create` — **optional** boolean (default `false`). When `true`, a
+  **missing** `cwd` is created (recursively, including absent parents)
+  instead of rejected; ignored when the `cwd` already exists.
 - `201` on success, returning the created session (meta + messages).
-- `400` if `cwd` or `model` is missing, `cwd` is not absolute, or
-  `reasoning_effort` is not a known level; `500` if the `cwd` path is not a
-  directory.
+- `400` if `cwd` or `model` is missing, `cwd` is not absolute, `cwd` exists
+  but is not a directory, or `reasoning_effort` is not a known level;
+  `404` `not_found` if `cwd` does not exist (unless `create: true`);
+  `500` `internal` if creating it fails (e.g. permissions).
 
 `GET /sessions/:id` response:
 
@@ -429,7 +434,7 @@ Event types (SSE `event:` field):
 | HTTP | `code`            | Meaning |
 |------|-------------------|---------|
 | `400`| `bad_request`     | Malformed body / missing `cwd` or `model` / bad `reasoning_effort` / empty `cwd` filter |
-| `404`| `not_found`       | Unknown session id |
+| `404`| `not_found`       | Unknown session id / `cwd` missing on create (without `create: true`) |
 | `409`| `session_busy`    | Run-starting call while `running` is true |
 | `500`| `internal`        | Unhandled server error (incl. DB errors) |
 | `502`| `llm_unavailable` | The LLM endpoint is unreachable / returns an error |

@@ -152,7 +152,16 @@ const App = () => {
   const onNew = async (cwd) => {
     if (!model) { flashMsg('no models available — check the LLM endpoint'); return; }
     try {
-      const s = await post('/sessions', { cwd, model, reasoning_effort: effort });
+      let s;
+      try {
+        s = await post('/sessions', { cwd, model, reasoning_effort: effort });
+      } catch (err) {
+        // The only 404 a create can return is a missing cwd: offer to create
+        // the folder and retry.
+        if (err.code !== 'not_found') throw err;
+        if (!confirm(`folder ${cwd} does not exist — create it?`)) return;
+        s = await post('/sessions', { cwd, model, reasoning_effort: effort, create: true });
+      }
       await refresh();
       await select(s.id);
     } catch (err) { flashMsg(err.message); }

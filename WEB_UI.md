@@ -226,10 +226,14 @@ primary interface — the UI is just one client of it.
   session auto-unfolds its group, so the open session is always visible.
   New-session form (a `cwd` input + a "new session" button — the
   model is chosen in the header's model picker, see **Header**) →
-  `POST /sessions`. The `cwd` field is **pre-set to the selected session's
-  cwd** whenever a session is chosen (state lifted into `App`, written in
-  `select()`), so spinning up another session for the same project is one
-  click; the field is cleared after a successful create and remains editable.
+  `POST /sessions`; when the `cwd` does not exist the server answers `404`
+  and the UI asks "folder … does not exist — create it?" — a yes retries
+  the create with `create: true` (the server creates the directory
+  recursively), a no aborts (the field keeps its text). The `cwd` field is
+  **pre-set to the selected session's cwd** whenever a session is chosen
+  (state lifted into `App`, written in `select()`), so spinning up another
+  session for the same project is one click; the field is cleared after a
+  successful create and remains editable.
 
   **Archived sessions** — the list is fetched as `GET /sessions?archived=1`
   and split client-side, so the "show archived" toggle (a checkbox under the

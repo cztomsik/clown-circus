@@ -7,8 +7,9 @@ export const api = async (path: string, opts: RequestInit = {}) => {
   const r = await fetch(path, { headers: { 'content-type': 'application/json' }, ...opts });
   if (!r.ok) {
     let msg = `${r.status} ${r.statusText}`;
-    try { msg = (await r.json()).error?.message ?? msg; } catch {}
-    throw new Error(msg);
+    let code;
+    try { const e = (await r.json()).error; msg = e?.message ?? msg; code = e?.code; } catch {}
+    throw Object.assign(new Error(msg), { code });
   }
   return r.status === 204 ? null : r.json();
 };
