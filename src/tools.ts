@@ -55,11 +55,12 @@ const writeFile = async (ctx, args) => {
 };
 
 const editFile = async (ctx, args) => {
+  if (typeof args.old_content !== 'string' || !args.old_content || typeof args.new_content !== 'string')
+    throw new Error('expected: path (string), old_content (string), new_content (string), replace_all? (boolean)');
   const p = resolvePath(ctx.cwd, args.path);
   const content = (await fsReadFile(p)).toString('utf8');
   let next;
   if (args.replace_all) {
-    if (!args.old_content) throw new Error('old_content must be non-empty');
     next = content.split(args.old_content).join(args.new_content);
   } else {
     const pos = content.indexOf(args.old_content);
