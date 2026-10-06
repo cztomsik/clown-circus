@@ -362,7 +362,7 @@ primary interface — the UI is just one client of it.
 - **Live updates** — browser `EventSource` on `GET /sessions/:id/events`:
   - `message` → append to the transcript (todos derived from it)
   - `history` → replace the transcript (undo/clear/trim/retry/retry-turn, and the server's gap recovery after a long disconnect)
-  - `status` → update badge, swap send↔stop, refresh the sidebar
+  - `status` → update badge, swap send↔stop, refresh the sidebar, show/clear the error banner (`last_error` rides along — a run start clears it, a failed run sets it)
   - `error` → transient error banner
   - `done` → update token count
   - `EventSource` auto-reconnects and sends `Last-Event-ID`, so the server's

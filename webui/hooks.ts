@@ -126,7 +126,7 @@ export const useSessionView = (current, { refresh, onFlash }) => {
     return openSessionEvents(current, {
       message: (d) => setView((v) => (v ? { ...v, messages: [...v.messages, d.message] } : v)),
       history: (h) => patch({ messages: h.messages }),
-      status: (s) => { patch({ status: s.status }); refresh(); },
+      status: (s) => { patch({ status: s.status, last_error: s.last_error }); refresh(); },
       done: (d) => patch({ tokens: d.total_tokens }),
       error: (err) => { patch({ status: 'error' }); onFlash(err.message); refresh(); },
     });

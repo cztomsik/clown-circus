@@ -368,10 +368,10 @@ UI's composer command that dispatches the same action.
 | Method | Path                       | Slash cmd      | Behavior |
 |--------|----------------------------|----------------|----------|
 | `POST` | `/sessions/:id/stop`       | `/stop`        | Cooperatively abort the running loop. `200` `{ "status": "stopped" }`. No-op (still `200`) if idle. |
-| `POST` | `/sessions/:id/undo`       | `/undo`        | Pop the last message from history. Returns the popped message text (if any) in `{ "undone": "..." }`. |
+| `POST` | `/sessions/:id/undo`       | `/undo`        | Pop the last message from history. Returns the popped message text (if any) in `{ "undone": "..." }`. Also clears `last_error` and settles a transient status (`error`/`stopped`) back to `idle` — the popped tail is the completion the error described. |
 | `POST` | `/sessions/:id/retry`      | `/retry`       | Strip trailing assistant/tool messages (keep last user message) and re-run. `202` when it starts a run, `409` if busy. |
 | `POST` | `/sessions/:id/retry-turn` | `/retry-turn`  | Like `/retry`, but rolls back to just before the **last assistant message** (stripping it, any tool results it spawned, and anything after) instead of the last user message — reaching a poisoned mid-turn response that the `/retry` rollback can't get to. `202` when it starts a run, `409` if busy, `400` if there is no assistant message to retry. |
-| `POST` | `/sessions/:id/clear`      | `/clear`       | Stop + clear history (keep system message). `200`. |
+| `POST` | `/sessions/:id/clear`      | `/clear`       | Stop + clear history (keep system message). Clears `last_error` and settles a transient status back to `idle`. `200`. |
 | `POST` | `/sessions/:id/trim`       | `/trim [n]`     | Trim the transcript, **keeping the last n assistant turns untouched**: in every earlier turn, truncate long `role=tool` results and delete assistant reasoning. User text, assistant text, and tool-call invocations (name + arguments) are untouched. `n` may exceed the turn count (a no-op) or be `0` (trim everything); idempotent. Body `{ "keep": n }` with `n` a non-negative integer — `400` otherwise. `200` `{ "keep", "trimmed", "truncatedResults", "reasoningRemoved" }`. |
 | `POST` | `/sessions/:id/compact`    | `/compact`     | Run the two-phase summarize-then-replace compaction. `202` (starts a run). |
 | `POST` | `/sessions/:id/init`       | `/init`        | Convenience: send the prompt that triggers the built-in `init` skill ("Could you /init this project?"). `202`. |
@@ -404,7 +404,7 @@ Event types (SSE `event:` field):
 |------------|------------------------------------------|--------------|
 | `message`  | `{ "message": <Message> }`               | Every appended message (user, assistant turn, tool result) |
 | `history`  | `{ "messages": <Message[]> }`            | Full transcript (incl. system) after a destructive edit (undo/clear/trim/retry/retry-turn); also sent as a synthetic resume event when the replay ring can't cover the gap (below) |
-| `status`   | `{ "status": "running"\|"idle"\|"error"\|"stopped" }` | On state transitions |
+| `status`   | `{ "status": "running"\|"idle"\|"error"\|"stopped", "last_error": string\|null }` | On state transitions. `last_error` is included so clients update their error banner on the transition itself (a run start clears it; a failed run sets it) |
 | `error`    | `{ "message": "..." }`                   | On a loop error |
 | `done`     | `{ "total_tokens": n }`                  | When a run completes |
 | `pong`     | `{}`                                     | In response to a client `ping` (keepalive) |

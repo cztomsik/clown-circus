@@ -262,7 +262,11 @@ export class Session {
   setStatus(status) {
     const changed = this.status !== status;
     this.status = status;
-    if (changed) this.emit('status', { status });
+    // last_error rides along so clients clear/show the banner on the
+    // transition itself (begin() clears it before status→running;
+    // end('error', msg) sets it before status→error) — a later re-fetch is
+    // not what a live client should have to wait for.
+    if (changed) this.emit('status', { status, last_error: this.lastError });
     this.persist();
   }
 
@@ -276,7 +280,7 @@ export class Session {
     this.destroyed = true; // set before stop(): the wind-down loop must not (re)write
     this.stop();
     this.running = false;
-    this.emit('status', { status: 'stopped' });
+    this.emit('status', { status: 'stopped', last_error: this.lastError });
     this.emitter.emit('end');
   }
 
@@ -451,6 +455,13 @@ export class Session {
       undone = textOf(this.messages.pop().content);
       db.deleteMessages([this.msgIds.pop()]);
     }
+    // The popped tail is the completion last_error describes: clear it, and
+    // settle a transient status (error/stopped) back to the idle baseline.
+    // While a stop is still in flight, leave the status alone — the wind-down
+    // end('stopped') is authoritative there, and a genuine failure during it
+    // can still re-set last_error.
+    this.lastError = null;
+    if (!this.running) this.setStatus('idle');
     this.emitHistory();
     this.persist();
     return undone;
@@ -461,13 +472,18 @@ export class Session {
     // Truncate in place (keep the array's identity) so an in-flight `next()`
     // holding a reference can't strand a stale append on a discarded array.
     // The system prompt is re-derived (picks up any AGENTS.md edits), and the
-    // title is dropped so the fresh conversation titles itself anew.
+    // title is dropped so the fresh conversation titles itself anew. The error
+    // is cleared too — the wiped transcript no longer contains the failed
+    // completion (same settle rule as undo(); doCompact's internal clear()
+    // hits this with status already idle, so it's a no-op there).
     this.title = null;
     this.messages.length = 1;
     this.messages[0] = { role: 'system', content: buildSystemPrompt(this.cwd) };
     const gone = this.msgIds;
     this.msgIds = [];
     if (gone.length) db.deleteMessages(gone);
+    this.lastError = null;
+    if (!this.running) this.setStatus('idle');
     this.emitHistory();
     this.persist();
   }
