@@ -1,7 +1,7 @@
 import { IconBtn, Menu, StatusDot } from './primitives';
 import { ModelSelect } from './ModelSelect';
 import { baseName, fmtTokens } from './util';
-import { AppIcon, IcHamburger, IcDots, IcSun, IcMoon, IcCode, IcArchive, IcTrash, IcX } from './icons';
+import { IcHamburger, IcDots, IcSun, IcMoon, IcCode, IcArchive, IcTrash, IcX } from './icons';
 
 // The session-level actions for the ⋮ dropdown. Only things that aren't
 // reachable from the composer live here — conversation manipulation
@@ -29,11 +29,10 @@ const Header = ({ cfg, theme, sideOpen, onSideToggle, onThemeToggle, view, onAct
 
   return (
     <header class="material relative z-30 flex items-center gap-2.5 px-3.5 h-[50px] border-b border-hairline flex-none">
-      {/* Left: hamburger + app icon + name | divider | session */}
+      {/* Left: hamburger + name | divider | session */}
       <div class="flex items-center gap-2.5 min-w-0">
         <IconBtn title="toggle sidebar" aria-label="toggle sidebar" aria-pressed={sideOpen}
                  onClick={onSideToggle}><IcHamburger /></IconBtn>
-        <AppIcon />
         <span class="text-[.9rem] font-semibold tracking-[-.01em] whitespace-nowrap hidden sm:block text-ink">Clown-Circus</span>
 
         <div class="w-px h-[22px] bg-hairline flex-none"></div>

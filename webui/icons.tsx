@@ -5,7 +5,7 @@
 
 // ── header / chrome ─────────────────────────────────────────────────────────
 // The brand mark: a gradient rounded square with a right arrow (the "send
-// the agent off" gesture). Shared by the header and the empty state.
+// the agent off" gesture). Used on the empty state.
 export const AppIcon = () => (
   <span class="w-[25px] h-[25px] rounded-[7px] grid place-items-center flex-none text-white"
         style={{ background: 'linear-gradient(145deg, #5ac8fa, #0a84ff)', boxShadow: 'inset 0 .5px 0 rgba(255,255,255,.5), 0 1px 2px rgba(0,0,0,.18)' }}>
