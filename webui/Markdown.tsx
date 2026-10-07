@@ -45,14 +45,15 @@ const MD_CSS = `
   padding: .6em .75em; margin: 0 0 .5em; overflow-x: auto;
 }
 .md pre code { background: none; border: 0; padding: 0; font-size: .85em; }
-.md table { border-collapse: collapse; margin: 0 0 .5em; display: block; max-width: 100%; overflow-x: auto; }
-.md th, .md td { border: 1px solid var(--color-line); padding: .25em .6em; text-align: left; }
-/* Mobile: code / file names must not break mid-token inside cells — let the
-   table (display:block + overflow-x above) scroll horizontally instead of
-   crushing its columns. Desktop wrapping is untouched. */
-@media (max-width: 767px) {
-  .md th, .md td { overflow-wrap: normal; word-break: normal; }
-}
+/* Tables sit in a .table-wrap for horizontal scroll on narrow screens; the
+   table stays a real width:100% table so its columns share the width (the
+   old display:block crush killed table layout). */
+.md .table-wrap { margin: 0 0 .5em; overflow-x: auto; }
+.md table { border-collapse: collapse; width: 100%; }
+/* Cells use normal word breaking — the .md break-word otherwise lets table
+   layout shrink short columns to ~2 chars. Long unbreakable tokens fall back
+   to the wrapper's scroll. */
+.md th, .md td { border: 1px solid var(--color-line); padding: .3em .6em; text-align: left; vertical-align: top; word-break: normal; overflow-wrap: normal; }
 .md th { background: var(--color-panel); font-weight: 600; }
 .md hr { border: 0; border-top: 1px solid var(--color-line); margin: .8em 0; }
 .md img { max-width: 100%; }
@@ -71,9 +72,13 @@ if (!document.getElementById('md-css')) {
 // that returns a plain string (we never register async extensions).
 const md = (text) => marked.parse(text ?? '', { gfm: true, breaks: true, async: false });
 
-// One parse per text change. Re-parsing on every SSE snapshot is cheap at
-// transcript scale; a micro-cache would just complicate invalidation.
-const render = (text) => DOMPurify.sanitize(md(text));
+// One parse per text change (cheap at transcript scale). Tables are wrapped
+// in a scroll container so wide ones scroll while staying real tables.
+const render = (text) =>
+  DOMPurify.sanitize(md(text)).replace(
+    /<table[\s\S]*?<\/table>/g,
+    (t) => `<div class="table-wrap">${t}</div>`,
+  );
 
 // Markdown block. `cls` lets the caller keep its own layout tint (e.g. the
 // user's accent border/wash) — typography lives in the `.md` rules above,
