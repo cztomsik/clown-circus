@@ -1,6 +1,8 @@
 import { readFile as fsReadFile, writeFile as fsWriteFile, mkdir } from 'node:fs/promises';
+import { createWriteStream } from 'node:fs';
 import { spawn } from 'node:child_process';
-import { homedir } from 'node:os';
+import { randomUUID } from 'node:crypto';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
 const MAX = 2 * 1024 * 1024; // 2MB cap
@@ -77,6 +79,19 @@ const editFile = async (ctx, args) => {
 // the case where `close` is delayed by a grandchild that inherited our stdio.
 const DRAIN_MS = 300;
 
+// A command still running after this long is left alive in the background:
+// its output is redirected to temp files and the tool resolves, so the agent
+// can keep working and monitor/kill the process itself.
+const CMD_TIMEOUT_MS = 60_000;
+
+// Every spawned command — in-flight or backgrounded past the timeout — so
+// the server can kill them on shutdown instead of orphaning them.
+const live = new Map(); // pid → ChildProcess
+export const killAllChildren = () => {
+  for (const child of live.values()) child.kill('SIGKILL');
+  live.clear();
+};
+
 const runCommand = (ctx, args) =>
   new Promise((res) => {
     const cwd = args.cwd ? resolve(ctx.cwd, args.cwd) : ctx.cwd;
@@ -84,44 +99,79 @@ const runCommand = (ctx, args) =>
     // questions) get EOF immediately instead of hanging on input that never
     // arrives. We only ever capture stdout/stderr.
     const child = spawn('sh', ['-c', args.command], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    if (child.pid) live.set(child.pid, child);
     let out = '';
     let err = '';
     let code = 0;
     let done = false;
     let drainTimer;
+    let timeoutTimer;
+    let outStream;
+    let errStream;
+    // Output sinks: in-memory (capped) while awaited, temp-file once the
+    // command is backgrounded past the timeout (the child keeps writing to
+    // its pipe; only where we put the data changes).
+    let sinkOut = (d) => { if (out.length < MAX) out += d; };
+    let sinkErr = (d) => { if (err.length < MAX) err += d; };
     const onAbort = () => child.kill('SIGKILL');
-    const cleanup = () => {
+    const reap = () => {
       clearTimeout(drainTimer);
+      clearTimeout(timeoutTimer);
       ctx.signal?.removeEventListener('abort', onAbort);
       child.stdout.destroy();
       child.stderr.destroy();
+      outStream?.end();
+      errStream?.end();
+      live.delete(child.pid);
     };
     const finish = (s) => {
       if (done) return;
       done = true;
-      cleanup();
       res(s);
     };
     const render = () =>
       code !== 0 ? `Command failed with exit code ${code}\nStdout:\n${out}\nStderr:\n${err}`
       : err.length ? `${out}\n\nStderr:\n${err}`
       : out;
+    // Still running past the timeout: stop buffering in memory, redirect
+    // output to temp files, and resolve — the process keeps running and the
+    // agent owns it from here.
+    const detach = () => {
+      if (done || !child.pid) return;
+      done = true;
+      const id = randomUUID();
+      outStream = createWriteStream(join(tmpdir(), `clown-cmd-${id}.out`));
+      errStream = createWriteStream(join(tmpdir(), `clown-cmd-${id}.err`));
+      sinkOut = (d) => outStream.write(d);
+      sinkErr = (d) => errStream.write(d);
+      res(`Command exceeded ${CMD_TIMEOUT_MS / 1000}s and is still running; it was left running in the background as PID ${child.pid}. ` +
+        `Its stdout is being written to ${outStream.path} and its stderr to ${errStream.path} — check those files to monitor progress, ` +
+        `and kill the process (e.g. \`kill ${child.pid}\`) when it is no longer needed.`);
+    };
+    timeoutTimer = setTimeout(detach, CMD_TIMEOUT_MS);
     if (ctx.signal) {
       if (ctx.signal.aborted) onAbort();
       else ctx.signal.addEventListener('abort', onAbort, { once: true });
     }
-    child.stdout.on('data', (d) => (out.length < MAX ? (out += d) : null));
-    child.stderr.on('data', (d) => (err.length < MAX ? (err += d) : null));
-    child.on('error', (e) => finish(`Error running command: ${e.message}`));
+    child.stdout.on('data', (d) => sinkOut(d));
+    child.stderr.on('data', (d) => sinkErr(d));
+    child.on('error', (e) => {
+      reap();
+      finish(`Error running command: ${e.message}`);
+    });
     child.on('exit', (c) => {
       code = c ?? 0;
+      if (done) return;
       // The command itself is done, but `close` (all stdio closed) may be
       // deferred indefinitely if it backgrounded a grandchild that inherited
       // the pipes. Finalize on `close` (exact drain) or after a short grace
       // period to flush trailing output, whichever comes first.
       drainTimer = setTimeout(() => finish(render()), DRAIN_MS);
     });
-    child.on('close', () => finish(render()));
+    child.on('close', () => {
+      reap();
+      finish(render());
+    });
   });
 
 // The todo list is a user-visible markdown string (see prompt.ts for the

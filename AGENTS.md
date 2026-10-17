@@ -36,7 +36,7 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 | `src/loop.ts` | `runLoop` — the agent loop: `next()` → execute tool calls → repeat; each appended message is persisted + emitted as a granular `message` event in place (`append`); converts every outcome to a terminal status and never throws. |
 | `src/llm.ts` | OpenAI-compatible chat client: `chat()` + `listModels()`. Distinguishes stop-abort from timeout (504) / network-HTTP (502) via `LlmError.kind`. |
 | `src/prompt.ts` | `buildSystemPrompt(cwd)`: inlined base prompt (with the discovered skill list in its "When Using Skills" section) + `AGENTS.md`→`CLOWN.md` fallback + date + realpath. |
-| `src/tools.ts` | All tools + `tools`/`toolSchemas` singletons. Relative paths resolve against the session cwd (no path sandbox). |
+| `src/tools.ts` | All tools + `tools`/`toolSchemas` singletons. Relative paths resolve against the session cwd (no path sandbox). `run_command`: commands still running after 60s are backgrounded (output → temp files, tool resolves with PID + paths); all live children are tracked (`killAllChildren`) and killed on shutdown. |
 | `src/errors.ts` | `HttpError` + `mapError()` (thrown errors → the §7.6 status/code table). Small module added to keep the import graph cycle-free. |
 | `src/skills.ts` | Skill discovery (`.agents/skills` roots, precedence, frontmatter parsing) + the built-in `init`/`make_skill` content, seeded into `<home>/skills/<name>/SKILL.md` on first run. |
 | `webui/index.html` | Web UI shell served at `/`. Thin page: one `<link>` to `/vendor/tailwind.css`, a `#root` mount, and `<script type="module" src="/vendor/bundle.js">` — no static UI markup. |

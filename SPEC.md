@@ -614,7 +614,7 @@ process can reach.
 | `read_file`     | `path`, `raw?: bool`                             | Line-number prefix `N:content` unless `raw`. 2MB limit. UTF-8 validated for text. Images (PNG/JPEG/WebP/GIF, detected by magic bytes) are returned as a base64 `image_url` content part so a vision model can see them. |
 | `write_file`    | `path`, `content`                                | Creates parent dirs. |
 | `edit_file`     | `path`, `old_content`, `new_content`, `replace_all?: bool` | Exact-match replace; errors on 0 or >1 matches unless `replace_all`. Exact-string semantics only (no line-range/sed edits). |
-| `run_command`   | `command`, `cwd?: string`                        | Runs `sh -c`; captures stdout+stderr (2MB limits); abortable on stop. |
+| `run_command`   | `command`, `cwd?: string`                        | Runs `sh -c`; captures stdout+stderr (2MB limits); abortable on stop. A command still running after 60s is **left alive in the background** — its output is redirected to two temp files (`<tmpdir>/clown-cmd-<id>.out`/`.err`) and the tool resolves with the PID + file paths; monitoring it and killing it (`kill <pid>`) is then the agent's job. |
 | `write_todos`  | `content: string (markdown)`                   | No-op: the tool call's presence in the transcript IS the todo list (the web UI derives it from messages). Returns `Todos updated`. |
 
 ### 12.1 Skills
@@ -690,6 +690,9 @@ Each tool invocation receives a `ToolContext`:
   the local user plus the `127.0.0.1` bind.
 - `run_command` runs with the session `cwd` as the working directory; no
   privilege escalation.
+- Every spawned `run_command` child — in-flight or backgrounded past the
+  60s timeout — is tracked and killed (`SIGKILL`) on server shutdown
+  (`SIGINT`/`SIGTERM`), so no command outlives the server.
 - **DB isolation**: the SQLite file defaults to `~/.clown/clown.db` (user-scoped).
   No cross-user access by default; `0600` on the file is recommended.
 - No auth by design (single-user, local tool).

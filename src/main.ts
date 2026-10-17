@@ -7,6 +7,7 @@ import * as esbuild from 'esbuild';
 import { config } from './config.ts';
 import { db } from './db.ts';
 import { seedBuiltinSkills } from './skills.ts';
+import { killAllChildren } from './tools.ts';
 import { SessionManager } from './manager.ts';
 import { buildApp } from './app.ts';
 
@@ -63,6 +64,7 @@ const main = async () => {
     if (closing) return;
     closing = true;
     log(`${sig} received, shutting down`);
+    killAllChildren(); // don't orphan in-flight or backgrounded commands
     server.close(() => {
       cssWatch.kill();
       webuiCtx.dispose();
