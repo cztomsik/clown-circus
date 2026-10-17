@@ -84,11 +84,19 @@ const DRAIN_MS = 300;
 // can keep working and monitor/kill the process itself.
 const CMD_TIMEOUT_MS = 60_000;
 
+// Kill a command's whole process tree. `detached: true` made the child the
+// leader of its own process group (the sh plus everything it spawns), so
+// -pid names exactly that tree and can never reach the server.
+const killTree = (child) => {
+  if (!child.pid) return;
+  try { process.kill(-child.pid, 'SIGKILL'); } catch { /* already gone */ }
+};
+
 // Every spawned command — in-flight or backgrounded past the timeout — so
-// the server can kill them on shutdown instead of orphaning them.
+// the server can kill their trees on shutdown instead of orphaning them.
 const live = new Map(); // pid → ChildProcess
 export const killAllChildren = () => {
-  for (const child of live.values()) child.kill('SIGKILL');
+  for (const child of live.values()) killTree(child);
   live.clear();
 };
 
@@ -97,12 +105,15 @@ const runCommand = (ctx, args) =>
     const cwd = args.cwd ? resolve(ctx.cwd, args.cwd) : ctx.cwd;
     // `stdin: 'ignore'` so commands that read stdin (prompts, `cat`, npm
     // questions) get EOF immediately instead of hanging on input that never
-    // arrives. We only ever capture stdout/stderr.
-    const child = spawn('sh', ['-c', args.command], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    // arrives. We only ever capture stdout/stderr. `detached: true` makes the
+    // child lead its own process group (+ session) so the whole tree can be
+    // group-killed and terminal signals to the server can't reach it.
+    const child = spawn('sh', ['-c', args.command], { cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
     if (child.pid) live.set(child.pid, child);
     let out = '';
     let err = '';
     let code = 0;
+    let sig = null; // a signal death (kill, segfault) is a failure, not exit 0
     let done = false;
     let drainTimer;
     let timeoutTimer;
@@ -113,7 +124,7 @@ const runCommand = (ctx, args) =>
     // its pipe; only where we put the data changes).
     let sinkOut = (d) => { if (out.length < MAX) out += d; };
     let sinkErr = (d) => { if (err.length < MAX) err += d; };
-    const onAbort = () => child.kill('SIGKILL');
+    const onAbort = () => killTree(child);
     const reap = () => {
       clearTimeout(drainTimer);
       clearTimeout(timeoutTimer);
@@ -130,9 +141,10 @@ const runCommand = (ctx, args) =>
       res(s);
     };
     const render = () =>
-      code !== 0 ? `Command failed with exit code ${code}\nStdout:\n${out}\nStderr:\n${err}`
-      : err.length ? `${out}\n\nStderr:\n${err}`
-      : out;
+      code !== 0 || sig
+        ? `Command failed${sig ? ` (killed by ${sig})` : ` with exit code ${code}`}\nStdout:\n${out}\nStderr:\n${err}`
+        : err.length ? `${out}\n\nStderr:\n${err}`
+        : out;
     // Still running past the timeout: stop buffering in memory, redirect
     // output to temp files, and resolve — the process keeps running and the
     // agent owns it from here.
@@ -159,8 +171,9 @@ const runCommand = (ctx, args) =>
       reap();
       finish(`Error running command: ${e.message}`);
     });
-    child.on('exit', (c) => {
+    child.on('exit', (c, s) => {
       code = c ?? 0;
+      sig = s;
       if (done) return;
       // The command itself is done, but `close` (all stdio closed) may be
       // deferred indefinitely if it backgrounded a grandchild that inherited

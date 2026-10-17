@@ -498,7 +498,7 @@ emit status=idle, done; persist(status)
 
 `stop` calls `session.abortController.abort()`. The loop:
 1. Cancels any in-flight LLM `fetch` (via the shared `AbortSignal`).
-2. Aborts any in-flight `run_command` child process.
+2. Aborts any in-flight `run_command` — its whole process tree (`SIGKILL` to its process group).
 3. Checks the signal at the top of each turn and between tool calls.
 
 Because the loop is cooperative, a tool call that ignores the signal is the only
@@ -690,9 +690,10 @@ Each tool invocation receives a `ToolContext`:
   the local user plus the `127.0.0.1` bind.
 - `run_command` runs with the session `cwd` as the working directory; no
   privilege escalation.
-- Every spawned `run_command` child — in-flight or backgrounded past the
-  60s timeout — is tracked and killed (`SIGKILL`) on server shutdown
-  (`SIGINT`/`SIGTERM`), so no command outlives the server.
+- Each `run_command` runs as the leader of its own process group
+  (`detached` spawn); every tree — in-flight or backgrounded past the 60s
+  timeout — is tracked and group-killed (`SIGKILL`, shell + all descendants)
+  on server shutdown (`SIGINT`/`SIGTERM`), so no command outlives the server.
 - **DB isolation**: the SQLite file defaults to `~/.clown/clown.db` (user-scoped).
   No cross-user access by default; `0600` on the file is recommended.
 - No auth by design (single-user, local tool).
