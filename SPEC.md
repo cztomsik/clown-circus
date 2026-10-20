@@ -369,6 +369,7 @@ UI's composer command that dispatches the same action.
 |--------|----------------------------|----------------|----------|
 | `POST` | `/sessions/:id/stop`       | `/stop`        | Cooperatively abort the running loop. `200` `{ "status": "stopped" }`. No-op (still `200`) if idle. |
 | `POST` | `/sessions/:id/undo`       | `/undo`        | Pop the last message from history. Returns the popped message text (if any) in `{ "undone": "..." }`. Also clears `last_error` and settles a transient status (`error`/`stopped`) back to `idle` — the popped tail is the completion the error described. |
+| `POST` | `/sessions/:id/undo-turn` | `/undo-turn`   | Strip the last **tool-calling turn** — the most recent assistant `tool_calls` message and the tool results answering it — **without re-running**; the rest of the transcript (e.g. a later final reply) is kept. `200` `{ "undone": "name(args) · …" }` — a one-line summary of the stripped turn (the client flashes it). Also clears `last_error` and settles a transient status back to `idle` (same rule as `undo`). `400` if there is no tool-calling turn. |
 | `POST` | `/sessions/:id/retry`      | `/retry`       | Strip trailing assistant/tool messages (keep last user message) and re-run. `202` when it starts a run, `409` if busy. |
 | `POST` | `/sessions/:id/retry-turn` | `/retry-turn`  | Like `/retry`, but rolls back to just before the **last assistant message** (stripping it, any tool results it spawned, and anything after) instead of the last user message — reaching a poisoned mid-turn response that the `/retry` rollback can't get to. `202` when it starts a run, `409` if busy, `400` if there is no assistant message to retry. |
 | `POST` | `/sessions/:id/clear`      | `/clear`       | Stop + clear history (keep system message). Clears `last_error` and settles a transient status back to `idle`. `200`. |
@@ -386,8 +387,8 @@ metadata-only edits that never touch the conversation — and `fork`
 deep-copies the transcript into an independent session (the source is never
 touched, even while it runs).
 
-`undo`/`clear`/`trim` are synchronous state edits; if a run is in
-progress they implicitly `stop` first.
+`undo`/`undo-turn`/`clear`/`trim` are synchronous state edits; if a
+run is in progress they implicitly `stop` first.
 
 ### 7.5 Events (SSE)
 
@@ -403,7 +404,7 @@ Event types (SSE `event:` field):
 | Event      | Data (JSON)                              | Emitted when |
 |------------|------------------------------------------|--------------|
 | `message`  | `{ "message": <Message> }`               | Every appended message (user, assistant turn, tool result) |
-| `history`  | `{ "messages": <Message[]> }`            | Full transcript (incl. system) after a destructive edit (undo/clear/trim/retry/retry-turn); also sent as a synthetic resume event when the replay ring can't cover the gap (below) |
+| `history`  | `{ "messages": <Message[]> }`            | Full transcript (incl. system) after a destructive edit (undo/undo-turn/clear/trim/retry/retry-turn); also sent as a synthetic resume event when the replay ring can't cover the gap (below) |
 | `status`   | `{ "status": "running"\|"idle"\|"error"\|"stopped", "last_error": string\|null }` | On state transitions. `last_error` is included so clients update their error banner on the transition itself (a run start clears it; a failed run sets it) |
 | `error`    | `{ "message": "..." }`                   | On a loop error |
 | `done`     | `{ "total_tokens": n }`                  | When a run completes |

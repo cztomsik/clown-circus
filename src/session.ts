@@ -59,6 +59,16 @@ const makeTitle = (content) => {
   return t.length > TITLE_MAX ? t.slice(0, TITLE_MAX - 1).trimEnd() + '…' : t;
 };
 
+// One-line summary of an assistant turn's tool calls: "name(args) · name2"
+// (each arguments string cut to its first line, capped at 60 chars) — the
+// `/undo-turn` response payload the client flashes.
+const turnSummary = (m) =>
+  (m.tool_calls ?? []).map((tc) => {
+    const name = tc.function?.name ?? 'tool';
+    const arg = (tc.function?.arguments ?? '').split('\n')[0].trim();
+    return arg ? `${name}(${arg.length > 60 ? arg.slice(0, 60) + '…' : arg})` : name;
+  }).join(' · ');
+
 
 
 // Session. Owns the message list (system prompt in memory at [0] + the stored
@@ -202,6 +212,16 @@ export class Session {
   truncateTo(i) {
     const gone = this.msgIds.splice(Math.max(i, 1) - 1);
     this.messages.length = Math.max(i, 1);
+    if (gone.length) db.deleteMessages(gone);
+  }
+
+  // Remove messages[start..end) — memory + DB rows (the row ids are offset by
+  // 1: the derived system prompt sits at index 0 and has no row). `start` is
+  // clamped so the derived system prompt is never removed.
+  removeRange(start, end) {
+    start = Math.max(start, 1);
+    this.messages.splice(start, end - start);
+    const gone = this.msgIds.splice(start - 1, end - start);
     if (gone.length) db.deleteMessages(gone);
   }
 
@@ -460,6 +480,29 @@ export class Session {
     // While a stop is still in flight, leave the status alone — the wind-down
     // end('stopped') is authoritative there, and a genuine failure during it
     // can still re-set last_error.
+    this.lastError = null;
+    if (!this.running) this.setStatus('idle');
+    this.emitHistory();
+    this.persist();
+    return undone;
+  }
+
+  // Strip the last tool-calling turn — the most recent assistant message with
+  // tool_calls plus the tool results answering it — WITHOUT re-running (the
+  // editing sibling of retryTurn(), which re-runs). Everything after that
+  // assistant message is its own results (the loop executes a whole batch
+  // before the next model call) and, at most, the final text turn — so a
+  // middle range is removed and the rest of the transcript stays. Repeated
+  // calls walk backwards one turn at a time. Same implicit-stop and settle
+  // rules as undo(); returns the stripped turn's summary for the response.
+  undoTurn() {
+    if (this.running) this.stop();
+    const i = lastIndexOf(this.messages, (m) => m.role === 'assistant' && m.tool_calls?.length);
+    if (i === -1) throw new HttpError(400, 'bad_request', 'no tool-calling turn to undo');
+    let j = i + 1;
+    while (j < this.messages.length && this.messages[j].role === 'tool') j++;
+    const undone = turnSummary(this.messages[i]);
+    this.removeRange(i, j);
     this.lastError = null;
     if (!this.running) this.setStatus('idle');
     this.emitHistory();

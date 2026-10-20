@@ -127,6 +127,8 @@ export const buildApp = ({ manager }) => {
 
   app.post('/sessions/:id/undo', session((s, res) => res.json({ undone: s.undo() })));
 
+  app.post('/sessions/:id/undo-turn', session((s, res) => res.json({ undone: s.undoTurn() })));
+
   app.post('/sessions/:id/retry', session((s, res) => {
     s.retry();
     res.status(202).json(started(s));

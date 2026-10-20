@@ -361,7 +361,7 @@ primary interface — the UI is just one client of it.
   transcript (top-right of the main pane; see `webui/Todos.tsx`).
 - **Live updates** — browser `EventSource` on `GET /sessions/:id/events`:
   - `message` → append to the transcript (todos derived from it)
-  - `history` → replace the transcript (undo/clear/trim/retry/retry-turn, and the server's gap recovery after a long disconnect)
+  - `history` → replace the transcript (undo/undo-turn/clear/trim/retry/retry-turn, and the server's gap recovery after a long disconnect)
   - `status` → update badge, swap send↔stop, refresh the sidebar, show/clear the error banner (`last_error` rides along — a run start clears it, a failed run sets it)
   - `error` → transient error banner
   - `done` → update token count
@@ -420,9 +420,10 @@ primary interface — the UI is just one client of it.
   by `runCommand()`; otherwise it is a normal message. The commands map to
   the §7.4 control endpoints and reuse the existing handlers (no new endpoint):
   `/stop`, `/retry`, `/retry-turn`, `/init`, `/compact`, `/clear`,
-  `/trim [turns]`, `/undo`, `/fork` →
+  `/trim [turns]`, `/undo`, `/undo-turn`, `/fork` →
   the matching `POST /sessions/:id/…` (`/undo` restores the popped message into
-  the composer; `/fork` opens the new fork; `/trim` takes an optional
+  the composer; `/undo-turn` flashes the one-line summary of the stripped
+  turn; `/fork` opens the new fork; `/trim` takes an optional
   `<turns>` arg (how many trailing turns — assistant LLM calls, each with its
   tool results — to leave untouched) that the ⋮
   menu's entries can't carry, so it lives in the composer: with no arg it keeps
@@ -432,7 +433,8 @@ primary interface — the UI is just one client of it.
   in the error banner and keeps the text in the box. A command is parsed
   **before** the running no-op
   guard, so
-  `/stop` and the implicit-stop commands (`/undo`, `/clear`, `/trim`)
+  `/stop` and the implicit-stop commands (`/undo`, `/undo-turn`, `/clear`,
+  `/trim`)
   work while a run is in flight; plain messages still no-op while running
   (type-ahead preserved). The command text is cleared on a recognized command
   (and re-filled for `/undo`); an unknown `/…` keeps the text in the box so it
@@ -461,7 +463,12 @@ primary interface — the UI is just one client of it.
     `/retry-turn`, `/init` (fire-and-forget, 202, start the loop),
     `/compact` (starts the loop), `/undo` (synchronous; restores the popped
     user message into the composer from the response's `undone` field and
-    returns focus, so you can edit and re-send), `/clear`, `/trim [turns]`,
+    returns focus, so you can edit and re-send), `/undo-turn` (synchronous;
+    strips the most recent assistant `tool_calls` message and the tool
+    results answering it, **without** re-running — unlike `/undo` it does not
+    pop a user message; the rest of the transcript, e.g. a later final
+    reply, is kept, and the response's `undone` summary is flashed),
+    `/clear`, `/trim [turns]`,
     and `/fork` (`POST …/fork` forks the session — same `cwd` +
     history, copied verbatim unless the running source ends with pending
     `tool_calls`, in which case the dangling tail is stripped; 201 — and

@@ -170,13 +170,15 @@ const App = () => {
   const handleAction = async (name, arg = null) => {
     if (!current) return;
     try {
-      if (name === 'undo' || name === 'clear' || name === 'trim') {
+      if (name === 'undo' || name === 'undo-turn' || name === 'clear' || name === 'trim') {
         // synchronous history edits: re-fetch the detail and re-render. Only
         // `trim` carries a body (the `keep` arg); the rest are no-arg.
         const r = await post(`/sessions/${current}/${name}`, name === 'trim' ? { keep: arg } : undefined);
         // Undo restores the popped user message into the composer so it can be
-        // edited and re-sent.
+        // edited and re-sent; undo-turn flashes the stripped turn instead
+        // (it is tool output, not user text).
         if (name === 'undo' && r?.undone) setInput(r.undone);
+        if (name === 'undo-turn' && r?.undone) flashMsg(`undone turn: ${r.undone}`);
         const d = await api(`/sessions/${current}`);
         patch({ status: d.status, last_error: d.last_error, messages: d.messages, tokens: d.total_tokens, title: d.title });
       } else if (name === 'archive' || name === 'unarchive') {
@@ -199,7 +201,8 @@ const App = () => {
 
   // Composer slash-commands (e.g. /retry). Parsed before the message path so a
   // command always dispatches — including /stop and the implicit-stop commands
-  // (/undo, /clear, /trim) that must work while a run is in flight. Each
+  // (/undo, /undo-turn, /clear, /trim) that must work while a run is in
+  // flight. Each
   // delegates to the existing handlers, so there's no new endpoint. /trim takes
   // an optional numeric `<turns>` arg; with no arg it keeps the last
   // TRIM_KEEP_DEFAULT. A non-numeric/negative arg flashes usage and keeps the
@@ -208,6 +211,7 @@ const App = () => {
     switch (name) {
       case 'stop': setInput(''); void stop(); return;
       case 'undo': setInput(''); void handleAction('undo'); return;
+      case 'undo-turn': setInput(''); void handleAction('undo-turn'); return;
       case 'retry': setInput(''); void handleAction('retry'); return;
       case 'retry-turn': setInput(''); void handleAction('retry-turn'); return;
       case 'init': setInput(''); void handleAction('init'); return;

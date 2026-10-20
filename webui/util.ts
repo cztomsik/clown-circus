@@ -25,6 +25,7 @@ export const SLASH_COMMANDS = [
   { name: 'retry-turn', hint: 're-run from before the last assistant reply' },
   { name: 'stop', hint: 'stop the running turn' },
   { name: 'undo', hint: 'undo the last user message — it returns to the composer' },
+  { name: 'undo-turn', hint: 'strip the last tool-calling turn, no re-run' },
   { name: 'trim', hint: 'trim bulky tool results + CoT from old turns · optional: turns to keep' },
   { name: 'compact', hint: 'summarize the conversation to free context' },
   { name: 'clear', hint: 'clear the transcript (keeps the session)' },
