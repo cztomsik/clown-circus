@@ -28,7 +28,7 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 | File | Purpose |
 |------|---------|
 | `src/main.ts` | Bootstrap: wire the import-time config/db/llm/tools singletons → create SessionManager → build Express app → listen + SIGINT/SIGTERM shutdown. |
-| `src/config.ts` | Resolve config from CLI flags with env fallbacks, then defaults (`port`, `host`, `dbFile`, `baseUrl`, `model`, `timeoutMs`, `verbose`). |
+| `src/config.ts` | Resolve config from CLI flags with env fallbacks, then defaults (`port`, `host`, `dbFile`, `baseUrl`, `model`, `timeoutMs`). |
 | `src/app.ts` | Express app factory: all REST routes, the SSE endpoint, 404 fallback, and the error-mapping middleware. |
 | `src/db.ts` | Thin `node:sqlite` wrapper: opens/migrates the DB (idempotent DDL + `user_version`) and exposes the helpers the manager/session use — `upsert`, `all` + `allMessages` (startup load), `insertMessage`, `deleteMessages`, `updateMessage`, `deleteRow` (session rows cascade to their messages), `close`. Listing is done in memory by the manager, not in SQL. |
 | `src/manager.ts` | `SessionManager` registry: loads all sessions from the DB at startup (resetting `running`/`stopped` → `idle`), owns create/list/get/delete and the in-memory hot state. |

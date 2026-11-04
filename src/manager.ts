@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Session } from './session.ts';
 import { HttpError } from './errors.ts';
-import { config } from './config.ts';
 import { db } from './db.ts';
 
 // SessionManager: the multi-session registry. Loads every session from the DB
@@ -13,15 +12,6 @@ export class SessionManager {
   constructor() {
     this.sessions = new Map();
     this._load();
-  }
-
-  _track(s) {
-    if (config.verbose)
-      s.emitter.on('event', (rec) => {
-        // Transcript events (message/history) can carry MB-scale payloads.
-        if (rec.event === 'message' || rec.event === 'history') return;
-        console.log(`[${new Date().toISOString()}] session=${s.id} ${rec.event} ${JSON.stringify(rec.data)}`);
-      });
   }
 
   _load() {
@@ -39,7 +29,6 @@ export class SessionManager {
       s.backfillTitle(); // pre-title DBs: derive from the first user message
       this.sessions.set(s.id, s);
       s.persist(false); // status rewrite is not activity: keep the stored timestamp
-      this._track(s);
     }
   }
 
@@ -61,7 +50,6 @@ export class SessionManager {
     const s = new Session({ row });
     s.persist();
     this.sessions.set(s.id, s);
-    this._track(s);
     return s;
   }
 
@@ -95,7 +83,6 @@ export class SessionManager {
     s.importTranscript(src.messages.slice(1)); // system prompt is re-derived
     s.settle(); // a running source may end with pending tool_calls
     this.sessions.set(s.id, s);
-    this._track(s);
     return s;
   }
 

@@ -710,8 +710,7 @@ Each tool invocation receives a `ToolContext`:
 - Per-session errors are captured in `SessionMeta.last_error` (persisted to the
   DB), emitted as an `error` SSE event, and the session returns to `idle` so it
   stays reusable.
-- Structured logging (timestamp, session id, event) to stdout. A `--verbose`
-  flag enables debug logging.
+- Structured logging (timestamp, session id, event) to stdout.
 - The `node:sqlite` `ExperimentalWarning` is expected and not treated as an
   error.
 

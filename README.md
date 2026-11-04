@@ -60,7 +60,6 @@ CLI flags take precedence over environment variables, which take precedence over
 | `--home` / `CLOWN_HOME` | `CLOWN_HOME` | `~/.clown` | Clown home dir: `clown.db` + `skills/` (created if missing) |
 | `--base-url` / `CLOWN_API` | `CLOWN_API` | `http://127.0.0.1:8080` | LLM OpenAI-compatible base URL |
 | `--timeout` / `CLOWN_TIMEOUT_MS` | `CLOWN_TIMEOUT_MS` | `900000` | Per-LLM-request timeout (ms) |
-| `--verbose` | — | off | Log per-session events to stdout |
 
 `CLOWN_API_KEY` (env, optional) is sent as a Bearer token on every LLM request.
 

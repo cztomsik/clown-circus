@@ -54,7 +54,6 @@ const loadConfig = (argv = process.argv) => {
     baseUrl: str(f['base-url'], env.CLOWN_API ?? 'http://127.0.0.1:8080').replace(/\/+$/, ''),
     apiKey: env.CLOWN_API_KEY ?? null,
     timeoutMs: num(f.timeout, env.CLOWN_TIMEOUT_MS ?? 900000),
-    verbose: f.verbose === true || str(f.verbose, '') === 'true',
   };
   // Print what was actually loaded (flag > env > default) — apiKey masked.
   console.log(`[${new Date().toISOString()}] config: ${JSON.stringify({ ...cfg, apiKey: cfg.apiKey ? '***' : null })}`);
