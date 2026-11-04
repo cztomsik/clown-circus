@@ -5,7 +5,7 @@
 - **node** — v24.14.1 (`/Users/cztomsik/.nvm/versions/node/v24.14.1/bin/node`). Use `node -e 'console.log(2+2)'` for quick computations/evaluations.
 - **python3** — `/usr/bin/python3` (3.9.6). Use `python3 -c 'print(2+2)'`.
 - **uv** — `/Users/cztomsik/.local/bin/uv` (Python package manager).
-- **rg** (ripgrep) — `/opt/homebrew/bin/rg` (v15.2.0). Use `rg -o '^\s*(const|class|function|async)\s+\w+' server` for quick code navigation.
+- **rg** (ripgrep) — `/opt/homebrew/bin/rg` (v15.2.0). For quick code navigation, e.g. `rg -no '(export\s+)?(const|let|class|function)\s+\w+' server webui` to find declarations (narrow to one directory or swap the pattern as needed).
 - **jq** — `/opt/homebrew/bin/jq` (JSON processing).
 - **curl** — `/usr/bin/curl` (HTTP requests). `wget` is **not** installed.
 
