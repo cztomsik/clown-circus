@@ -1,6 +1,6 @@
 import { render } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { api, post } from './api';
+import { api } from './api';
 import { baseName, parseCommand, SLASH_COMMANDS } from './util';
 import { prepareImageDataURL } from './image';
 import {
@@ -23,6 +23,16 @@ const parseHash = () => location.hash.match(/^#\/session\/(.+)$/)?.[1] ?? null;
 // leave untouched. A web-UI convenience — the REST endpoint needs an explicit
 // `keep`.
 const TRIM_KEEP_DEFAULT = 5;
+// Session-action name (Header ⋮ menu keys, composer slash commands) → api
+// method. Every method has shape (id, arg?) — only `trim` uses the arg.
+const ACTIONS = {
+  'undo': api.sessions.undo, 'undo-turn': api.sessions.undoTurn,
+  'retry': api.sessions.retry, 'retry-turn': api.sessions.retryTurn,
+  'init': api.sessions.init, 'compact': api.sessions.compact,
+  'clear': api.sessions.clear, 'trim': api.sessions.trim,
+  'fork': api.sessions.fork, 'archive': api.sessions.archive,
+  'unarchive': api.sessions.unarchive,
+};
 
 // ── root component: wires the hooks, keeps cross-cutting orchestration ─────
 const App = () => {
@@ -57,7 +67,7 @@ const App = () => {
   const [cfg, setCfg] = useState('loading…');
   useEffect(() => {
     (async () => {
-      try { const c = await api('/config'); setCfg(`${c.base_url} · home: ${c.home}`); }
+      try { const c = await api.config.get(); setCfg(`${c.base_url} · home: ${c.home}`); }
       catch { setCfg(''); }
     })();
   }, []);
@@ -134,7 +144,7 @@ const App = () => {
     setCurrent(id);
     refresh();
     try {
-      const d = await api(`/sessions/${id}`);
+      const d = await api.sessions.get(id);
       setView({
         id: d.id ?? id, cwd: d.cwd, model: d.model, status: d.status, last_error: d.last_error,
         messages: d.messages, tokens: d.total_tokens,
@@ -154,13 +164,13 @@ const App = () => {
     try {
       let s;
       try {
-        s = await post('/sessions', { cwd, model, reasoning_effort: effort });
+        s = await api.sessions.create({ cwd, model, reasoning_effort: effort });
       } catch (err) {
         // The only 404 a create can return is a missing cwd: offer to create
         // the folder and retry.
         if (err.code !== 'not_found') throw err;
         if (!confirm(`folder ${cwd} does not exist — create it?`)) return;
-        s = await post('/sessions', { cwd, model, reasoning_effort: effort, create: true });
+        s = await api.sessions.create({ cwd, model, reasoning_effort: effort, create: true });
       }
       await refresh();
       await select(s.id);
@@ -169,31 +179,30 @@ const App = () => {
 
   const handleAction = async (name, arg = null) => {
     if (!current) return;
+    const action = ACTIONS[name];
+    if (!action) return;
     try {
+      const r = await action(current, name === 'trim' ? arg : undefined);
       if (name === 'undo' || name === 'undo-turn' || name === 'clear' || name === 'trim') {
-        // synchronous history edits: re-fetch the detail and re-render. Only
-        // `trim` carries a body (the `keep` arg); the rest are no-arg.
-        const r = await post(`/sessions/${current}/${name}`, name === 'trim' ? { keep: arg } : undefined);
-        // Undo restores the popped user message into the composer so it can be
+        // synchronous history edits: re-fetch the detail and re-render. Undo
+        // restores the popped user message into the composer so it can be
         // edited and re-sent; undo-turn flashes the stripped turn instead
         // (it is tool output, not user text).
         if (name === 'undo' && r?.undone) setInput(r.undone);
         if (name === 'undo-turn' && r?.undone) flashMsg(`undone turn: ${r.undone}`);
-        const d = await api(`/sessions/${current}`);
+        const d = await api.sessions.get(current);
         patch({ status: d.status, last_error: d.last_error, messages: d.messages, tokens: d.total_tokens, title: d.title });
       } else if (name === 'archive' || name === 'unarchive') {
         // metadata-only flag: reflect it in the open view, refresh the list.
-        const r = await post(`/sessions/${current}/${name}`);
         patch({ archived: r.archived });
         refresh();
       } else if (name === 'fork') {
         // fork: the server returns the new session; jump to it so the branch
         // continues immediately (the source stays open in the sidebar).
-        const r = await post(`/sessions/${current}/fork`);
         await select(r.id);
       } else {
-        // agent actions (retry/init/compact): fire-and-forget; SSE streams it.
-        await post(`/sessions/${current}/${name}`);
+        // agent actions (retry/retry-turn/init/compact): fire-and-forget;
+        // SSE streams it.
         refresh();
       }
     } catch (err) { flashMsg(err.message); }
@@ -252,20 +261,20 @@ const App = () => {
         message = text;
       }
       if (!model) { flashMsg('no models available — check the LLM endpoint'); setInput(text); setAttachments(savedAttachments); return; }
-      await post(`/sessions/${current}/messages`, { message, model, reasoning_effort: effort });
+      await api.sessions.send(current, { message, model, reasoning_effort: effort });
     } catch (err) { flashMsg(err.message); setInput(text); setAttachments(savedAttachments); }
   };
 
   const onKey = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } };
 
   const stop = async () => {
-    try { await post(`/sessions/${current}/stop`); } catch (err) { flashMsg(err.message); }
+    try { await api.sessions.stop(current); } catch (err) { flashMsg(err.message); }
   };
 
   const del = async () => {
     if (!confirm(`delete session ${baseName(view?.cwd ?? '')}?`)) return;
     try {
-      await api(`/sessions/${current}`, { method: 'DELETE' });
+      await api.sessions.delete(current);
       try { localStorage.removeItem(inputKey(current)); } catch {}
       closeSession();
       await refresh();

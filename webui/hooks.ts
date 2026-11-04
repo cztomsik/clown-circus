@@ -6,7 +6,7 @@
 // another (e.g. a flash callback, the sessions refresher) is passed in.
 
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { api, openSessionEvents } from './api';
+import { api } from './api';
 import { modelId, isVisionModel } from './util';
 import { fileToDataURL, isImageFile } from './image';
 
@@ -68,7 +68,7 @@ export const useSessions = () => {
   const [sessions, setSessions] = useState([]);
   const refresh = async () => {
     let list;
-    try { list = await api('/sessions?archived=1'); } catch { return; }
+    try { list = await api.sessions.list({ includeArchived: true }); } catch { return; }
     setSessions(list);
   };
   useEffect(() => {
@@ -91,8 +91,7 @@ export const useModels = () => {
   useEffect(() => {
     (async () => {
       try {
-        const { data } = await api('/models');
-        const list = data ?? [];
+        const list = (await api.models.list()) ?? [];
         setModels(list.map(modelId).filter(Boolean));
         const known = new Set();
         const vision = new Set();
@@ -123,7 +122,7 @@ export const useSessionView = (current, { refresh, onFlash }) => {
   const patch = (p) => setView((v) => (v ? { ...v, ...p } : v));
   useEffect(() => {
     if (!current) return;
-    return openSessionEvents(current, {
+    return api.sessions.events(current, {
       message: (d) => setView((v) => (v ? { ...v, messages: [...v.messages, d.message] } : v)),
       history: (h) => patch({ messages: h.messages }),
       status: (s) => { patch({ status: s.status, last_error: s.last_error }); refresh(); },
