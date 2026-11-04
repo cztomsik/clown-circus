@@ -2,7 +2,7 @@ import { parseTodos, firstLine } from './util';
 
 // Bespoke rendering of a tool *call* — the arguments only. The tool *result* is
 // rendered separately (and unchanged) by Message.tsx. Every tool registered in
-// src/tools.js gets a view; anything else (or an unparseable `arguments`
+// server/tools.ts gets a view; anything else (or an unparseable `arguments`
 // string) falls back to the generic pretty-JSON <pre>. All values are
 // untrusted, LLM-supplied text and are rendered as text nodes only — never
 // HTML. Paths are clickable vscode:// links (open in the local VS Code, the

@@ -3,7 +3,7 @@ import { Modal } from './primitives';
 import { IcCheck, IcChevron, IcEye } from './icons';
 
 // The reasoning-effort levels the backend accepts in the chat body (mirrors
-// REASONING_EFFORTS in src/llm.ts); [value, label] pairs for the toggle.
+// REASONING_EFFORTS in server/llm.ts); [value, label] pairs for the toggle.
 const EFFORTS = [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'XHigh']];
 
 // The header's model picker: a select-styled button that opens a modal with

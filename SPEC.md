@@ -93,7 +93,7 @@ SQLite store is the sole system of record.
                           (llama.cpp, default http://127.0.0.1:8080)
 ```
 
-Component responsibilities live one-file-per-concern under `src/` — the file
+Component responsibilities live one-file-per-concern under `server/` — the file
 list is in [AGENTS.md](AGENTS.md) (Source Structure).
 
 ### Concurrency model
@@ -518,7 +518,7 @@ well, so an out-of-band edit to those files is picked up on the next start:
 Current date: <YYYY-MM-DD, local>
 Current working directory: <realpath of cwd>
 
-<PREFIX>                          (inlined template in ./src/prompt.ts;
+<PREFIX>                          (inlined template in ./server/prompt.ts;
                                    its "When Using Skills" section carries
                                    the discovered skill list, §12.1)
 
@@ -663,7 +663,7 @@ Each tool invocation receives a `ToolContext`:
 
 - **Node.js 24.x** (the currently installed runtime). The server is
   **TypeScript (`.ts`, ESM)** run directly by Node's built-in type stripping
-  (`node src/main.ts` — no build step); the web UI is untyped JSX (`.tsx`)
+  (`node server/main.ts` — no build step); the web UI is untyped JSX (`.tsx`)
   modules bundled by esbuild at startup (§7.7).
 - **`node:sqlite`** (builtin) for storage — no external server, no npm
   dependency. It currently emits an `ExperimentalWarning` (harmless; see §15).

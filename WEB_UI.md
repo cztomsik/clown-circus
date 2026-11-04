@@ -12,7 +12,7 @@ primary interface — the UI is just one client of it.
 ## What it is
 
 - **`webui/index.html`** — a thin page shell, served at `GET /` via
-  `express.static` in `src/app.ts`. The `<head>` holds one
+  `express.static` in `server/app.ts`. The `<head>` holds one
   `<link rel="stylesheet" href="/vendor/tailwind.css">` (see **Tailwind CSS
   build**); the `<body>` contains only a single `<div id="root">` mount point
   plus `<script type="module" src="/vendor/bundle.js">` — no static UI markup
@@ -27,7 +27,7 @@ primary interface — the UI is just one client of it.
   `.grad-accent`, `.sw` toggle, `.spinner`, scrollbars, keyframes, the user
   bubble). Markdown `.md` typography is a runtime-injected `<style>` in
   `webui/Markdown.tsx` (shared by every `<Markdown>` instance).
-- **esbuild bundle** — `src/main.ts` runs an esbuild build (runtime
+- **esbuild bundle** — `server/main.ts` runs an esbuild build (runtime
   `dependency`, not dev-only) **at server startup**: entry `webui/app.tsx`,
   `bundle: true`, `format: esm`, `target: es2022`, `jsx: automatic` +
   `jsxImportSource: preact` (JSX compiles to `preact/jsx-runtime`), outfile
@@ -42,7 +42,7 @@ primary interface — the UI is just one client of it.
   and `tsc --noEmit` resolves the bare imports for the check-only type
   declarations. `webui/vendor/` is generated output (git-ignored, excluded
   from the tsconfig).
-- **Tailwind CSS build** — `src/main.ts` also compiles **Tailwind CSS v4** at
+- **Tailwind CSS build** — `server/main.ts` also compiles **Tailwind CSS v4** at
   startup, via `@tailwindcss/cli` (a real `dependency`, run as a child `node`
   process): input `webui/styles.css` → output
   `webui/vendor/tailwind.css` (served at `/vendor/tailwind.css`), a blocking

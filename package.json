@@ -5,10 +5,10 @@
   "type": "module",
   "private": true,
   "bin": {
-    "clown-circus": "src/main.ts"
+    "clown-circus": "server/main.ts"
   },
   "scripts": {
-    "start": "node src/main.ts",
+    "start": "node server/main.ts",
     "typecheck": "tsc --noEmit"
   },
   "engines": {

@@ -191,7 +191,7 @@ the system prompt so the model can route to them.
 ## Project layout
 
 ```
-src/
+server/
 ├─ main.ts       # bootstrap: config, DB, manager, app, listen
 ├─ config.ts     # flag + env resolution
 ├─ app.ts        # Express app (all routes + SSE)

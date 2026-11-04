@@ -5,7 +5,7 @@
 - **node** — v24.14.1 (`/Users/cztomsik/.nvm/versions/node/v24.14.1/bin/node`). Use `node -e 'console.log(2+2)'` for quick computations/evaluations.
 - **python3** — `/usr/bin/python3` (3.9.6). Use `python3 -c 'print(2+2)'`.
 - **uv** — `/Users/cztomsik/.local/bin/uv` (Python package manager).
-- **rg** (ripgrep) — `/opt/homebrew/bin/rg` (v15.2.0). Use `rg -o '^\s*(const|class|function|async)\s+\w+' src` for quick code navigation.
+- **rg** (ripgrep) — `/opt/homebrew/bin/rg` (v15.2.0). Use `rg -o '^\s*(const|class|function|async)\s+\w+' server` for quick code navigation.
 - **jq** — `/opt/homebrew/bin/jq` (JSON processing).
 - **curl** — `/usr/bin/curl` (HTTP requests). `wget` is **not** installed.
 
@@ -14,7 +14,7 @@
 **Clown-Circus** is a **headless, multi-session** agent server, exposed as an **Express** HTTP app. It runs any number of independent agent **sessions** — each with its own working directory, conversation state, and running agent loop — driven over **REST + Server-Sent Events (SSE)**. All sessions and their conversations (one `messages` table row per message) persist in a local **SQLite** file, so state survives restarts.
 
 - **Tech stack**: Node.js 24.x. The **server** is TypeScript (`.ts`, ESM, `"type": "module"`) that Node runs directly via its built-in type stripping (no build step); the **web UI** is Preact **JSX (`.tsx`)** modules that esbuild bundles at startup (the only build step). `tsc` is a **dev-only, check-only** dependency (`tsc --noEmit`, see below) — it is never run or emitted.
-- **Run command**: `node src/main.ts` (or `npm start`). esbuild bundles the web UI automatically at startup; type-check via `npm run typecheck`.
+- **Run command**: `node server/main.ts` (or `npm start`). esbuild bundles the web UI automatically at startup; type-check via `npm run typecheck`.
 - **Dependency**: `express` (v5) for the server, `esbuild` for bundling the web UI at startup, `@tailwindcss/cli` for compiling the web-UI stylesheet at startup, plus the web UI's browser libraries (`preact`, `marked`, `dompurify`) as runtime deps — esbuild inlines them all into `webui/vendor/bundle.js` from `node_modules` so the UI works offline (no CDN, no `node_modules` static mounts). Dev deps (check-only, never emitted): `typescript`, `@types/node`. Everything else — SQLite, crypto, http, child_process — is built into Node.
 - **Storage**: builtin **`node:sqlite`** (`DatabaseSync`), single file `clown.db` in the clown home dir (default `~/.clown`, `--home`/`CLOWN_HOME`; a legacy `~/.clowndb` is auto-migrated on the first run with the default home). One row per session + one row per message (`messages` table, global autoincrement id); the system prompt is derived from `cwd` and never stored. Emits a harmless `ExperimentalWarning`.
 - **LLM**: OpenAI-compatible `/v1/chat/completions` (llama.cpp by default). Base URL from `--base-url`/`CLOWN_API` (default `http://127.0.0.1:8080`); optional `CLOWN_API_KEY` sent as Bearer.
@@ -27,18 +27,18 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 
 | File | Purpose |
 |------|---------|
-| `src/main.ts` | Bootstrap: wire the import-time config/db/llm/tools singletons → create SessionManager → build Express app → listen + SIGINT/SIGTERM shutdown. |
-| `src/config.ts` | Resolve config from CLI flags with env fallbacks, then defaults (`port`, `host`, `dbFile`, `baseUrl`, `model`, `timeoutMs`). |
-| `src/app.ts` | Express app factory: all REST routes, the SSE endpoint, 404 fallback, and the error-mapping middleware. |
-| `src/db.ts` | Thin `node:sqlite` wrapper: opens/migrates the DB (idempotent DDL + `user_version`) and exposes the helpers the manager/session use — `upsert`, `all` + `allMessages` (startup load), `insertMessage`, `deleteMessages`, `updateMessage`, `deleteRow` (session rows cascade to their messages), `close`. Listing is done in memory by the manager, not in SQL. |
-| `src/manager.ts` | `SessionManager` registry: loads all sessions from the DB at startup (resetting `running`/`stopped` → `idle`), owns create/list/get/delete and the in-memory hot state. |
-| `src/session.ts` | `Session`. Owns the transcript (derived system prompt in memory at `[0]` + stored messages tracked by rowid in `msgIds`), tokens, the single-flight `running` flag, an `AbortController`, an `EventEmitter` (SSE source) with a bounded seq ring buffer, and all operations (`send/retry/retryTurn/undo/clear/trim/compact/init/stop/destroy`) + persistence. |
-| `src/loop.ts` | `runLoop` — the agent loop: `next()` → execute tool calls → repeat; each appended message is persisted + emitted as a granular `message` event in place (`append`); converts every outcome to a terminal status and never throws. |
-| `src/llm.ts` | OpenAI-compatible chat client: `chat()` + `listModels()`. Distinguishes stop-abort from timeout (504) / network-HTTP (502) via `LlmError.kind`. |
-| `src/prompt.ts` | `buildSystemPrompt(cwd)`: inlined base prompt (with the discovered skill list in its "When Using Skills" section) + `AGENTS.md`→`CLOWN.md` fallback + date + realpath. |
-| `src/tools.ts` | All tools + `tools`/`toolSchemas` singletons. Relative paths resolve against the session cwd (no path sandbox). `run_command`: commands still running after 60s are backgrounded (output → temp files, tool resolves with PID + paths); each runs in its own process group (`detached`), all live trees are tracked (`killAllChildren`) and group-killed on stop/shutdown. |
-| `src/errors.ts` | `HttpError` + `mapError()` (thrown errors → the §7.6 status/code table). Small module added to keep the import graph cycle-free. |
-| `src/skills.ts` | Skill discovery (`.agents/skills` roots, precedence, frontmatter parsing) + the built-in `init`/`make_skill` content, seeded into `<home>/skills/<name>/SKILL.md` on first run. |
+| `server/main.ts` | Bootstrap: wire the import-time config/db/llm/tools singletons → create SessionManager → build Express app → listen + SIGINT/SIGTERM shutdown. |
+| `server/config.ts` | Resolve config from CLI flags with env fallbacks, then defaults (`port`, `host`, `dbFile`, `baseUrl`, `model`, `timeoutMs`). |
+| `server/app.ts` | Express app factory: all REST routes, the SSE endpoint, 404 fallback, and the error-mapping middleware. |
+| `server/db.ts` | Thin `node:sqlite` wrapper: opens/migrates the DB (idempotent DDL + `user_version`) and exposes the helpers the manager/session use — `upsert`, `all` + `allMessages` (startup load), `insertMessage`, `deleteMessages`, `updateMessage`, `deleteRow` (session rows cascade to their messages), `close`. Listing is done in memory by the manager, not in SQL. |
+| `server/manager.ts` | `SessionManager` registry: loads all sessions from the DB at startup (resetting `running`/`stopped` → `idle`), owns create/list/get/delete and the in-memory hot state. |
+| `server/session.ts` | `Session`. Owns the transcript (derived system prompt in memory at `[0]` + stored messages tracked by rowid in `msgIds`), tokens, the single-flight `running` flag, an `AbortController`, an `EventEmitter` (SSE source) with a bounded seq ring buffer, and all operations (`send/retry/retryTurn/undo/clear/trim/compact/init/stop/destroy`) + persistence. |
+| `server/loop.ts` | `runLoop` — the agent loop: `next()` → execute tool calls → repeat; each appended message is persisted + emitted as a granular `message` event in place (`append`); converts every outcome to a terminal status and never throws. |
+| `server/llm.ts` | OpenAI-compatible chat client: `chat()` + `listModels()`. Distinguishes stop-abort from timeout (504) / network-HTTP (502) via `LlmError.kind`. |
+| `server/prompt.ts` | `buildSystemPrompt(cwd)`: inlined base prompt (with the discovered skill list in its "When Using Skills" section) + `AGENTS.md`→`CLOWN.md` fallback + date + realpath. |
+| `server/tools.ts` | All tools + `tools`/`toolSchemas` singletons. Relative paths resolve against the session cwd (no path sandbox). `run_command`: commands still running after 60s are backgrounded (output → temp files, tool resolves with PID + paths); each runs in its own process group (`detached`), all live trees are tracked (`killAllChildren`) and group-killed on stop/shutdown. |
+| `server/errors.ts` | `HttpError` + `mapError()` (thrown errors → the §7.6 status/code table). Small module added to keep the import graph cycle-free. |
+| `server/skills.ts` | Skill discovery (`.agents/skills` roots, precedence, frontmatter parsing) + the built-in `init`/`make_skill` content, seeded into `<home>/skills/<name>/SKILL.md` on first run. |
 | `webui/index.html` | Web UI shell served at `/`. Thin page: one `<link>` to `/vendor/tailwind.css`, a `#root` mount, and `<script type="module" src="/vendor/bundle.js">` — no static UI markup. |
 | `webui/styles.css` | Single source of all web-UI styles: `@import "tailwindcss"`, the `@theme` colour tokens (dark + light), and the plain CSS utilities don't cover (`.material`, `.menu-card`, `.sw`, `.spinner`, …). Compiled at startup by `@tailwindcss/cli` into `webui/vendor/tailwind.css` (rebuilt on any `webui/` change). |
 | `webui/app.tsx` | Root Preact component (bundle entry): owns all state + side effects (config/models fetch, 10s poll, SSE, per-session drafts, `#/session/<id>` hash routing, actions) and composes the layout. |
@@ -69,8 +69,8 @@ The tree is deliberately flat: one file per concern, no per-feature subdirectori
 
 ## Working conventions
 
-- **Type-check**: `npm run typecheck` (i.e. `tsc --noEmit`, config in `tsconfig.json`: `noEmit`+`allowImportingTsExtensions`, `strict:false`, `types:["node"]`). `src/` is `.ts` and `webui/` is `.ts`/`.tsx` — the whole tree is TypeScript (type-checked directly, no `checkJs`/`allowJs`). Dev deps `typescript`/`@types/node` are check-only — never emitted (the web UI's libraries are runtime deps that esbuild bundles into `webui/vendor/bundle.js`, and which `tsc` resolves for the bare imports in `webui/*.{ts,tsx}`). **Current state: clean** — both `src/` and `webui/` pass with no errors (the SSE `onmessage` handler is cast to `MessageEvent` in `webui/api.ts`).
-- **No test framework.** Verify by running the server and exercising the API (e.g. `node src/main.ts --port 8899 --home /tmp/x`, then `curl`). Keep the default home `~/.clown` clean by using a throwaway `--home` during dev.
+- **Type-check**: `npm run typecheck` (i.e. `tsc --noEmit`, config in `tsconfig.json`: `noEmit`+`allowImportingTsExtensions`, `strict:false`, `types:["node"]`). `server/` is `.ts` and `webui/` is `.ts`/`.tsx` — the whole tree is TypeScript (type-checked directly, no `checkJs`/`allowJs`). Dev deps `typescript`/`@types/node` are check-only — never emitted (the web UI's libraries are runtime deps that esbuild bundles into `webui/vendor/bundle.js`, and which `tsc` resolves for the bare imports in `webui/*.{ts,tsx}`). **Current state: clean** — both `server/` and `webui/` pass with no errors (the SSE `onmessage` handler is cast to `MessageEvent` in `webui/api.ts`).
+- **No test framework.** Verify by running the server and exercising the API (e.g. `node server/main.ts --port 8899 --home /tmp/x`, then `curl`). Keep the default home `~/.clown` clean by using a throwaway `--home` during dev.
 - **Config precedence**: CLI flag > env var > default.
 - **Localhost by default** (`127.0.0.1`), no auth — single-user local tool.
 
