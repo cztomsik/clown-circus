@@ -265,19 +265,17 @@ endpoint and the static web UI (§7.7). Errors use `4xx`/`5xx` with
 
 | Method | Path                 | Description |
 |--------|----------------------|-------------|
-| `GET`  | `/sessions`          | List sessions as `SessionMeta[]`. Optional `?cwd=<path>` to filter by working directory (exact match), and `?archived=` (see below). |
+| `GET`  | `/sessions`          | List sessions as `SessionMeta[]`. Optional `?archived=` flag (see below). |
 | `POST` | `/sessions`          | Create a session |
 | `GET`  | `/sessions/:id`      | Full session: `SessionMeta` + current `messages` (incl. the derived system prompt) |
 | `DELETE`| `/sessions/:id`     | Stop and delete the session (from memory and DB) |
 
 `GET /sessions`:
-- Returns non-archived sessions by default (those matching `?cwd=` if given).
-- `?cwd` is an exact, case-sensitive match on the stored absolute `cwd`.
+- Returns non-archived sessions by default.
 - `?archived` is a boolean flag:
   - present and `"true"`/`"1"` → **include** archived sessions (the web UI uses
     this to fetch everything, then splits archived/non-archived client-side)
   - absent, `"false"`, or `"0"` → **non-archived only** (the default)
-- `400` if `cwd` is supplied but empty.
 
 `POST /sessions` body (`cwd` and `model` required):
 
@@ -434,7 +432,7 @@ Event types (SSE `event:` field):
 
 | HTTP | `code`            | Meaning |
 |------|-------------------|---------|
-| `400`| `bad_request`     | Malformed body / missing `cwd` or `model` / bad `reasoning_effort` / empty `cwd` filter |
+| `400`| `bad_request`     | Malformed body / missing `cwd` or `model` / bad `reasoning_effort` |
 | `404`| `not_found`       | Unknown session id / `cwd` missing on create (without `create: true`) |
 | `409`| `session_busy`    | Run-starting call while `running` is true |
 | `500`| `internal`        | Unhandled server error (incl. DB errors) |

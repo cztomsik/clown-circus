@@ -82,7 +82,7 @@ Errors: `{ "error": { "code", "message" } }`.
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/sessions` | List as `SessionMeta[]`. Optional `?cwd=<path>` (exact match). |
+| `GET` | `/sessions` | List as `SessionMeta[]`. Optional `?archived=` flag (see SPEC §7.2). |
 | `POST` | `/sessions` | Create. Body: `{ cwd, model }` (both required) → `201` |
 | `GET` | `/sessions/:id` | Full session: `SessionMeta` + `messages` (incl. derived system prompt) |
 | `DELETE` | `/sessions/:id` | Stop and delete (memory + DB) → `204` |

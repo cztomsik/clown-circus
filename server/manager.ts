@@ -89,9 +89,9 @@ export class SessionManager {
   // `includeArchived` (default false): when true, archived sessions are included
   // in the result; when false, only non-archived sessions are returned. Mirrors
   // the `?archived` flag on `GET /sessions`.
-  list({ cwd, includeArchived = false }: { cwd?: string; includeArchived?: boolean } = {}) {
+  list({ includeArchived = false } = {}) {
     return [...this.sessions.values()]
-      .filter((s) => (!cwd || s.cwd === cwd) && (includeArchived || !s.archived))
+      .filter((s) => includeArchived || !s.archived)
       .sort((a, b) => (a.lastActivity < b.lastActivity ? 1 : -1))
       .map((s) => s.meta());
   }
