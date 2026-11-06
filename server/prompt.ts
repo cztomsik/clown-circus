@@ -3,9 +3,10 @@ import { homedir } from 'node:os';
 import { join, sep } from 'node:path';
 import { scanSkills } from './skills.ts';
 
-const readContext = (cwd, name) => {
+// The session's AGENTS.md (from cwd), if present.
+const readContext = (cwd) => {
   try {
-    return readFileSync(join(cwd, name), 'utf8');
+    return readFileSync(join(cwd, 'AGENTS.md'), 'utf8');
   } catch {
     return null;
   }
@@ -37,9 +38,8 @@ const skillsList = (cwd) =>
     .join('\n');
 
 // Compose the system prompt per-session from its cwd.
-// Fallback chain: AGENTS.md -> CLOWN.md -> (none).
 export const buildSystemPrompt = (cwd) => {
-  const context = readContext(cwd, 'AGENTS.md') ?? readContext(cwd, 'CLOWN.md') ?? '';
+  const context = readContext(cwd) ?? '';
   const skills = skillsList(cwd);
   let real = cwd;
   try {

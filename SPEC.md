@@ -516,7 +516,7 @@ thing that can delay a stop.
 
 Composed **per session, from the session's `cwd`**, at session creation, and
 re-composed on `clear`-style resets. It is **never persisted** — it is
-re-derived from the on-disk `AGENTS.md`/`CLOWN.md` at every server restart as
+re-derived from the on-disk `AGENTS.md` at every server restart as
 well, so an out-of-band edit to those files is picked up on the next start:
 
 ```
@@ -527,12 +527,10 @@ Current working directory: <realpath of cwd>
                                    its "When Using Skills" section carries
                                    the discovered skill list, §12.1)
 
-<AGENTS.md>                       (from cwd) if present,
-  else <CLOWN.md>                 (from cwd) if present,
-  else (omitted)
+<AGENTS.md>                       (from cwd) if present, else omitted
 ```
 
-- The exact fallback chain is `AGENTS.md → CLOWN.md → (none)`.
+- There is no fallback — a missing `AGENTS.md` appends nothing.
 - The system message is `messages[0]` and is the only message retained by
   `clear`.
 - The base guidelines are inlined in `prompt.ts`; their tool names match the
