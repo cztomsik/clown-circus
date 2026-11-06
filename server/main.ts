@@ -10,10 +10,9 @@ import { seedBuiltinSkills } from './skills.ts';
 import { killAllChildren } from './tools.ts';
 import { SessionManager } from './manager.ts';
 import { buildApp } from './app.ts';
+import { log } from './util.ts';
 
 const WEBUI_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'webui');
-
-const log = (m) => console.log(`[${new Date().toISOString()}] ${m}`);
 
 const main = async () => {
   // Bundle the web UI (entry webui/app.tsx, node_modules deps inlined) into one

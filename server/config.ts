@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { existsSync, mkdirSync, renameSync } from 'node:fs';
+import { log, logWarn } from './util.ts';
 
 // Parse `--flag value` and `--flag=value` pairs out of process.argv.
 const parseFlags = (argv) => {
@@ -40,9 +41,9 @@ const loadConfig = (argv = process.argv) => {
   if (!homeExplicit && !existsSync(dbFile) && existsSync(legacy)) {
     try {
       renameSync(legacy, dbFile);
-      console.log(`[${new Date().toISOString()}] moved legacy ${legacy} -> ${dbFile}`);
+      log(`moved legacy ${legacy} -> ${dbFile}`);
     } catch (e) {
-      console.warn(`[${new Date().toISOString()}] could not move legacy ${legacy}: ${e.message}`);
+      logWarn(`could not move legacy ${legacy}: ${e.message}`);
     }
   }
 
@@ -56,7 +57,7 @@ const loadConfig = (argv = process.argv) => {
     timeoutMs: num(f.timeout, env.CLOWN_TIMEOUT_MS ?? 900000),
   };
   // Print what was actually loaded (flag > env > default) — apiKey masked.
-  console.log(`[${new Date().toISOString()}] config: ${JSON.stringify({ ...cfg, apiKey: cfg.apiKey ? '***' : null })}`);
+  log(`config: ${JSON.stringify({ ...cfg, apiKey: cfg.apiKey ? '***' : null })}`);
   return cfg;
 };
 

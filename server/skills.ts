@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { config } from './config.ts';
+import { log } from './util.ts';
 
 // Built-in skills, seeded into <home>/skills/<name>/ on first run — the user
 // can edit or delete the seeded files freely; they are only (re)created when
@@ -152,6 +153,6 @@ export const seedBuiltinSkills = () => {
     if (existsSync(file)) continue;
     mkdirSync(join(config.home, 'skills', name), { recursive: true });
     writeFileSync(file, content);
-    console.log(`[${new Date().toISOString()}] seeded built-in skill: ${file}`);
+    log(`seeded built-in skill: ${file}`);
   }
 };

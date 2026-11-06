@@ -1,4 +1,5 @@
 import { LlmError } from './llm.ts';
+import { logErr } from './util.ts';
 
 // The agent loop. Never throws: it converts all outcomes
 // into a terminal status + events. Runs to completion for a single `run`.
@@ -53,6 +54,6 @@ export const runLoop = async (session) => {
     session.end(status, error);
     if (status !== 'error') session.emit('done', { total_tokens: session.totalTokens });
   } catch (err) {
-    console.error(`[loop] session=${session.id} failed to finalize run:`, err);
+    logErr(`[loop] session=${session.id} failed to finalize run:`, err);
   }
 };

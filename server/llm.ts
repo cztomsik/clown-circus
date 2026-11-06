@@ -9,6 +9,7 @@
 // a request.
 
 import { config } from './config.ts';
+import { log, logWarn } from './util.ts';
 
 // Disables undici's 300s headers/body timeouts on the builtin global
 // dispatcher, so only our own AbortController (timeout + stop) can end a
@@ -24,7 +25,7 @@ const patchGlobalDispatcher = () => {
     (s) => d[s] && typeof d[s] === 'object' && 'maxOrigins' in d[s],
   );
   if (!kOptions) {
-    console.warn('[llm] could not find the fetch dispatcher options; undici defaults (300s headers/body timeout) remain active');
+    logWarn('[llm] could not find the fetch dispatcher options; undici defaults (300s headers/body timeout) remain active');
     return;
   }
   d[kOptions].headersTimeout = 0; // 0 = disabled; applied to clients created afterwards
@@ -95,7 +96,7 @@ const createLlm = () => {
     const choice = data.choices?.[0];
     if (!choice) throw new LlmError('http', 'LLM returned no choices');
     const usage = data.usage ?? {};
-    console.log(`[llm] completion model=${model} total_tokens=${usage.total_tokens ?? 'n/a'}`);
+    log(`[llm] completion model=${model} total_tokens=${usage.total_tokens ?? 'n/a'}`);
     return { message: choice.message, usage };
   };
 
