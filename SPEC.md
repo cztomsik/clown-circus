@@ -1,10 +1,12 @@
 # Clown-Circus — Specification
 
-A **headless, multi-session** agent server built on **Express**. Clown-Circus
-manages any number of independent agent **sessions**, each with its own working
-directory, conversation state, and running agent loop, all driven over REST +
-Server-Sent Events. All sessions and their conversation state are persisted in a
-local **SQLite** database.
+A **headless, multi-session** agent server built on **Express**, with a
+**web UI** as its sole public interface. Clown-Circus manages any number of
+independent agent **sessions**, each with its own working directory,
+conversation state, and running agent loop, all driven through the web UI
+(served at `/`), which is a pure client of the server's internal REST +
+Server-Sent Events API. All sessions and their conversation state are
+persisted in a local **SQLite** database.
 
 - **Target runtime**: the currently installed **Node.js 24.x** (`v24.14.1`),
   TypeScript (`.ts`, ESM). The server has no build step — Node strips the
@@ -22,12 +24,12 @@ local **SQLite** database.
 - Run **many sessions concurrently** in a single long-lived server process.
 - **Persist every session** (metadata + full conversation, one row per message) in a local
   SQLite database using Node's builtin `node:sqlite`, so state survives restarts.
-- Provide a **headless REST + SSE API** that a client (web UI, CLI, CI, other
-  services) can drive entirely over HTTP.
-- Provide a **web UI** served at `/` so the server is usable out of the box in
-  a browser. It is minimal for now (a thin Preact JSX (`.tsx`) page,
-  esbuild-bundled at startup)
-  and expected to grow over time — see [WEB_UI.md](WEB_UI.md) for the full
+- Expose a **REST + SSE HTTP API** as the server's **internal** interface —
+  not a stable contract; expect endpoints to change (§7).
+- Provide a **web UI** served at `/` — the **sole public interface** — a pure
+  client of that internal API (Preact JSX (`.tsx`) modules, esbuild-bundled
+  at startup), so the server is usable out of the box in a browser. It is
+  expected to grow over time — see [WEB_UI.md](WEB_UI.md) for the full
   description.
 ---
 
@@ -47,7 +49,7 @@ local **SQLite** database.
 
 | Concern       | Choice |
 |---------------|--------|
-| Frontend      | Web UI served at `/` (Tailwind v4, project-grouped sidebar, model picker, full controls — see WEB_UI.md); headless API stays primary |
+| Frontend      | Web UI served at `/` (Tailwind v4, project-grouped sidebar, model picker, full controls — see WEB_UI.md) is the sole public interface; the headless API is internal (§7) |
 | Process model | In-process async loop, one active run per session |
 | Sessions      | Many, each a `Session` object in a registry |
 | Commands      | REST endpoints |
@@ -69,7 +71,7 @@ SQLite store is the sole system of record.
                          ┌──────────────────────────────────────────────┐
                          │                 Express app                  │
                          │                                              │
-   HTTP clients ───────▶ │  REST routes  ──▶  SessionManager             │
+   Web UI (browser) ───▶ │  REST routes  ──▶  SessionManager             │
    (REST + SSE)          │                    │                          │
                          │                    ├─ map<id, Session>        │
                          │                    │   (in-memory, hot state) │
@@ -247,7 +249,11 @@ the DB. Clients persist the `id` to address a session across requests/restarts.
 
 ---
 
-## 7. HTTP API
+## 7. HTTP API (internal)
+
+> **Internal API.** The web UI (§7.7) is the **sole public interface**; this
+> API is its backend and not a stable contract — endpoints, request/response
+> shapes, and error codes may change without notice.
 
 Base path: `/`. All bodies are JSON. All responses are JSON except the SSE
 endpoint and the static web UI (§7.7). Errors use `4xx`/`5xx` with
@@ -441,9 +447,10 @@ Event types (SSE `event:` field):
 
 ### 7.7 Web UI
 
-A web UI is served at `GET /` from `webui/`: a thin `index.html` shell
-(a single `#root` mount) plus a set of small **Preact JSX**
-(`.tsx`) modules and helpers (the file list is in [AGENTS.md](AGENTS.md)).
+The web UI — the **sole public interface** — is served at `GET /` from
+`webui/`: a thin `index.html` shell (a single `#root` mount) plus a set of
+small **Preact JSX** (`.tsx`) modules and helpers (the file list is in
+[AGENTS.md](AGENTS.md)).
 At server startup, esbuild bundles the modules and their browser dependencies
 (from `node_modules`) into `webui/vendor/bundle.js`, the only `<script>` in
 the shell, and `@tailwindcss/cli` compiles `webui/styles.css` (Tailwind v4 +
@@ -717,6 +724,8 @@ Each tool invocation receives a `ToolContext`:
 ## 16. Out of Scope (explicit)
 
 - A terminal client, or any non-HTTP control surface.
+- A **public/stable external API**: the REST + SSE HTTP API (§7) is an
+  internal implementation detail of the web UI, not a contract.
 - Authentication, multi-user tenancy, TLS termination (use a reverse proxy).
 - External database server or any non-SQLite storage.
 - Multi-process / concurrent-writer access to the same DB file (single writer).
