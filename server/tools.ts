@@ -1,9 +1,4 @@
-import { readFile as fsReadFile, writeFile as fsWriteFile, mkdir } from 'node:fs/promises';
-import { createWriteStream } from 'node:fs';
-import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { homedir, tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 
 const MAX = 2 * 1024 * 1024; // 2MB cap
 
@@ -28,15 +23,19 @@ const IMAGE_MAGIC = [
 const detectImageMime = (buf) =>
   buf.length >= 12 ? (IMAGE_MAGIC.find((m) => m.test(buf))?.mime ?? null) : null;
 
-// A leading ~/ (or bare ~) expands to the user home — node:path.resolve does not.
-const fromHome = (p) => (p === '~' ? homedir() : p.startsWith('~/') ? join(homedir(), p.slice(2)) : p);
-// Resolve a tool path: ~/ against the user home, then relative against the session cwd.
-const resolvePath = (cwd, p) => resolve(cwd, fromHome(p));
+// A leading ~/ (or bare ~) expands to the session user's home — node:path
+// does not. For remote sessions that is the remote home, not the local one
+// (the backend's home()).
+const fromHome = (p, home) => (p === '~' ? home : p.startsWith('~/') ? join(home, p.slice(2)) : p);
+// Resolve a tool path: ~/ against the session home, then relative against
+// the session dir — one expression, both kinds.
+const resolvePath = async (ctx, p) =>
+  resolve(ctx.backend.dir, fromHome(p, await ctx.backend.home()));
 
 // --- Core tools -------------------------------------------------------------
 
 const readFile = async (ctx, args) => {
-  const buf = await fsReadFile(resolvePath(ctx.cwd, args.path));
+  const buf = await ctx.backend.readFile(await resolvePath(ctx, args.path), MAX + 1);
   if (buf.length > MAX) throw new Error('File too large');
   const mime = detectImageMime(buf);
   if (mime)
@@ -50,17 +49,15 @@ const readFile = async (ctx, args) => {
 };
 
 const writeFile = async (ctx, args) => {
-  const p = resolvePath(ctx.cwd, args.path);
-  await mkdir(dirname(p), { recursive: true });
-  await fsWriteFile(p, args.content);
+  await ctx.backend.writeFile(await resolvePath(ctx, args.path), args.content);
   return 'File written successfully';
 };
 
 const editFile = async (ctx, args) => {
   if (typeof args.old_content !== 'string' || !args.old_content || typeof args.new_content !== 'string')
     throw new Error('expected: path (string), old_content (string), new_content (string), replace_all? (boolean)');
-  const p = resolvePath(ctx.cwd, args.path);
-  const content = (await fsReadFile(p)).toString('utf8');
+  const p = await resolvePath(ctx, args.path);
+  const content = (await ctx.backend.readFile(p)).toString('utf8');
   let next;
   if (args.replace_all) {
     next = content.split(args.old_content).join(args.new_content);
@@ -71,121 +68,84 @@ const editFile = async (ctx, args) => {
       throw new Error('Ambiguous match (appears more than once); set replace_all=true');
     next = content.slice(0, pos) + args.new_content + content.slice(pos + args.old_content.length);
   }
-  await fsWriteFile(p, next);
+  await ctx.backend.writeFile(p, next);
   return 'File edited successfully';
 };
-
-// Grace period after the direct child exits before forcing a finalize. Covers
-// the case where `close` is delayed by a grandchild that inherited our stdio.
-const DRAIN_MS = 300;
 
 // A command still running after this long is left alive in the background:
 // its output is redirected to temp files and the tool resolves, so the agent
 // can keep working and monitor/kill the process itself.
 const CMD_TIMEOUT_MS = 60_000;
 
-// Kill a command's whole process tree. `detached: true` made the child the
-// leader of its own process group (the sh plus everything it spawns), so
-// -pid names exactly that tree and can never reach the server.
-const killTree = (child) => {
-  if (!child.pid) return;
-  try { process.kill(-child.pid, 'SIGKILL'); } catch { /* already gone */ }
-};
-
-// Every spawned command — in-flight or backgrounded past the timeout — so
-// the server can kill their trees on shutdown instead of orphaning them.
-const live = new Map(); // pid → ChildProcess
-export const killAllChildren = () => {
-  for (const child of live.values()) killTree(child);
-  live.clear();
-};
-
-const runCommand = (ctx, args) =>
-  new Promise((res) => {
-    const cwd = args.cwd ? resolve(ctx.cwd, args.cwd) : ctx.cwd;
-    // `stdin: 'ignore'` so commands that read stdin (prompts, `cat`, npm
-    // questions) get EOF immediately instead of hanging on input that never
-    // arrives. We only ever capture stdout/stderr. `detached: true` makes the
-    // child lead its own process group (+ session) so the whole tree can be
-    // group-killed and terminal signals to the server can't reach it.
-    const child = spawn('sh', ['-c', args.command], { cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
-    if (child.pid) live.set(child.pid, child);
-    let out = '';
-    let err = '';
-    let code = 0;
-    let sig = null; // a signal death (kill, segfault) is a failure, not exit 0
-    let done = false;
-    let drainTimer;
-    let timeoutTimer;
-    let outStream;
-    let errStream;
-    // Output sinks: in-memory (capped) while awaited, temp-file once the
-    // command is backgrounded past the timeout (the child keeps writing to
-    // its pipe; only where we put the data changes).
-    let sinkOut = (d) => { if (out.length < MAX) out += d; };
-    let sinkErr = (d) => { if (err.length < MAX) err += d; };
-    const onAbort = () => killTree(child);
-    const reap = () => {
-      clearTimeout(drainTimer);
-      clearTimeout(timeoutTimer);
-      ctx.signal?.removeEventListener('abort', onAbort);
-      child.stdout.destroy();
-      child.stderr.destroy();
-      outStream?.end();
-      errStream?.end();
-      live.delete(child.pid);
-    };
-    const finish = (s) => {
-      if (done) return;
-      done = true;
-      res(s);
-    };
-    const render = () =>
-      code !== 0 || sig
-        ? `Command failed${sig ? ` (killed by ${sig})` : ` with exit code ${code}`}\nStdout:\n${out}\nStderr:\n${err}`
-        : err.length ? `${out}\n\nStderr:\n${err}`
-        : out;
-    // Still running past the timeout: stop buffering in memory, redirect
-    // output to temp files, and resolve — the process keeps running and the
-    // agent owns it from here.
-    const detach = () => {
-      if (done || !child.pid) return;
-      done = true;
-      const id = randomUUID();
-      outStream = createWriteStream(join(tmpdir(), `clown-cmd-${id}.out`));
-      errStream = createWriteStream(join(tmpdir(), `clown-cmd-${id}.err`));
-      sinkOut = (d) => outStream.write(d);
-      sinkErr = (d) => errStream.write(d);
-      res(`Command exceeded ${CMD_TIMEOUT_MS / 1000}s and is still running; it was left running in the background as PID ${child.pid}. ` +
-        `Its stdout is being written to ${outStream.path} and its stderr to ${errStream.path} — check those files to monitor progress, ` +
-        `and kill the process (e.g. \`kill ${child.pid}\`) when it is no longer needed.`);
-    };
-    timeoutTimer = setTimeout(detach, CMD_TIMEOUT_MS);
-    if (ctx.signal) {
-      if (ctx.signal.aborted) onAbort();
-      else ctx.signal.addEventListener('abort', onAbort, { once: true });
+// The one run_command (both kinds): the policy — 60s detach, the abort
+// kill, the render — lives here exactly once; all locality (spawn, tmux
+// window, log files, tree kill) is inside the backend's exec / kill. Never
+// throws — every failure is a result string.
+const runCommand = async (ctx, args) => {
+  const b = ctx.backend;
+  const dir = args.cwd ? resolve(b.dir, args.cwd) : b.dir; // pure string op, both kinds
+  let h;
+  try {
+    h = await b.exec(args.command, dir);
+  } catch (e) {
+    return `Error running command: ${e.message}`;
+  }
+  // Stop kills the in-flight command only; a backgrounded (detached) one
+  // survives — stopping it is the agent's job. One listener both kills the
+  // tree and settles the race (already-aborted → onAbort() runs
+  // synchronously below).
+  let detached = false;
+  let fireAbort;
+  const abortP = ctx.signal ? new Promise((res) => (fireAbort = res)) : null;
+  // The 60s timer as a plain handle: a settled race must not keep the loop
+  // alive for the remainder.
+  let timeoutTimer;
+  const timeoutP = new Promise((res) => (timeoutTimer = setTimeout(() => res({ kind: 'timeout' }), CMD_TIMEOUT_MS)));
+  const onAbort = () => { if (!detached) b.kill(h.id); fireAbort?.(); };
+  if (ctx.signal) {
+    if (ctx.signal.aborted) onAbort();
+    else ctx.signal.addEventListener('abort', onAbort, { once: true });
+  }
+  try {
+    const outcome = await Promise.race([
+      h.status.then((s) => ({ kind: 'done', ...s })),
+      timeoutP,
+      ...(abortP ? [abortP.then(() => ({ kind: 'aborted' }))] : []),
+    ]);
+    if (outcome.kind === 'aborted')
+      return `Command stopped (kill requested for ${h.id}).`;
+    if (outcome.kind === 'timeout') {
+      detached = true; // it keeps running; stop() must not reach it
+      return `Command exceeded ${CMD_TIMEOUT_MS / 1000}s and is still running; it was left running in the background. ` +
+        `Its stdout is being written to ${h.out} and its stderr to ${h.err} — check those files to monitor progress, ` +
+        `and run \`${h.killCmd}\` when it is no longer needed.`;
     }
-    child.stdout.on('data', (d) => sinkOut(d));
-    child.stderr.on('data', (d) => sinkErr(d));
-    child.on('error', (e) => {
-      reap();
-      finish(`Error running command: ${e.message}`);
-    });
-    child.on('exit', (c, s) => {
-      code = c ?? 0;
-      sig = s;
-      if (done) return;
-      // The command itself is done, but `close` (all stdio closed) may be
-      // deferred indefinitely if it backgrounded a grandchild that inherited
-      // the pipes. Finalize on `close` (exact drain) or after a short grace
-      // period to flush trailing output, whichever comes first.
-      drainTimer = setTimeout(() => finish(render()), DRAIN_MS);
-    });
-    child.on('close', () => {
-      reap();
-      finish(render());
-    });
-  });
+    // Both streams, each capped at MAX (local: bounded read; remote: capped
+    // before it crosses the wire); a missing/unreadable file renders empty.
+    const read = async (p) => {
+      try {
+        return (await b.readFile(p, MAX + 1)).toString('utf8').slice(0, MAX);
+      } catch {
+        return '';
+      }
+    };
+    const [out, err] = await Promise.all([read(h.out), read(h.err)]);
+    // A signal death rides on `sig` (local only — a remote signal death
+    // arrives as the shell's 128+N exit code): a failure, not an exit code.
+    return outcome.sig
+      ? `Command failed (killed by ${outcome.sig})\nStdout:\n${out}\nStderr:\n${err}`
+      : outcome.code !== 0
+      ? `Command failed with exit code ${outcome.code}\nStdout:\n${out}\nStderr:\n${err}`
+      : err ? `${out}\n\nStderr:\n${err}`
+      : out;
+  } catch (e) {
+    return `Error running command: ${e.message}`;
+  } finally {
+    clearTimeout(timeoutTimer); // drop the timer once the race is over
+    h.cancel(); // abandon the wait (local: drop the clean-exit logs; remote: kill the waiter)
+    ctx.signal?.removeEventListener('abort', onAbort);
+  }
+};
 
 // The todo list is a user-visible markdown string (see prompt.ts for the
 // checkbox convention). The tool is a no-op: the tool call's presence in the

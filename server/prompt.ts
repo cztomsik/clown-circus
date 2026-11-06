@@ -2,6 +2,7 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, sep } from 'node:path';
 import { scanSkills } from './skills.ts';
+import { RemoteBackend } from './remote.ts';
 
 // The session's AGENTS.md (from cwd), if present.
 const readContext = (cwd) => {
@@ -37,22 +38,9 @@ const skillsList = (cwd) =>
     .map((s) => `- **${s.name}** — ${s.description}\n  \`${shortPath(cwd, s.location)}\``)
     .join('\n');
 
-// Compose the system prompt per-session from its cwd.
-export const buildSystemPrompt = (cwd) => {
-  const context = readContext(cwd) ?? '';
-  const skills = skillsList(cwd);
-  let real = cwd;
-  try {
-    real = realpathSync(cwd);
-  } catch {
-    /* keep cwd */
-  }
-  return `You are a helpful AI coding assistant with access to file system and shell commands.
-
-Current date: ${today()}
-Current working directory: ${real}
-
-## Guidelines
+// The prompt body shared by local and remote sessions (guidelines + best
+// practices).
+const COMMON = `## Guidelines
 
 - **Be Concise**: Provide focused, direct responses. Avoid using any emojis.
 - **Explain Actions**: When using tools, briefly explain what you're doing
@@ -90,14 +78,50 @@ Current working directory: ${real}
 - \`write_todos\` is a **full replace**: send the entire updated list each time
   — keep unchanged items, reorder freely, mark items done as you go. At most
   one task in progress at a time.
-- Mark everything as completed when you're finished (don't clear the list).
+- Mark everything as completed when you're finished (don't clear the list).`;
 
-### When Using Skills
+const SKILLS = `### When Using Skills
 Skills are short instruction files for specific tasks. When a task matches a
 skill's description, read its file with \`read_file\` before starting. When the
 session keeps repeating the same kind of work, offer to capture it as a new
-skill (the \`make_skill\` built-in explains how).
+skill (the \`make_skill\` built-in explains how).`;
 
-${skills}
-${context ? `\n${context}\n` : ''}`;
+const REMOTE = `## Remote Session
+- Every file path and command you issue runs on the remote host — never on the local machine.
+- Commands run in a tmux session on the remote host. When a command is left running in the background, the tool result names its remote log file and tmux window — monitor it with \`read_file\` on that log file and stop it with \`run_command\` (\`tmux kill-window -t <window>\`).`;
+
+// The real path, keeping p itself when the link doesn't resolve.
+const realPath = (p) => {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+};
+
+// The project context file's content (AGENTS.md), prompt-shaped, or '' when
+// absent.
+const localContext = (cwd) => {
+  const c = readContext(cwd) ?? '';
+  return c ? `\n${c}\n` : '';
+};
+
+// Compose the system prompt per-session from its backend (derived from the
+// cwd, never stored): reads its data (kind, dir, the remote target) — no
+// re-parsing of the cwd.
+export const buildSystemPrompt = (b) => {
+  const remote = b instanceof RemoteBackend;
+  // Skills and the context file exist only for local cwds — for remote ones
+  // the path is on the far side of ssh.
+  const tail = remote
+    ? REMOTE
+    : `${SKILLS}\n\n${skillsList(b.dir)}\n${localContext(b.dir)}`;
+  return `You are a helpful AI coding assistant with access to file system and shell commands.
+
+Current date: ${today()}
+Current working directory: ${remote ? `${b.dir} — on the remote host ${b.target.target}, reached over SSH` : realPath(b.dir)}
+
+${COMMON}
+
+${tail}`;
 };

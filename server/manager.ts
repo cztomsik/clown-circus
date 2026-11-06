@@ -30,12 +30,15 @@ export class SessionManager {
       this.sessions.set(s.id, s);
       s.persist(false); // status rewrite is not activity: keep the stored timestamp
     }
+    // Reap orphans — remote tmux sessions left by a crash or prior shutdown
+    // (a local no-op) — fire-and-forget: reachability is best-effort at boot.
+    for (const s of this.sessions.values()) s.backend.reap();
   }
 
-  create({ cwd, model, reasoningEffort = null }) {
+  create({ id = randomUUID(), cwd, model, reasoningEffort = null }) {
     const now = new Date().toISOString();
     const row = {
-      id: randomUUID(),
+      id,
       cwd,
       model,
       reasoning_effort: reasoningEffort,

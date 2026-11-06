@@ -6,6 +6,8 @@ import { config } from './config.ts';
 import { db } from './db.ts';
 import { llm, LlmError } from './llm.ts';
 import { tools, toolSchemas } from './tools.ts';
+import { backendFor } from './backend.ts';
+import type { Backend } from './backend.ts';
 
 const MAX_EVENTS = 500; // bounded per-session replay ring for SSE `?since`
 // trim() truncates a tool result (replacing its content with a marker) once
@@ -97,6 +99,7 @@ export class Session {
   emitter: EventEmitter;
   seq: number;
   events: any[];
+  backend: Backend; // the per-session backend — owns everything locality-specific
 
   // `transcript` is the session's stored rows ({ id, data }[], rowid-ordered);
   // the system prompt is always derived from cwd (never stored).
@@ -112,9 +115,13 @@ export class Session {
     this.archived = !!row.archived;
     this.title = row.title ?? null;
     this.totalTokens = row.total_tokens ?? 0;
+    // The backend is derived from the cwd (never stored) — constructed
+    // before the prompt, which reads its data.
+    const b = backendFor(row.id, row.cwd);
+    this.backend = b;
     this.msgIds = transcript.map((r) => r.id);
     this.messages = [
-      { role: 'system', content: buildSystemPrompt(this.cwd) },
+      { role: 'system', content: buildSystemPrompt(b) },
       ...transcript.map((r) => JSON.parse(r.data)),
     ];
 
@@ -300,6 +307,7 @@ export class Session {
     this.destroyed = true; // set before stop(): the wind-down loop must not (re)write
     this.stop();
     this.running = false;
+    this.backend.dispose(); // both kinds: a deleted session's commands die with it (§4.4)
     this.emit('status', { status: 'stopped', last_error: this.lastError });
     this.emitter.emit('end');
   }
@@ -376,10 +384,8 @@ export class Session {
 
   toolContext() {
     return {
-      cwd: this.cwd,
+      backend: this.backend,
       signal: this.signal,
-      timeoutMs: config.timeoutMs,
-      emit: (e, d) => this.emit(e, d),
     };
   }
 
@@ -521,7 +527,7 @@ export class Session {
     // hits this with status already idle, so it's a no-op there).
     this.title = null;
     this.messages.length = 1;
-    this.messages[0] = { role: 'system', content: buildSystemPrompt(this.cwd) };
+    this.messages[0] = { role: 'system', content: buildSystemPrompt(this.backend) };
     const gone = this.msgIds;
     this.msgIds = [];
     if (gone.length) db.deleteMessages(gone);

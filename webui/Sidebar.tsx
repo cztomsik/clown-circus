@@ -1,5 +1,5 @@
 import { Fragment } from 'preact';
-import { baseName, timeAgo } from './util';
+import { cwdLabel, timeAgo } from './util';
 import { PrimaryBtn, StatusDot, Switch } from './primitives';
 import { IcChevronDown, IcPlus } from './icons';
 
@@ -10,9 +10,9 @@ const SessionItem = ({ s, active, onSelect }) => (
     <StatusDot status={s.status} />
     <div class="min-w-0 flex-1">
       <div class={`text-[.84rem] truncate ${active ? 'font-semibold text-ink' : 'text-ink'} ${s.archived ? 'opacity-50' : ''}`}>
-        {s.title ?? baseName(s.cwd)}
+        {s.title ?? cwdLabel(s.cwd)}
       </div>
-      <div class="text-[.7rem] text-text3 truncate" title={s.cwd}>{baseName(s.cwd)} · {s.status} · {timeAgo(s.last_activity)} · {s.message_count} msgs</div>
+      <div class="text-[.7rem] text-text3 truncate" title={s.cwd}>{cwdLabel(s.cwd)} · {s.status} · {timeAgo(s.last_activity)} · {s.message_count} msgs</div>
     </div>
   </div>
 );
@@ -38,7 +38,7 @@ const SessionList = ({ sessions, current, onSelect, showArchived, grouped, colla
               <button class="w-full flex items-center gap-1.5 px-3 pt-3 pb-1 text-[.66rem] font-bold tracking-[.04em] uppercase text-text3 hover:text-dim transition-colors"
                       onClick={() => onToggleGroup(cwd)}>
                 <span class={`transition-transform duration-150 ${isCollapsed ? '-rotate-90' : ''}`}><IcChevronDown /></span>
-                {baseName(cwd)}
+                {cwdLabel(cwd)}
                 {isCollapsed ? <span class="opacity-60">({ss.length})</span> : null}
               </button>
               {isCollapsed ? null : items(ss)}
@@ -84,7 +84,7 @@ export const Sidebar = ({ cls, sessions, current, onNew, onSelect, newCwd, setNe
             <IcPlus />
             New Session
           </PrimaryBtn>
-          <input value={newCwd} onInput={(e: any) => setNewCwd(e.target.value)} placeholder="/path/to/cwd" required autocomplete="off"
+          <input value={newCwd} onInput={(e: any) => setNewCwd(e.target.value)} placeholder="/path/to/cwd  ·  ssh://host/path" required autocomplete="off"
                  class="text-ink bg-field border border-line rounded-lg py-2 px-3 text-[.82rem] focus:outline-none focus:border-accent" />
         </form>
       </div>

@@ -4,6 +4,28 @@
 
 export const baseName = (cwd: string) => cwd.split('/').filter(Boolean).at(-1) || cwd;
 
+// The host (with port, if given) of a remote (ssh://) session's cwd, or null
+// for a local cwd.
+export const remoteHost = (cwd: string) => {
+  if (!cwd?.startsWith('ssh://')) return null;
+  try { return new URL(cwd).host; } catch { return null; }
+};
+
+// Display label for a session cwd: the base dir name, host-prefixed for
+// remote sessions (ssh://host/... → host:basename; a remote root path → just
+// the host). The base name comes from the URL's pathname, not the raw string
+// (which would pick up scheme/host for short URLs).
+export const cwdLabel = (cwd: string) => {
+  if (!cwd?.startsWith('ssh://')) return baseName(cwd);
+  try {
+    const u = new URL(cwd);
+    const name = decodeURIComponent(u.pathname.split('/').filter(Boolean).at(-1) || '');
+    return name ? `${u.host}:${name}` : u.host;
+  } catch {
+    return baseName(cwd);
+  }
+};
+
 // Plain text of a message's content (string | ContentPart[]): the text parts
 // joined, image parts dropped. '' when the content carries no text.
 export const contentText = (c) =>
