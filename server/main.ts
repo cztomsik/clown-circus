@@ -2,7 +2,6 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile, spawn } from 'node:child_process';
-import { createRequire } from 'node:module';
 import * as esbuild from 'esbuild';
 import { config } from './config.ts';
 import { db } from './db.ts';
@@ -36,7 +35,7 @@ const main = async () => {
   // in-browser JIT, utilities on conditionally rendered elements are always
   // emitted, so there's no runtime DOM guessing.
   // The CLI's bin is dist/index.mjs (only ./package.json is in its exports map).
-  const cssCli = join(dirname(createRequire(import.meta.url).resolve('@tailwindcss/cli/package.json')), 'dist', 'index.mjs');
+  const cssCli = join(dirname(fileURLToPath(import.meta.resolve('@tailwindcss/cli/package.json'))), 'dist', 'index.mjs');
   const cssArgs = ['-i', join(WEBUI_DIR, 'styles.css'), '-o', join(WEBUI_DIR, 'vendor', 'tailwind.css')];
   const buildCss = () => new Promise<void>((resolve, reject) =>
     execFile(process.execPath, [cssCli, ...cssArgs], (err) => err ? reject(err) : resolve()));
@@ -53,9 +52,9 @@ const main = async () => {
   const app = buildApp({ manager });
 
   const server = app.listen(config.port, config.host, () => {
-    log(`clown-circus listening on http://${config.host}:${config.port}`);
     log(`home: ${config.home} | llm: ${config.baseUrl}`);
     log(`sessions: ${manager.sessions.size}`);
+    log(`clown-circus listening on http://${config.host}:${config.port}`);
   });
 
   let closing = false;
