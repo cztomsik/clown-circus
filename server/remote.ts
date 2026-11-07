@@ -91,12 +91,54 @@ const need = (r, out, what) => {
   return out.stdout.toString('utf8');
 };
 
+// Resolve the remote tmux binary's absolute path. A non-interactive ssh
+// shell only sees sshd's default PATH — installs in user-private bin dirs
+// (MacPorts' /opt/local/bin, custom prefixes) that rc files add to PATH are
+// invisible to it — so fall back to the user's login shell ($SHELL -lc;
+// sshd sets $SHELL from the passwd entry). Emits one `TMUX=<path>` marker
+// line (a login shell's rc files may be chatty — only the marker is parsed).
+const tmuxProbe = `p=$(command -v tmux 2>/dev/null); [ -n "$p" ] || p=$("$SHELL" -lc "command -v tmux" 2>/dev/null); [ -n "$p" ] && printf 'TMUX=%s\\n' "$p"`;
+
+// Remote tmux path per target, cached for the process lifetime (backends are
+// reconstructed on load — resolution is a cache hit after validate or first
+// use). `null` = not found.
+const tmuxPaths = new Map<string, string | null>();
+const tmuxKey = (r) => `${r.target}:${r.port ?? 0}`;
+
+// The create-time preflight round trip: tmux resolution + the cwd's state,
+// as `TMUX=<path>` / `DIR` / `FILE` marker lines (the path crosses as
+// base64, never onto a command line). Ends in `exit 0` — a missing path
+// fails the final `[ -e ]` test.
+const preflight = (r, dir) =>
+  ssh(r, `${tmuxProbe}
+d=$(printf %s ${b64(dir)} | base64 -d); [ -d "$d" ] && echo DIR; [ -e "$d" ] && echo FILE; exit 0`);
+
+const preflightInfo = (out) => {
+  const lines = out.stdout.toString('utf8').split('\n');
+  const t = lines.find((l) => l.startsWith('TMUX='));
+  return { tmux: t ? t.slice(5) : null, isDir: lines.includes('DIR'), isFile: lines.includes('FILE') };
+};
+
+// The tmux path on the remote — or `null` when not found. A transport
+// failure (255) rejects with the unreachable text.
+const resolveTmux = async (r) => {
+  const k = tmuxKey(r);
+  if (tmuxPaths.has(k)) return tmuxPaths.get(k);
+  const out = await ssh(r, `${tmuxProbe}; exit 0`);
+  if (out.code === 255) throw new Error(unreachable(r, out));
+  const tmux = preflightInfo(out).tmux;
+  tmuxPaths.set(k, tmux);
+  return tmux;
+};
+
 // Kill a session's remote footprint (startup reap, shutdown, dispose): its
 // tmux session plus its scratch dir, plus any `extra` cleanup (the boot reap
-// also sweeps write temps). Resolves even on transport failure —
-// uninterested callers .catch(() => {}).
+// also sweeps write temps). Tmux resolution is best-effort here (a failure
+// falls back to bare `tmux` — fine for cleanup); the ssh itself resolves
+// even on transport failure — uninterested callers .catch(() => {}).
 export const cleanRemoteSession = (sid, target, extra = '') =>
-  ssh(target, `tmux kill-session -t ${tmuxSession(sid)} 2>/dev/null; rm -rf -- ${remoteScratchDir(sid)}; ${extra}exit 0`);
+  resolveTmux(target).catch(() => null).then((t) =>
+    ssh(target, `${sq(t ?? 'tmux')} kill-session -t ${tmuxSession(sid)} 2>/dev/null; rm -rf -- ${remoteScratchDir(sid)}; ${extra}exit 0`));
 
 // The remote per-session Backend (backend.ts): file ops over ssh, commands
 // in the per-session tmux session, and the lifecycle hooks (validate / reap
@@ -119,22 +161,21 @@ export class RemoteBackend implements Backend {
     return this.target.dir;
   }
 
-  // Create-time preflight: reachability, tmux installed, dir exists (or
-  // create it when `create` is true). One round-trip for tmux + dir state
-  // (the probe must end in `exit 0` — a missing path makes `[ -e ]` fail,
-  // and a non-zero exit would read as "no tmux").
+  // Create-time preflight: reachability, tmux available (default PATH or the
+  // user's login shell — see tmuxProbe), dir exists (or create it when
+  // `create` is true). One round-trip for tmux + dir state.
   async validate(create) {
     const r = this.target;
-    // The path travels as base64, never onto a command line.
-    const B = b64(r.dir);
-    const d = await ssh(r, `command -v tmux >/dev/null || exit 1
-d=$(printf %s ${B} | base64 -d); [ -d "$d" ] && echo dir; [ -e "$d" ] && echo file; exit 0`);
+    const d = await preflight(r, r.dir);
     if (d.code === 255) throw new HttpError(502, 'remote_unavailable', unreachable(r, d));
-    if (d.code !== 0) throw new HttpError(502, 'remote_unavailable', `tmux is not installed on ${r.target}`);
-    if (d.stdout.includes('dir')) return;
-    if (d.stdout.includes('file')) throw new HttpError(400, 'bad_request', `cwd is not a directory: ${r.dir} on ${r.target}`);
+    const { tmux, isDir, isFile } = preflightInfo(d);
+    tmuxPaths.set(tmuxKey(r), tmux);
+    if (!tmux) throw new HttpError(502, 'remote_unavailable', `tmux is not installed on ${r.target}`);
+    if (isDir) return;
+    if (isFile) throw new HttpError(400, 'bad_request', `cwd is not a directory: ${r.dir} on ${r.target}`);
     if (create !== true) throw new HttpError(404, 'not_found', `cwd path does not exist: ${r.dir} on ${r.target}`);
-    const m = await ssh(r, `mkdir -p -- "$(printf %s ${B} | base64 -d)"`);
+    // The path travels as base64, never onto a command line.
+    const m = await ssh(r, `mkdir -p -- "$(printf %s ${b64(r.dir)} | base64 -d)"`);
     if (m.code !== 0)
       throw new HttpError(500, 'internal', `could not create cwd path: ${r.dir} on ${r.target} — ${m.stderr.trim() || `ssh exited ${m.code}`}`);
   }
@@ -204,6 +245,14 @@ cat > "$tt" && mv -f -- "$tt" "$p"`, Buffer.from(content, 'utf8'));
     need(this.target, out, 'write failed');
   }
 
+  // The session's tmux path (validated at create — `null` now means it was
+  // removed from the host since).
+  async #tmux() {
+    const t = await resolveTmux(this.target);
+    if (!t) throw new Error(`tmux is no longer available on ${this.target.target}`);
+    return t;
+  }
+
   // Run a command in `dir` — one window in the session's remote tmux
   // session. Returns the session's `ExecHandle`: `id` (the window id — what
   // `kill()` takes), `out`/`err` (the remote log files, written from t=0),
@@ -213,19 +262,20 @@ cat > "$tt" && mv -f -- "$tt" "$p"`, Buffer.from(content, 'utf8'));
   async exec(command, dir): Promise<ExecHandle> {
     assert(!this.#dead, 'remote session destroyed');
     const tok = randomUUID();
-    const win = await this.#launchWindow(command, dir, tok);
+    const t = await this.#tmux();
+    const win = await this.#launchWindow(command, dir, tok, t);
     const d = remoteScratchDir(this.#sid);
     const sess = tmuxSession(this.#sid);
     // The waiter blocks ON the remote host until the exit file appears or
     // the window is gone (a killed window prints KILLED). It exits 0 when
     // it concludes, so a 255/null close can only mean the transport died
     // (or the waiter was cancelled locally).
-    const w = `while [ ! -f ${d}/${tok}.exit ]; do tmux list-windows -t ${sess} -F '#{window_id}' 2>/dev/null | grep -Fxq ${win} || break; sleep 0.2; done; [ -f ${d}/${tok}.exit ] && cat ${d}/${tok}.exit || printf KILLED`;
+    const w = `while [ ! -f ${d}/${tok}.exit ]; do ${sq(t)} list-windows -t ${sess} -F '#{window_id}' 2>/dev/null | grep -Fxq ${win} || break; sleep 0.2; done; [ -f ${d}/${tok}.exit ] && cat ${d}/${tok}.exit || printf KILLED`;
     const child = spawn('ssh', [...sshArgs(this.target), 'sh', '-c', sq(w)]);
     const h: ExecHandle & { tok: string, cancelled: boolean } = {
       tok,
       id: win,
-      killCmd: `tmux kill-window -t ${win}`,
+      killCmd: `${t} kill-window -t ${win}`,
       out: `${d}/${tok}.out`,
       err: `${d}/${tok}.err`,
       cancelled: false,
@@ -258,15 +308,16 @@ cat > "$tt" && mv -f -- "$tt" "$p"`, Buffer.from(content, 'utf8'));
 
   // One ssh call; stdout = the new window id. Serialized per backend so two
   // concurrent first commands can't both take the new-session path.
-  #launchWindow(command, dir, tok) {
-    const p = this.#launch.then(() => this.#doLaunch(command, dir, tok));
+  #launchWindow(command, dir, tok, t) {
+    const p = this.#launch.then(() => this.#doLaunch(command, dir, tok, t));
     this.#launch = p.catch(() => {});
     return p;
   }
 
-  async #doLaunch(command, dir, tok) {
+  async #doLaunch(command, dir, tok, t) {
     const d = remoteScratchDir(this.#sid);
     const sess = tmuxSession(this.#sid);
+    const T = sq(t);
     // The window wrapper runs in the pane (so `tmux kill-window` kills the
     // whole tree): cd into the command dir (a missing dir is a stderr
     // diagnostic + 127), run the command with stdout and stderr to their
@@ -276,10 +327,10 @@ cat > "$tt" && mv -f -- "$tt" "$p"`, Buffer.from(content, 'utf8'));
     // would leave an empty shell window behind); later commands open plain
     // windows. The exit file in /tmp outlives the auto-closing window.
     const out = await ssh(this.target, `mkdir -p -- ${d}
-if tmux has-session -t ${sess} 2>/dev/null; then
-  tmux new-window -d -t ${sess} -P -F '#{window_id}' '${w}'
+if ${T} has-session -t ${sess} 2>/dev/null; then
+  ${T} new-window -d -t ${sess} -P -F '#{window_id}' '${w}'
 else
-  tmux new-session -d -s ${sess} -x 200 -y 50 -P -F '#{window_id}' '${w}'
+  ${T} new-session -d -s ${sess} -x 200 -y 50 -P -F '#{window_id}' '${w}'
 fi`);
     const win = need(this.target, out, 'failed to start the command').trim();
     if (!win) throw new Error(`failed to start the command on ${this.target.target}: tmux returned no window id`);
@@ -290,7 +341,8 @@ fi`);
   // Fire-and-forget: a stop/destroy must not block on the remote.
   kill(id) {
     if (!id) return;
-    ssh(this.target, `tmux kill-window -t ${id} 2>/dev/null; exit 0`).catch(() => {});
+    resolveTmux(this.target).catch(() => null).then((t) =>
+      ssh(this.target, `${sq(t ?? 'tmux')} kill-window -t ${id} 2>/dev/null; exit 0`)).catch(() => {});
   }
 
   // End the backend: kill any waiter connections, then kill the remote tmux

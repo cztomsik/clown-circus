@@ -23,15 +23,13 @@ Possible follow-up: fetch `AGENTS.md` from the remote dir over ssh
 discover remote skills (`<dir>/.agents/skills/`) the same way. Deferred for
 the PoC.
 
-## Remote file ops assume GNU `base64`
+## Remote file ops need `base64 -d`
 
-The remote scripts decode base64 with `base64 -d` (GNU coreutils) —
+The remote scripts decode base64 with the GNU flag `base64 -d` —
 `server/remote.ts` (`validate`, `readFile`, `writeFile`, `reap`, window
-launch). BSD `base64` (macOS) uses `-D` instead, so on a macOS remote the
-decode fails and every file op and the create-time validation misreport: an
-existing dir reads as missing (`404 not_found`) and `create: true` fails
-(`500 internal`).
-
-Possible follow-up: either document remote sessions as Linux-only, or add a
-decode fallback (try `base64 -d`, fall back to `base64 -D` — or detect once
-in `validate()` and pick the flag for the session's lifetime).
+launch). That works on Linux and on macOS — macOS' BSD `base64` documents
+`-d` alongside `-D` (verified on macOS 10.15, the oldest version tested).
+A remote whose `base64` accepts only `-D` (some BSDs) fails every decode
+instead: an existing dir reads as missing (`404 not_found`) and
+`create: true` fails (`500 internal`). Deferred: a `base64 -d || base64 -D`
+fallback (SPEC §7.2).

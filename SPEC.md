@@ -303,15 +303,21 @@ endpoint and the static web UI (§7.7). Errors use `4xx`/`5xx` with
   path (relative paths are rejected with `400` `bad_request`) or an
   `ssh://[user@]host[:port]/absolute/path` URL — a **remote session**, whose
   working directory lives on the remote host. Remote cwds are validated over
-  ssh at create: the host must be reachable and **tmux** must be installed on
-  it (the command model needs it, §12). It is stored and used as given.
+  ssh at create: the host must be reachable and **tmux** must be available on
+  it (the command model needs it, §12) — looked up on the default PATH,
+  falling back to the user's login shell (`$SHELL -lc`), since a
+  non-interactive ssh shell never reads the rc files that add user-private
+  bin dirs (MacPorts' `/opt/local/bin`, custom prefixes); the resolved
+  absolute path is used for all tmux control. It is stored and used as given.
   Percent-encoding in the URL is decoded, so `ssh://host/my%20path` targets
   the remote directory `/my path`.
-  > **TODO**: the remote file ops assume GNU `base64` (`base64 -d` decodes);
-  > macOS remotes use BSD `base64` (`-D`), so validation and every file op
-  > fail there with misleading errors (an existing dir reads as missing —
-  > `404` — and `create` fails `500`). Either document remote sessions as
-  > Linux-only or add a decode fallback.
+  > **Remote `base64`**: the generated scripts decode base64 paths with the
+  > GNU flag `base64 -d`. That works on Linux and on macOS — macOS' BSD
+  > `base64` documents `-d` (alongside `-D`) as the decode flag (verified on
+  > macOS 10.15, the oldest version tested). A remote whose `base64` accepts
+  > only `-D` (some BSDs) fails every decode there, which reads as
+  > misleading errors (an existing dir as missing — `404` — and `create` as
+  > `500`); a `base64 -d || base64 -D` fallback would fix that if ever needed.
 - `model` — the LLM model to run (non-empty string). It is stored as the
   session's **last-used model**: each `POST /sessions/:id/messages` (§7.3)
   specifies the model for its run and the value is persisted — the web UI
@@ -712,7 +718,8 @@ Each tool invocation receives a `ToolContext`:
 - **`node:child_process`** for `run_command` (abortable child process).
 - **`ssh` + remote `tmux`** for remote (ssh://) sessions: one-shot `ssh` for
   file ops and tmux control (requires the `ssh` client locally and `tmux` on
-  the remote host); commands run in a per-session remote tmux session — one
+  the remote host — on the default PATH or reachable through the user's
+  login shell); commands run in a per-session remote tmux session — one
   window per command — with a blocking ssh "waiter" for the exit code.
 - Minimal dependencies: `express`, `esbuild`, `@tailwindcss/cli` (builds the
   web-UI stylesheet at startup), and the web UI's browser libraries
