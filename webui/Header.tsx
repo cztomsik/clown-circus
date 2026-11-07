@@ -1,6 +1,6 @@
 import { IconBtn, Menu, StatusDot } from './primitives';
 import { ModelSelect } from './ModelSelect';
-import { baseName, fmtTokens } from './util';
+import { cwdLabel, fmtTokens, remoteHost } from './util';
 import { IcHamburger, IcDots, IcSun, IcMoon, IcCode, IcArchive, IcTrash, IcX } from './icons';
 
 // The session-level actions for the ⋮ dropdown. Only things that aren't
@@ -9,7 +9,8 @@ import { IcHamburger, IcDots, IcSun, IcMoon, IcCode, IcArchive, IcTrash, IcX } f
 // `archive` flips its label/icon with the session's state; `delete` is kept
 // last, separated by a rule.
 const menuItems = (view) => view ? [
-  { key: 'open-vscode', label: 'Open in VS Code', icon: IcCode, title: 'open the session working directory in VS Code (vscode:// URI)' },
+  // vscode://file/ opens a LOCAL path — meaningless for a remote cwd.
+  ...(remoteHost(view.cwd) ? [] : [{ key: 'open-vscode', label: 'Open in VS Code', icon: IcCode, title: 'open the session working directory in VS Code (vscode:// URI)' }]),
   { key: view.archived ? 'unarchive' : 'archive',
     label: view.archived ? 'Unarchive' : 'Archive', icon: IcArchive,
     title: view.archived ? 'restore to the default session list' : 'hide from the default session list (kept for later)' },
@@ -40,7 +41,7 @@ const Header = ({ cfg, theme, sideOpen, onSideToggle, onThemeToggle, view, onAct
         {view
           ? (<span class="flex items-center gap-2 min-w-0">
             <StatusDot status={view.status} size="w-[7px] h-[7px]" title={view.status ?? 'idle'} />
-            <span title={view.cwd ?? ''} class="text-dim text-[.82rem] whitespace-nowrap overflow-hidden text-ellipsis">{view.title ?? baseName(view.cwd ?? '')}</span>
+            <span title={view.cwd ?? ''} class="text-dim text-[.82rem] whitespace-nowrap overflow-hidden text-ellipsis">{view.title ?? cwdLabel(view.cwd ?? '')}</span>
             {view.tokens ? <span title="total tokens in the last LLM response" class="text-text3 text-[.7rem] whitespace-nowrap flex-none">{fmtTokens(view.tokens)} tok</span> : null}
             <IconBtn title="close session (back to the start screen)" aria-label="close session" onClick={onClose}><IcX /></IconBtn>
           </span>)

@@ -1,4 +1,4 @@
-import { extractTodos, baseName, timeAgo } from './util';
+import { extractTodos, cwdLabel, timeAgo } from './util';
 import { Todos } from './Todos';
 import { Messages } from './Message';
 import { InputBar } from './InputBar';
@@ -34,7 +34,7 @@ const Empty = ({ cfg, sessions, onSelect }) => {
                    onClick={() => onSelect(s.id)}>
                 <StatusDot status={s.status} />
                 <div class="min-w-0">
-                  <div class="text-[.84rem] text-ink truncate">{s.title ?? baseName(s.cwd)}</div>
+                  <div class="text-[.84rem] text-ink truncate">{s.title ?? cwdLabel(s.cwd)}</div>
                   <div class="text-[.7rem] text-text3 truncate">{s.status} · {timeAgo(s.last_activity)} · {s.message_count} msgs</div>
                 </div>
               </div>

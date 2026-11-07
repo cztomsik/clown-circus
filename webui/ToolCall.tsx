@@ -14,10 +14,13 @@ const SCROLL = 'max-h-[300px] overflow-y-auto';
 const LINK = 'hover:text-accent hover:underline break-all';
 
 // Resolve a (possibly relative) tool path against the session cwd into the
-// absolute path vscode:// opens — mirrors the server's resolve(ctx.cwd,
-// path) — and build its vscode://file/ URI (encodeURI keeps the slashes).
+// absolute path vscode:// opens — mirrors the server's
+// resolve(ctx.backend.dir, path) — and build its vscode://file/ URI
+// (encodeURI keeps the slashes). Remote (ssh://) sessions: the path is not
+// local, so no link (plain text).
 const vscodeLink = (cwd, p) => {
   if (!p) return null;
+  if (String(cwd ?? '').startsWith('ssh://')) return null;
   const abs = /^\//.test(p) ? p : `${String(cwd ?? '').replace(/\/+$/, '')}/${p}`;
   return `vscode://file/${encodeURI(abs)}`;
 };

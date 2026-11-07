@@ -1,10 +1,11 @@
 import express from 'express';
-import { dirname, isAbsolute, join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mkdirSync, statSync } from 'node:fs';
 import { HttpError, mapError } from './errors.ts';
 import { config } from './config.ts';
 import { llm, REASONING_EFFORTS } from './llm.ts';
+import { backendFor } from './backend.ts';
+import { randomUUID } from 'node:crypto';
 
 const HEARTBEAT_MS = 15000;
 const WEBUI_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'webui');
@@ -66,28 +67,22 @@ export const buildApp = ({ manager }) => {
     res.json(manager.list({ includeArchived }));
   });
 
-  app.post('/sessions', (req, res) => {
+  app.post('/sessions', async (req, res) => {
     const body = req.body ?? {};
     const { cwd, create } = body;
     if (typeof cwd !== 'string' || cwd === '') throw new HttpError(400, 'bad_request', 'cwd is required');
-    if (!isAbsolute(cwd)) throw new HttpError(400, 'bad_request', 'cwd must be an absolute path');
-    let st;
-    try {
-      st = statSync(cwd);
-    } catch {
-      if (create !== true) throw new HttpError(404, 'not_found', `cwd path does not exist: ${cwd}`);
-      try {
-        mkdirSync(cwd, { recursive: true });
-      } catch (err) {
-        throw new HttpError(500, 'internal', `could not create cwd path: ${cwd} — ${err.message}`);
-      }
-    }
-    if (st && !st.isDirectory()) throw new HttpError(400, 'bad_request', `cwd is not a directory: ${cwd}`);
+    // One preflight for both kinds — the backend is derived from the cwd
+    // (a malformed ssh:// is a 400 from the factory). The session id is
+    // minted here because the remote backend needs it (tmux session name,
+    // scratch dir) before any row exists.
+    const id = randomUUID();
+    const b = backendFor(id, cwd);
+    await b.validate(create);
 
     const model = body.model;
     if (typeof model !== 'string' || model === '')
       throw new HttpError(400, 'bad_request', 'model is required');
-    const s = manager.create({ cwd, model, reasoningEffort: effortOf(body.reasoning_effort) });
+    const s = manager.create({ id, cwd, model, reasoningEffort: effortOf(body.reasoning_effort) });
     res.status(201).json(s.detail());
   });
 

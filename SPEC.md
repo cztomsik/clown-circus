@@ -55,7 +55,7 @@ persisted in a local **SQLite** database.
 | Commands      | REST endpoints |
 | Streaming     | SSE event stream per session |
 | Persistence   | SQLite DB (`<home>/clown.db`), one row per session + one row per message, always written |
-| CWD           | Per-session `cwd` (stored per row) |
+| CWD           | Per-session `cwd` (stored per row): an absolute local path, or an `ssh://` URL for a remote session (§7.2) |
 | Tools         | Built-in tool set (§12) |
 | System prompt | Base prompt + project instructions + discovered skills, composed per session cwd (§9) |
 
@@ -88,7 +88,8 @@ SQLite store is the sole system of record.
                          └────────────────────┼──────────────────────────┘
                                               │ tool calls (run in session cwd)
                                               ▼
-                                   Filesystem + shell (per-session cwd)
+                          Filesystem + shell (per-session cwd; over ssh for
+                          remote (ssh://) sessions)
                                               │
                                               ▼
                           LLM: OpenAI-compatible /v1/chat/completions
@@ -143,7 +144,7 @@ first run with the default home (§10.1).
 ```sql
 CREATE TABLE IF NOT EXISTS sessions (
   id            TEXT PRIMARY KEY,               -- UUIDv4
-  cwd           TEXT NOT NULL,                  -- absolute working directory
+  cwd           TEXT NOT NULL,                  -- absolute working directory (or an ssh:// URL, §7.2)
   model         TEXT NOT NULL,                    -- last model used (set on send); the web UI pre-fills its picker from it
   reasoning_effort TEXT,                          -- nullable; last-used 'low'|'medium'|'high'|'xhigh' (set on send); sent with every LLM call when set
   status        TEXT NOT NULL DEFAULT 'idle',   -- idle | running | error | stopped
@@ -212,15 +213,16 @@ the raw `messages` are not included in list responses):
 
 ## 6. Session Lifecycle
 
-1. **Created** via `POST /sessions` with a `cwd` and a `model` (both required).
-   A row is inserted into SQLite and the session is loaded into memory.
-   Status `idle`.
+1. **Created** via `POST /sessions` with a `cwd` (absolute local path or an
+   `ssh://` URL, §7.2) and a `model` (both required). A row is inserted into
+   SQLite and the session is loaded into memory. Status `idle`.
 2. **Running** when an agentic loop is active (after a message/retry/compact).
    Every state change is upserted to SQLite.
 3. **Idle** again when the loop finishes.
 4. **Error** if the loop throws; `last_error` is set and persisted. The session
    remains reusable — a new message starts a fresh run.
-5. **Destroyed** via `DELETE /sessions/:id` (aborts any running loop, removes
+5. **Destroyed** via `DELETE /sessions/:id` (aborts any running loop, kills
+   any commands the session spawned — in-flight or backgrounded — removes
    the row from SQLite, drops from memory).
 
 **Archived** is an orthogonal flag, not a status: `POST /sessions/:id/archive`
@@ -240,7 +242,10 @@ not an optional "auto-save" feature).
 **Restart semantics**: at startup the `SessionManager` loads all rows into
 memory. A session whose persisted `status` is `running`/`stopped` (i.e. it was
 mid-run when the process died) is reset to `idle`, because an in-flight loop
-cannot survive a restart.
+cannot survive a restart. Remote sessions' remote state (their tmux session)
+can't be re-attached either, so at startup the remote tmux session of every
+loaded remote session is killed — fire-and-forget, best-effort over ssh
+(§14).
 
 ### ID scheme
 
@@ -294,9 +299,25 @@ endpoint and the static web UI (§7.7). Errors use `4xx`/`5xx` with
 }
 ```
 
-- `cwd` is the session's working directory. It **must** be an absolute path —
-  relative paths are rejected with `400` `bad_request`. It is stored and used
-  as given.
+- `cwd` is the session's working directory. It **must** be an absolute local
+  path (relative paths are rejected with `400` `bad_request`) or an
+  `ssh://[user@]host[:port]/absolute/path` URL — a **remote session**, whose
+  working directory lives on the remote host. Remote cwds are validated over
+  ssh at create: the host must be reachable and **tmux** must be available on
+  it (the command model needs it, §12) — looked up on the default PATH,
+  falling back to the user's login shell (`$SHELL -lc`), since a
+  non-interactive ssh shell never reads the rc files that add user-private
+  bin dirs (MacPorts' `/opt/local/bin`, custom prefixes); the resolved
+  absolute path is used for all tmux control. It is stored and used as given.
+  Percent-encoding in the URL is decoded, so `ssh://host/my%20path` targets
+  the remote directory `/my path`.
+  > **Remote `base64`**: the generated scripts decode base64 paths with the
+  > GNU flag `base64 -d`. That works on Linux and on macOS — macOS' BSD
+  > `base64` documents `-d` (alongside `-D`) as the decode flag (verified on
+  > macOS 10.15, the oldest version tested). A remote whose `base64` accepts
+  > only `-D` (some BSDs) fails every decode there, which reads as
+  > misleading errors (an existing dir as missing — `404` — and `create` as
+  > `500`); a `base64 -d || base64 -D` fallback would fix that if ever needed.
 - `model` — the LLM model to run (non-empty string). It is stored as the
   session's **last-used model**: each `POST /sessions/:id/messages` (§7.3)
   specifies the model for its run and the value is persisted — the web UI
@@ -308,12 +329,17 @@ endpoint and the static web UI (§7.7). Errors use `4xx`/`5xx` with
   omitted from the LLM request); any other value → `400` `bad_request`.
 - `create` — **optional** boolean (default `false`). When `true`, a
   **missing** `cwd` is created (recursively, including absent parents)
-  instead of rejected; ignored when the `cwd` already exists.
+  instead of rejected; ignored when the `cwd` already exists. For a remote
+  cwd the creation happens on the remote host.
 - `201` on success, returning the created session (meta + messages).
-- `400` if `cwd` or `model` is missing, `cwd` is not absolute, `cwd` exists
-  but is not a directory, or `reasoning_effort` is not a known level;
-  `404` `not_found` if `cwd` does not exist (unless `create: true`);
-  `500` `internal` if creating it fails (e.g. permissions).
+- `400` `bad_request` if `cwd` or `model` is missing, `cwd` is not absolute
+  (local) or not a well-formed `ssh://` URL (remote), `cwd` exists but is not
+  a directory, or `reasoning_effort` is not a known level.
+- `404` `not_found` if `cwd` does not exist (unless `create: true`).
+- `502` `remote_unavailable` if the remote host is unreachable or tmux is not
+  installed on it (create only).
+- `500` `internal` if creating the (remote) directory fails (e.g.
+  permissions).
 
 `GET /sessions/:id` response:
 
@@ -443,6 +469,7 @@ Event types (SSE `event:` field):
 | `409`| `session_busy`    | Run-starting call while `running` is true |
 | `500`| `internal`        | Unhandled server error (incl. DB errors) |
 | `502`| `llm_unavailable` | The LLM endpoint is unreachable / returns an error |
+| `502`| `remote_unavailable` | The remote host of an `ssh://` cwd is unreachable (create), or tmux is not installed on it |
 | `504`| `llm_timeout`     | The LLM request exceeded the configured timeout |
 
 ### 7.7 Web UI
@@ -504,7 +531,11 @@ emit status=idle, done; persist(status)
 
 `stop` calls `session.abortController.abort()`. The loop:
 1. Cancels any in-flight LLM `fetch` (via the shared `AbortSignal`).
-2. Aborts any in-flight `run_command` — its whole process tree (`SIGKILL` to its process group).
+2. Aborts any in-flight `run_command` — locally, its whole process tree
+   (`SIGKILL` to its process group); on a remote session, by killing the
+   command's remote tmux window (its whole tree). A command already left
+   running in the background past the 60s timeout survives `stop` (both
+   local and remote) — stopping it is the agent's job (§12).
 3. Checks the signal at the top of each turn and between tool calls.
 
 Because the loop is cooperative, a tool call that ignores the signal is the only
@@ -531,6 +562,14 @@ Current working directory: <realpath of cwd>
 ```
 
 - There is no fallback — a missing `AGENTS.md` appends nothing.
+- **Remote (ssh://) sessions** differ in exactly two places: the working
+  directory line names the remote directory plus the host it is reached on,
+  and — since skill discovery and the context file exist only on the local
+  machine (§12.1) — the prompt ends with a short **"Remote Session"** section
+  instead of the "When Using Skills" section + skill list + context file:
+  every path and command runs on the remote host, and backgrounded commands
+  are monitored via the log file the tool names and stopped with
+  `tmux kill-window` (§12).
 - The system message is `messages[0]` and is the only message retained by
   `clear`.
 - The base guidelines are inlined in `prompt.ts`; their tool names match the
@@ -608,17 +647,18 @@ Via CLI flags and/or environment variables, resolved at startup into a
 
 Each tool is registered with a **snake_case name**, a one-line description, a
 JSON-Schema for args, and an implementation. A leading `~/` (or bare `~`)
-expands to the user home; relative paths then resolve against the session's
-`cwd` (the same directory `run_command` runs in). There is **no path
-sandbox**: the agent may read, write, and execute anywhere the server
-process can reach.
+expands to the user home — the **remote** user's home for remote sessions;
+relative paths then resolve against the session's `cwd` (the same directory
+`run_command` runs in). There is **no path sandbox**: the agent may read,
+write, and execute anywhere the server process — or, for remote sessions,
+the remote ssh user — can reach.
 
 | Tool            | Args                                            | Notes |
 |-----------------|--------------------------------------------------|-------|
-| `read_file`     | `path`, `raw?: bool`                             | Line-number prefix `N:content` unless `raw`. 2MB limit. UTF-8 validated for text. Images (PNG/JPEG/WebP/GIF, detected by magic bytes) are returned as a base64 `image_url` content part so a vision model can see them. |
-| `write_file`    | `path`, `content`                                | Creates parent dirs. |
+| `read_file`     | `path`, `raw?: bool`                             | Line-number prefix `N:content` unless `raw`. 2MB limit. UTF-8 validated for text. Images (PNG/JPEG/WebP/GIF, detected by magic bytes) are returned as a base64 `image_url` content part so a vision model can see them. Remote: one-shot ssh, the transfer capped before it crosses the wire. |
+| `write_file`    | `path`, `content`                                | Creates parent dirs. Remote: content crosses on ssh's stdin (never a command line); the write is an atomic rename. |
 | `edit_file`     | `path`, `old_content`, `new_content`, `replace_all?: bool` | Exact-match replace; errors on 0 or >1 matches unless `replace_all`. Exact-string semantics only (no line-range/sed edits). |
-| `run_command`   | `command`, `cwd?: string`                        | Runs `sh -c`; captures stdout+stderr (2MB limits); abortable on stop. A command still running after 60s is **left alive in the background** — its output is redirected to two temp files (`<tmpdir>/clown-cmd-<id>.out`/`.err`) and the tool resolves with the PID + file paths; monitoring it and killing it (`kill <pid>`) is then the agent's job. |
+| `run_command`   | `command`, `cwd?: string`                        | Runs `sh -c`; abortable on stop. **Both kinds capture stdout and stderr into two log files from the start** (local: `<tmpdir>/clown-cmd-<id>.out`/`.err`, deleted on a clean exit and kept otherwise; remote: `/tmp/clown-<sid>/<token>.out`/`.err` plus the `<token>.exit` file — removed with the session's remote footprint at server (re)boot, session delete, and shutdown). The rendered result is capped at 2MB per stream and sectioned: `Command failed …` + `Stdout:` / `Stderr:` sections on a failure (a local signal death renders `(killed by SIG…)`; a remote one arrives flattened as the shell's 128+N exit code), `<stdout>\n\nStderr:` on a clean run that wrote stderr, bare stdout otherwise. A command still running after 60s is **left alive in the background** — the tool resolves naming both log files and the kill handle (local: the process group, `kill -- -<pid>`; remote: the tmux window, `tmux kill-window -t <win>`); monitoring it and killing it is then the agent's job. **Remote**: each command runs in its own window of the session's remote tmux session (`clown-<sid>`) and a blocking ssh "waiter" polls the window for the exit code; the 60s rule is the same. `stop` kills the in-flight command's whole tree (the local process group / the remote tmux window); a backgrounded command survives `stop`. |
 | `write_todos`  | `content: string (markdown)`                   | No-op: the tool call's presence in the transcript IS the todo list (the web UI derives it from messages). Returns `Todos updated`. |
 
 ### 12.1 Skills
@@ -639,7 +679,9 @@ two: `init` (explore the project and write an `AGENTS.md`) and `make_skill`
 (meta: how to author a new skill). Discovered skills are listed in the system
 prompt (§9) — one bullet per skill: **name**, description, and its
 `SKILL.md` path (shortened: `./` under the session cwd, `~` under the user
-home, absolute otherwise); the description is the routing signal.
+home, absolute otherwise); the description is the routing signal. Remote
+(ssh://) sessions have no skill discovery — their system prompt omits the
+skills section entirely (§9).
 
 Tool result values are returned to the model as text (strings / structured
 values serialized to JSON). A tool may instead return an OpenAI content-part
@@ -654,9 +696,8 @@ Each tool invocation receives a `ToolContext`:
 
 ```js
 // {
-//   cwd: string,           // session cwd (working directory for tools)
-//   signal: AbortSignal,   // for run_command
-//   emit(event, data),     // e.g. emit("status", { status })
+//   backend: Backend,      // the session's per-session backend — file ops + run_command, local or remote (§12)
+//   signal: AbortSignal,   // for run_command (stop)
 // }
 ```
 
@@ -675,6 +716,11 @@ Each tool invocation receives a `ToolContext`:
 - **Native `fetch`** for LLM calls (OpenAI-compatible), with an abort signal
   for timeout + stop.
 - **`node:child_process`** for `run_command` (abortable child process).
+- **`ssh` + remote `tmux`** for remote (ssh://) sessions: one-shot `ssh` for
+  file ops and tmux control (requires the `ssh` client locally and `tmux` on
+  the remote host — on the default PATH or reachable through the user's
+  login shell); commands run in a per-session remote tmux session — one
+  window per command — with a blocking ssh "waiter" for the exit code.
 - Minimal dependencies: `express`, `esbuild`, `@tailwindcss/cli` (builds the
   web-UI stylesheet at startup), and the web UI's browser libraries
   (`preact`, `marked`, `dompurify`) —
@@ -698,6 +744,16 @@ Each tool invocation receives a `ToolContext`:
   (`detached` spawn); every tree — in-flight or backgrounded past the 60s
   timeout — is tracked and group-killed (`SIGKILL`, shell + all descendants)
   on server shutdown (`SIGINT`/`SIGTERM`), so no command outlives the server.
+- **Remote sessions** extend the trust boundary to the remote host + user:
+  the local user's own ssh credentials decide what is reachable
+  (`BatchMode=yes` — never hangs on an auth prompt; 10s connect timeout;
+  `StrictHostKeyChecking=accept-new` — first contact auto-trusted, a *changed*
+  key is still rejected). Untrusted values (paths, commands, file contents)
+  cross ssh only as base64 or on the pipe, never in command text (embedded
+  script text is always server-generated). Remote commands run with the
+  remote user's permissions and no sandbox. On shutdown each remote session's
+  tmux session is killed fire-and-forget (the ssh children outlive
+  `process.exit`); the boot-time reap (§6) covers the unreachable.
 - **DB isolation**: the SQLite file defaults to `~/.clown/clown.db` (user-scoped).
   No cross-user access by default; `0600` on the file is recommended.
 - No auth by design (single-user, local tool).

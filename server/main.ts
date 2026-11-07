@@ -6,7 +6,6 @@ import * as esbuild from 'esbuild';
 import { config } from './config.ts';
 import { db } from './db.ts';
 import { seedBuiltinSkills } from './skills.ts';
-import { killAllChildren } from './tools.ts';
 import { SessionManager } from './manager.ts';
 import { buildApp } from './app.ts';
 import { log } from './util.ts';
@@ -62,7 +61,11 @@ const main = async () => {
     if (closing) return;
     closing = true;
     log(`${sig} received, shutting down`);
-    killAllChildren(); // don't orphan in-flight or backgrounded commands
+    // Every backend kills what it owns — local child trees (synchronously)
+    // and remote tmux sessions (fire-and-forget over ssh: the ssh children
+    // outlive process.exit and still deliver the kill; the boot-time reap
+    // covers the unreachable).
+    for (const s of manager.sessions.values()) s.backend.dispose();
     server.close(() => {
       cssWatch.kill();
       webuiCtx.dispose();

@@ -1,7 +1,7 @@
 import { render } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { api } from './api';
-import { baseName, parseCommand, SLASH_COMMANDS } from './util';
+import { cwdLabel, parseCommand, SLASH_COMMANDS } from './util';
 import { prepareImageDataURL } from './image';
 import {
   useLocalStorage, useModels, useSessions, useSessionView, useAttachments, useFlash, useTheme,
@@ -104,7 +104,7 @@ const App = () => {
   // Reflect the selected session in the tab title; fall back to the app name
   // when none is open.
   useEffect(() => {
-    document.title = view?.cwd ? `${view.title ?? baseName(view.cwd)} · Clown-Circus` : 'Clown-Circus';
+    document.title = view?.cwd ? `${view.title ?? cwdLabel(view.cwd)} · Clown-Circus` : 'Clown-Circus';
   }, [view?.cwd, view?.title]);
 
   // SSE events carry transcript + status, not meta — so a title set by the
@@ -272,7 +272,7 @@ const App = () => {
   };
 
   const del = async () => {
-    if (!confirm(`delete session ${baseName(view?.cwd ?? '')}?`)) return;
+    if (!confirm(`delete session ${cwdLabel(view?.cwd ?? '')}?`)) return;
     try {
       await api.sessions.delete(current);
       try { localStorage.removeItem(inputKey(current)); } catch {}

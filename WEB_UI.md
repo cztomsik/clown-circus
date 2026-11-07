@@ -135,7 +135,9 @@ primary interface — the UI is just one client of it.
   `run_command`'s cwd) is a **clickable `vscode://file/` link** — resolved
   against the session cwd (threaded down as the `cwd` prop) and opened in
   the local VS Code via the browser's external-app prompt, the same
-  mechanism as the header's `open in vscode`. Exports
+  mechanism as the header's `open in vscode` — except for remote
+  (`ssh://`) sessions, where the paths live on the remote host and are shown
+  as plain text. Exports
   `ToolCall({ name, args, raw, cwd })` (the body; unknown tools or an
   unparseable `arguments` string fall back to the generic pretty-JSON
   `<pre>`) and `toolCallTitle(name, args)` (the short collapsed-summary
@@ -168,10 +170,13 @@ primary interface — the UI is just one client of it.
   selected). The session status/actions no longer live here — they moved into
   the unified `Header`.
 - **`webui/util.ts`** — a small module of pure, dependency-free helpers
-  (`baseName`, `SLASH_COMMANDS`, `fmtTokens`, `parseCommand`, `modelId`,
-  `isVisionModel`, `reasoningText`, `timeAgo`, `prettyArgs`, `parseArgs`,
-  `parseTodos`, `extractTodos`), exported
-  by name and pulled in with `import { … } from './util'`. `SLASH_COMMANDS` is
+  (`baseName`, `remoteHost`, `cwdLabel`, `SLASH_COMMANDS`, `fmtTokens`,
+  `parseCommand`, `modelId`, `isVisionModel`, `reasoningText`, `timeAgo`,
+  `prettyArgs`, `parseArgs`, `parseTodos`, `extractTodos`), exported
+  by name and pulled in with `import { … } from './util'`. `remoteHost(cwd)`
+  is the host (with port, if given) of a remote (`ssh://`) session's cwd, or
+  `null` for a local one; `cwdLabel(cwd)` is the cwd's display label — the
+  basename, host-prefixed for remote sessions (`host[:port]:basename`). `SLASH_COMMANDS` is
   the composer's command table (`{ name, hint }` — the palette rows + the
   action-bar hints); `fmtTokens(n)` compacts the session's token count for the
   header (`1234` → `1.2k`, `2048000` → `2m`). `parseCommand(text)`
@@ -208,14 +213,18 @@ primary interface — the UI is just one client of it.
 ## Features
 
 - **Sidebar** — sessions from `GET /sessions`, **grouped by project** (cwd):
-  each group has a sticky-style header showing the project basename and
+  each group has a sticky-style header showing the project label and
   session count, followed by its sessions (status dot colored by
   `idle`/`running`/`error`/`stopped`, pulsing while running; the title line
   shows the session's **auto-title** — the first user-sent message,
   server-set and exposed as `title` in `SessionMeta` (SPEC §5.2) — falling
-  back to the cwd basename when the session has no title yet; the meta line
-  shows cwd basename, status, last-activity, and message count, with a
-  full-path tooltip). Refreshed on SSE `status` events and
+  back to the cwd label when the session has no title yet; the meta line
+  shows the cwd label, status, last-activity, and message count, with a
+  full-path tooltip). The cwd label is the directory's basename — or
+  `host[:port]:basename` for remote (`ssh://`) sessions, so a remote project
+  reads as its host (the same `cwdLabel` helper, `webui/util.ts`, is used for
+  every cwd display: group headers, session rows, the header summary, the
+  empty-state list, the delete confirm, and the tab title). Refreshed on SSE `status` events and
   every 10s. **Collapsible groups** — with grouping on, each project header
   is a click target with a chevron (pointing down when expanded, rotated
   right when folded, animated): clicking it folds/unfolds just that group,
@@ -225,11 +234,15 @@ primary interface — the UI is just one client of it.
   sidebar stays folded the way you left it across reloads; and selecting a
   session auto-unfolds its group, so the open session is always visible.
   New-session form (a `cwd` input + a "new session" button — the
-  model is chosen in the header's model picker, see **Header**) →
-  `POST /sessions`; when the `cwd` does not exist the server answers `404`
-  and the UI asks "folder … does not exist — create it?" — a yes retries
-  the create with `create: true` (the server creates the directory
-  recursively), a no aborts (the field keeps its text). The `cwd` field is
+  model is chosen in the header's model picker, see **Header**; the field's
+  placeholder advertises both forms: `/path/to/cwd · ssh://host/path`) →
+  `POST /sessions`. Remote sessions are created by typing an
+  `ssh://[user@]host[:port]/path` URL there — no other remote affordance
+  exists (server-side validation over ssh, SPEC §7.2). When the (local)
+  `cwd` does not exist the server answers `404` and the UI asks "folder …
+  does not exist — create it?" — a yes retries the create with
+  `create: true` (the server creates the directory recursively), a no aborts
+  (the field keeps its text). The `cwd` field is
   **pre-set to the selected session's cwd** whenever a session is chosen
   (state lifted into `App`, written in `select()`), so spinning up another
   session for the same project is one click; the field is cleared after a
@@ -247,15 +260,16 @@ primary interface — the UI is just one client of it.
   separate global header and a per-session toolbar. Left to right: a `☰`
   sidebar-toggle button, the `clown-circus` brand (hidden below `sm` to save
   room), then either the **session** status badge + title (the session's
-  auto-title — `title`, cwd basename fallback — with a full-path tooltip, when
-  a session is open) + a compact **token readout** (`126 tok`, `18.4k tok` —
+  auto-title — `title`, cwd-label fallback (see **Sidebar**) — with a
+  full-path tooltip, when a session is open) + a compact **token readout** (`126 tok`, `18.4k tok` —
   the session's `total_tokens`, hidden at 0, live-updated by the SSE `done`
   event) + a **`×` close-session button** (deselects the session — back to the
   welcome state; see **Deep links**) or the **config** summary
   (`base_url · db file`, when none is), then the **model picker**
   (`ModelSelect`), then the theme toggle. When a session is open, a `⋮` button
   (between the summary and the model picker) opens a dropdown of the
-  **session-level** actions only — `open in vscode`, `archive` (which flips to
+  **session-level** actions only — `open in vscode` (hidden for remote
+  sessions — `vscode://` opens a local path), `archive` (which flips to
   `unarchive` when the open session is archived), and `delete` last,
   separated by a rule. Conversation manipulation (`retry`, `retry-turn`,
   `init`, `compact`, `undo`, `clear`, `fork`, `trim`) is not in the menu —
@@ -263,6 +277,7 @@ primary interface — the UI is just one client of it.
   vscode` is the only non-REST item: it hands the session `cwd` to the local
   `vscode://file/` URI handler via `window.open` (the browser shows its
   external-app prompt; VS Code must be the `vscode://` protocol handler).
+  Remote (`ssh://`) sessions hide it — their `cwd` is not a local path.
 - **`webui/ModelSelect.tsx`** — the header's **model picker**: a
   select-styled button (model name + a dim effort suffix + chevron) that
   opens a `Modal` with the model list (radio-style rows, `✓` on the current
